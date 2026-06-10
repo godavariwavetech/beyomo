@@ -1,0 +1,65 @@
+﻿const { DataTypes } = require("sequelize");
+const { sequelize } = require("../../../utils/dbconnect");
+
+const Booking = sequelize.define("Booking", {
+  id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+  bookingCode: { type: DataTypes.STRING(30), allowNull: true, unique: true },
+  userId: { type: DataTypes.INTEGER, allowNull: false },
+  partnerId: { type: DataTypes.INTEGER, allowNull: true },
+  serviceId: { type: DataTypes.INTEGER, allowNull: false },
+  services: { type: DataTypes.JSON, allowNull: true },
+  addressLabel: { type: DataTypes.STRING(50), allowNull: true },
+  addressLine1: { type: DataTypes.STRING(255), allowNull: false },
+  addressLine2: { type: DataTypes.STRING(255), allowNull: true },
+  addressCity: { type: DataTypes.STRING(100), allowNull: false },
+  addressState: { type: DataTypes.STRING(100), allowNull: false },
+  addressPincode: { type: DataTypes.STRING(10), allowNull: false },
+  addressLat: { type: DataTypes.FLOAT, allowNull: true },
+  addressLng: { type: DataTypes.FLOAT, allowNull: true },
+  scheduledAt: { type: DataTypes.DATE, allowNull: false },
+  status: {
+    type: DataTypes.ENUM("pending", "confirmed", "in_progress", "completed", "cancelled"),
+    defaultValue: "pending",
+  },
+  baseAmount: { type: DataTypes.DECIMAL(10, 2), allowNull: false },
+  discountAmount: { type: DataTypes.DECIMAL(10, 2), defaultValue: 0 },
+  couponDiscountAmount: { type: DataTypes.DECIMAL(10, 2), defaultValue: 0 },
+  taxAmount: { type: DataTypes.DECIMAL(10, 2), defaultValue: 0 },
+  totalAmount: { type: DataTypes.DECIMAL(10, 2), allowNull: false },
+  partnerEarning: { type: DataTypes.DECIMAL(10, 2), allowNull: true },
+  couponCode: { type: DataTypes.STRING(50), allowNull: true },
+  couponId:   { type: DataTypes.INTEGER, allowNull: true },
+  offerId:    { type: DataTypes.INTEGER, allowNull: true },
+  packageId:  { type: DataTypes.INTEGER, allowNull: true },
+  paymentStatus: { type: DataTypes.ENUM("pending", "paid", "refunded"), defaultValue: "pending" },
+  paymentId: { type: DataTypes.INTEGER, allowNull: true }, // no FK â€” circular dep with payments
+  notes: { type: DataTypes.TEXT, allowNull: true },
+  cancelledBy: { type: DataTypes.ENUM("user", "partner", "admin"), allowNull: true },
+  cancellationReason: { type: DataTypes.TEXT, allowNull: true },
+  completedAt: { type: DataTypes.DATE, allowNull: true },
+  cityId: { type: DataTypes.INTEGER, allowNull: true },
+  ratingUser: { type: DataTypes.INTEGER, allowNull: true },
+  ratingPartner: { type: DataTypes.INTEGER, allowNull: true },
+  serviceUpdatePending: { type: DataTypes.BOOLEAN, defaultValue: false },
+  pendingServicesUpdate: { type: DataTypes.JSON, allowNull: true },
+}, {
+  timestamps: true,
+  tableName: "bookings",
+  hooks: {
+    beforeCreate(booking) {
+      if (!booking.bookingCode) {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, "0");
+        const random = Math.floor(100000 + Math.random() * 900000);
+        booking.bookingCode = `BYM-${year}${month}-${random}`;
+      }
+      if (booking.partnerEarning == null) {
+        booking.partnerEarning = booking.totalAmount;
+      }
+    },
+  },
+});
+
+module.exports = Booking;
+

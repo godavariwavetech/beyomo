@@ -1,0 +1,38 @@
+const express = require("express");
+const router = express.Router();
+const partnerAuthenticate = require("../../../../utils/partnerAuthenticate");
+const {
+  getProfile,
+  updateProfile,
+  uploadDocuments,
+  getDashboard,
+  getBookings,
+  getAvailableBookings,
+  acceptBooking,
+  claimServices,
+  updateBookingStatus,
+  updateDeviceToken,
+  getEarnings,
+  addExtraServices,
+  proposeServiceChanges,
+  sendTestNotification,
+} = require("../../controllers/v1/partners.controller");
+
+router.use(partnerAuthenticate);
+
+router.get("/profile", getProfile);
+router.patch("/profile", updateProfile);
+router.post("/documents", uploadDocuments);
+router.get("/dashboard", getDashboard);
+router.get("/earnings", getEarnings);
+router.get("/bookings/available", getAvailableBookings);
+router.get("/bookings", getBookings);
+router.post("/bookings/:id/accept", acceptBooking);
+router.post("/bookings/:id/claim-services", claimServices);
+router.patch("/bookings/:id/status", updateBookingStatus);
+router.patch("/bookings/:id/extra-services", addExtraServices);
+router.patch("/bookings/:id/propose-changes", proposeServiceChanges);
+router.patch("/device-token", updateDeviceToken);
+router.post("/test-notification", sendTestNotification);
+
+module.exports = router;
