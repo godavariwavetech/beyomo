@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "877628130035",
+    "project_id": "beyomo-2f613",
+    "storage_bucket": "beyomo-2f613.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:877628130035:android:da27a259777847e923ad86",
+        "android_client_info": {
+          "package_name": "com.beyomo"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDE_IkRxuvasiJc5A0fUWMsq5hJhIDCot4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:877628130035:android:a10e259a537d13aa23ad86",
+        "android_client_info": {
+          "package_name": "com.beyomopartner"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDE_IkRxuvasiJc5A0fUWMsq5hJhIDCot4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
