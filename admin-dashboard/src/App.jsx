@@ -18,11 +18,13 @@ import Reports from './pages/Reports';
 import Settings from './pages/Settings';
 import Permissions from './pages/Permissions';
 import Feedback from './pages/Feedback';
-import Banners from './pages/Banners';
+import Zones from './pages/Zones';
 import Cities from './pages/Cities';
 import Offers from './pages/Offers';
 import Packages from './pages/Packages';
 import Analytics from './pages/Analytics';
+import Skills from './pages/Skills';
+import ContactInquiries from './pages/ContactInquiries';
 
 function AccessDenied() {
   return (
@@ -62,11 +64,13 @@ function ProtectedRoutes() {
         <Route path="settings"      element={<PermissionGuard page="settings"><Settings /></PermissionGuard>} />
         <Route path="permissions"   element={<PermissionGuard page="permissions"><Permissions /></PermissionGuard>} />
         <Route path="feedback"      element={<PermissionGuard page="feedback"><Feedback /></PermissionGuard>} />
-        <Route path="banners"       element={<PermissionGuard page="banners"><Banners /></PermissionGuard>} />
+        <Route path="zones"         element={<PermissionGuard page="zones"><Zones /></PermissionGuard>} />
         <Route path="cities"        element={<PermissionGuard page="cities"><Cities /></PermissionGuard>} />
         <Route path="offers"        element={<PermissionGuard page="offers"><Offers /></PermissionGuard>} />
         <Route path="packages"      element={<PermissionGuard page="packages"><Packages /></PermissionGuard>} />
         <Route path="analytics"     element={<PermissionGuard page="analytics"><Analytics /></PermissionGuard>} />
+        <Route path="skills"             element={<PermissionGuard page="skills"><Skills /></PermissionGuard>} />
+        <Route path="contact-inquiries" element={<PermissionGuard page="contacts"><ContactInquiries /></PermissionGuard>} />
         <Route path="*"             element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </Layout>

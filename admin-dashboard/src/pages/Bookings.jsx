@@ -626,24 +626,37 @@ export default function Bookings() {
                   ).slice(0, 50).map(s => {
                     const svcId = String(s.id ?? s._id);
                     const cartItem = svcCart.find(item => String(item.svc.id ?? item.svc._id) === svcId);
+                    const alreadyInBooking = servicesList.some(svc =>
+                      !svc.removed && (
+                        (svc.serviceId != null && String(svc.serviceId) === svcId) ||
+                        (svc.name === s.name)
+                      )
+                    );
                     return (
-                      <div key={svcId} style={{ display:'flex', alignItems:'center', gap:10, padding:'7px 12px', borderBottom:'1px solid var(--c-border-light)', background: cartItem ? 'rgba(6,64,129,0.04)' : undefined }}>
+                      <div key={svcId} style={{ display:'flex', alignItems:'center', gap:10, padding:'7px 12px', borderBottom:'1px solid var(--c-border-light)', background: alreadyInBooking ? 'var(--c-border-light)' : cartItem ? 'rgba(6,64,129,0.04)' : undefined, opacity: alreadyInBooking ? 0.6 : 1 }}>
                         <input
                           type="checkbox"
                           checked={!!cartItem}
+                          disabled={alreadyInBooking}
                           onChange={() => {
+                            if (alreadyInBooking) return;
                             if (cartItem) setSvcCart(prev => prev.filter(item => String(item.svc.id ?? item.svc._id) !== svcId));
                             else setSvcCart(prev => [...prev, {svc: s, qty: 1}]);
                           }}
-                          style={{ cursor:'pointer', width:15, height:15, flexShrink:0 }}
+                          style={{ cursor: alreadyInBooking ? 'not-allowed' : 'pointer', width:15, height:15, flexShrink:0 }}
                         />
                         <div style={{ flex:1, minWidth:0 }}>
-                          <div style={{ fontSize:13, fontWeight: cartItem ? 600 : 400 }}>{s.name}</div>
+                          <div style={{ fontSize:13, fontWeight: cartItem ? 600 : 400, display:'flex', alignItems:'center', gap:6 }}>
+                            {s.name}
+                            {alreadyInBooking && (
+                              <span style={{ fontSize:10, background:'#dbeafe', color:'#1d4ed8', padding:'1px 6px', borderRadius:4, fontWeight:700 }}>In booking</span>
+                            )}
+                          </div>
                           <div style={{ fontSize:11, color:'var(--c-text-muted)' }}>
                             ₹{parseFloat(s.basePrice || 0).toLocaleString('en-IN')} · {s.duration} min
                           </div>
                         </div>
-                        {cartItem && (
+                        {cartItem && !alreadyInBooking && (
                           <div style={{ display:'flex', alignItems:'center', gap:4 }}>
                             <button style={{ width:24, height:24, border:'1px solid var(--c-border)', borderRadius:4, background:'var(--c-bg-card)', cursor:'pointer', fontSize:13, fontWeight:700 }}
                               onClick={() => setSvcCart(prev => prev.map(item => String(item.svc.id ?? item.svc._id) === svcId ? {...item, qty: Math.max(1, item.qty - 1)} : item))}>–</button>

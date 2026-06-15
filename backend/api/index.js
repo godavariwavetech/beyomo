@@ -17,6 +17,8 @@ const bannersRoutes = require("./banners");
 const citiesRoutes = require("./cities");
 const offersRoutes = require("./offers");
 const packagesRoutes = require("./packages");
+const skillsRoutes = require("./skills");
+const contactsRoutes = require("./contacts");
 
 // Reports routes (mounted under /api/v1/admin/reports via admin module)
 const reportsRoutes = require("./reports/routes/v1/reports.routes");
@@ -37,6 +39,8 @@ router.use("/api", bannersRoutes);
 router.use("/api", citiesRoutes);
 router.use("/api", offersRoutes);
 router.use("/api", packagesRoutes);
+router.use("/api", skillsRoutes);
+router.use("/api", contactsRoutes);
 
 // Reports under admin namespace
 router.use("/api/v1/admin/reports", reportsRoutes);

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Menu, Bell, LogOut, ChevronDown, MapPin, Check } from 'lucide-react';
+import { Menu, Bell, LogOut, ChevronDown, MapPin, Check, Globe } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useCityFilter } from '../../context/CityContext';
 import { ROLE_LABELS, ROLE_COLORS } from '../../data/mockData';
@@ -22,7 +22,7 @@ const PAGE_TITLES = {
 
 export default function Header({ onMenuClick }) {
   const { user, logout } = useAuth();
-  const { cities, selectedCities, toggleCity, clearCities } = useCityFilter();
+  const { cities, selectedCities, toggleCity, clearCities, userZones } = useCityFilter();
   const location = useLocation();
   const navigate = useNavigate();
   const [showDropdown, setShowDropdown] = useState(false);
@@ -68,6 +68,24 @@ export default function Header({ onMenuClick }) {
       </div>
 
       <div className="header-actions">
+        {/* Zone restriction indicator */}
+        {userZones.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+            {userZones.map(z => (
+              <span key={z.id} style={{
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+                fontSize: 11, fontWeight: 700,
+                padding: '4px 10px', borderRadius: 'var(--r-full)',
+                background: 'var(--c-brand-teal-bg, #e0f7f4)',
+                color: 'var(--c-primary)',
+                border: '1px solid var(--c-primary)',
+              }}>
+                <Globe size={11} /> {z.name}
+              </span>
+            ))}
+          </div>
+        )}
+
         {/* City multi-select */}
         {cities.length > 0 && (
           <div style={{ position: 'relative' }} ref={cityMenuRef}>

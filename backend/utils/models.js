@@ -20,6 +20,10 @@ const ServiceZone = require("../api/zones/models/zone.model");
 const Offer = require("../api/offers/models/offer.model");
 const City = require("../api/cities/models/city.model");
 const ServicePackage = require("../api/packages/models/package.model");
+const SkillCategory = require("../api/skills/models/SkillCategory");
+const Skill = require("../api/skills/models/Skill");
+const PartnerSkillCategory = require("../api/skills/models/PartnerSkillCategory");
+const ContactInquiry = require("../api/contacts/models/contact.model");
 
 // ---- User associations ----
 User.hasMany(UserAddress, { foreignKey: "userId", as: "addresses" });
@@ -71,6 +75,13 @@ Coupon.belongsTo(AdminUser, { foreignKey: "createdBy", as: "admin" });
 // ---- Offer associations ----
 Offer.belongsTo(Service, { foreignKey: "freeServiceId", as: "freeService" });
 
+// ---- Skill associations ----
+SkillCategory.hasMany(Skill, { foreignKey: "skillCategoryId", as: "skills" });
+Skill.belongsTo(SkillCategory, { foreignKey: "skillCategoryId", as: "category" });
+Partner.hasMany(PartnerSkillCategory, { foreignKey: "partnerId", as: "skillCategories" });
+PartnerSkillCategory.belongsTo(Partner, { foreignKey: "partnerId" });
+PartnerSkillCategory.belongsTo(SkillCategory, { foreignKey: "skillCategoryId", as: "skillCategory" });
+
 module.exports = {
   User, UserAddress, Partner, PartnerService,
   ServiceCategory, Service, ServiceCityMap,
@@ -78,4 +89,6 @@ module.exports = {
   Coupon, ReferralProgram, AdminUser, AppFeedback,
   Banner, ServiceZone, Offer,
   City, ServicePackage,
+  SkillCategory, Skill, PartnerSkillCategory,
+  ContactInquiry,
 };

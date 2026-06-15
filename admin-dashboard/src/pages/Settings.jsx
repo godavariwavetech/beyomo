@@ -9,9 +9,11 @@ import Modal from '../components/common/Modal';
 import { useAuth } from '../context/AuthContext';
 import { useAdminUsers } from '../hooks/useAdminUsers';
 import { useSettings } from '../hooks/useSettings';
+import api from '../services/api';
 
 const SETTING_SECTIONS = [
   { id:'general',     label:'General',          icon:<SettingsIcon size={16}/> },
+  { id:'agreement',   label:'Partner Agreement', icon:<Key size={16}/> },
   { id:'admins',      label:'Admin Users',       icon:<Users size={16}/> },
   { id:'roles',       label:'Role Permissions',  icon:<Shield size={16}/> },
   { id:'commission',  label:'Commission',        icon:<CreditCard size={16}/> },
@@ -20,6 +22,100 @@ const SETTING_SECTIONS = [
 ];
 
 const ALL_PAGES = ['dashboard','users','partners','bookings','services','earnings','coupons','reviews','notifications','reports','settings'];
+
+function AgreementSection() {
+  const [exists, setExists] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [msg, setMsg] = useState('');
+  const inputRef = React.useRef();
+
+  useEffect(() => {
+    api.get('/api/v1/admin/settings/agreement/status')
+      .then(r => setExists(r.data?.exists))
+      .catch(() => setExists(false));
+  }, []);
+
+  const handleUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setUploading(true);
+    setMsg('');
+    try {
+      const fd = new FormData();
+      fd.append('pdf', file);
+      await api.post('/api/v1/admin/settings/agreement', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      setExists(true);
+      setMsg('Agreement PDF uploaded successfully. Partners can now download it.');
+    } catch (err) {
+      setMsg(err.response?.data?.message || 'Upload failed. Ensure the file is a valid PDF under 20MB.');
+    }
+    setUploading(false);
+  };
+
+  return (
+    <div className="card">
+      <div className="card-header">
+        <div className="card-title">Partner Agreement PDF</div>
+      </div>
+      <div className="card-body">
+        <p style={{ fontSize: 14, color: 'var(--c-text-secondary)', marginBottom: 20, lineHeight: 1.6 }}>
+          Upload the agreement PDF that partners download, sign, and re-upload during registration.
+          Uploading a new file replaces the previous one immediately.
+        </p>
+
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 14, marginBottom: 24,
+          padding: '14px 18px', borderRadius: 10,
+          border: `1.5px solid ${exists ? '#22C55E' : 'var(--c-border)'}`,
+          background: exists ? '#F0FDF4' : 'var(--c-bg-subtle)',
+        }}>
+          <span style={{ fontSize: 28 }}>📄</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 600, fontSize: 14 }}>
+              {exists === null ? 'Checking…' : exists ? 'agreement.pdf' : 'No agreement uploaded yet'}
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--c-text-muted)', marginTop: 2 }}>
+              {exists ? 'Partners can download this file during registration' : 'Upload a PDF to enable partner downloads'}
+            </div>
+          </div>
+          {exists && (
+            <span style={{ fontSize: 12, fontWeight: 700, color: '#16A34A', background: '#DCFCE7', padding: '3px 10px', borderRadius: 20 }}>Active</span>
+          )}
+        </div>
+
+        {msg && (
+          <div style={{
+            marginBottom: 16, padding: '10px 14px', borderRadius: 8, fontSize: 14,
+            background: msg.includes('success') ? '#F0FDF4' : '#FEF2F2',
+            color: msg.includes('success') ? '#16A34A' : '#DC2626',
+            border: `1px solid ${msg.includes('success') ? '#BBF7D0' : '#FCA5A5'}`,
+          }}>
+            {msg}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 12 }}>
+          <input ref={inputRef} type="file" accept="application/pdf" style={{ display: 'none' }} onChange={handleUpload} />
+          <button
+            className="btn btn-primary"
+            onClick={() => inputRef.current.click()}
+            disabled={uploading}>
+            {uploading ? 'Uploading…' : exists ? 'Replace Agreement PDF' : 'Upload Agreement PDF'}
+          </button>
+          {exists && (
+            <a
+              href="http://localhost:3000/api/v1/partners/agreement.pdf"
+              target="_blank"
+              rel="noreferrer"
+              className="btn btn-outline">
+              Preview Current PDF
+            </a>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function Settings() {
   const { user, showToast } = useAuth();
@@ -109,6 +205,9 @@ export default function Settings() {
 
       {/* Content */}
       <div className="settings-content">
+        {/* Agreement PDF */}
+        {activeSection === 'agreement' && <AgreementSection />}
+
         {/* General */}
         {activeSection === 'general' && (
           <div className="card">

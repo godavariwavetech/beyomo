@@ -21,6 +21,7 @@ const createAdminUserSchema = Joi.object({
   role: Joi.string().valid("super_admin", "admin", "manager", "analyst", "support").required(),
   customPermissions: Joi.array().items(Joi.string()),
   allowedCities: Joi.array().items(Joi.number()).allow(null),
+  allowedZones:  Joi.array().items(Joi.number()).allow(null),
   status: Joi.string().valid("active", "inactive").default("active"),
 });
 
@@ -29,6 +30,7 @@ const updateAdminUserSchema = Joi.object({
   role: Joi.string().valid("super_admin", "admin", "manager", "analyst", "support"),
   customPermissions: Joi.array().items(Joi.string()),
   allowedCities: Joi.array().items(Joi.number()).allow(null),
+  allowedZones:  Joi.array().items(Joi.number()).allow(null),
   status: Joi.string().valid("active", "inactive"),
 });
 
@@ -147,6 +149,18 @@ const logout = catchAsync(async (req, res, next) => {
   res.status(200).json({ status: true, message: "Logged out successfully" });
 });
 
+// Dev-only: return admin list for login-page credential hints (no passwords)
+const devAdminHints = catchAsync(async (req, res, next) => {
+  if (process.env.NODE_ENV === "production") {
+    return next(new AppError("Not found", 404));
+  }
+  const admins = await AdminUser.findAll({
+    attributes: ["id", "name", "email", "role", "status"],
+    order: [["role", "ASC"], ["createdAt", "ASC"]],
+  });
+  res.status(200).json({ status: true, data: admins });
+});
+
 const parseCityIds = (q) => {
   if (!q) return null;
   const ids = String(q).split(',').map(Number).filter(n => Number.isInteger(n) && n > 0);
@@ -156,10 +170,15 @@ const parseCityIds = (q) => {
 // ==================== USERS ====================
 
 const listUsers = catchAsync(async (req, res, next) => {
+  let cityIds = parseCityIds(req.query.cityIds) ?? (req.query.cityId ? [parseInt(req.query.cityId)] : null);
+  if (req.admin.allowedZones?.length && req.admin.role !== "super_admin") {
+    const zoneCityIds = await adminService.resolveZoneCityIds(req.admin.allowedZones);
+    if (zoneCityIds) cityIds = cityIds ? cityIds.filter(id => zoneCityIds.includes(id)) : zoneCityIds;
+  }
   const result = await adminService.listUsers({
     search: req.query.search,
     status: req.query.status,
-    cityIds: parseCityIds(req.query.cityIds) ?? (req.query.cityId ? [parseInt(req.query.cityId)] : null),
+    cityIds,
     page: parseInt(req.query.page) || 1,
     limit: parseInt(req.query.limit) || 10,
   });
@@ -188,10 +207,15 @@ const deleteUser = catchAsync(async (req, res, next) => {
 // ==================== PARTNERS ====================
 
 const listPartners = catchAsync(async (req, res, next) => {
+  let cityIds = parseCityIds(req.query.cityIds) ?? (req.query.cityId ? [parseInt(req.query.cityId)] : null);
+  if (req.admin.allowedZones?.length && req.admin.role !== "super_admin") {
+    const zoneCityIds = await adminService.resolveZoneCityIds(req.admin.allowedZones);
+    if (zoneCityIds) cityIds = cityIds ? cityIds.filter(id => zoneCityIds.includes(id)) : zoneCityIds;
+  }
   const result = await adminService.listPartners({
     search: req.query.search,
     status: req.query.status,
-    cityIds: parseCityIds(req.query.cityIds) ?? (req.query.cityId ? [parseInt(req.query.cityId)] : null),
+    cityIds,
     page: parseInt(req.query.page) || 1,
     limit: parseInt(req.query.limit) || 10,
   });
@@ -292,11 +316,16 @@ const patchServiceCity = catchAsync(async (req, res, next) => {
 // ==================== BOOKINGS ====================
 
 const listBookings = catchAsync(async (req, res, next) => {
+  let cityIds = parseCityIds(req.query.cityIds) ?? (req.query.cityId ? [parseInt(req.query.cityId)] : null);
+  if (req.admin.allowedZones?.length && req.admin.role !== "super_admin") {
+    const zoneCityIds = await adminService.resolveZoneCityIds(req.admin.allowedZones);
+    if (zoneCityIds) cityIds = cityIds ? cityIds.filter(id => zoneCityIds.includes(id)) : zoneCityIds;
+  }
   const result = await adminService.listBookings({
     status: req.query.status,
     userId: req.query.userId,
     partnerId: req.query.partnerId,
-    cityIds: parseCityIds(req.query.cityIds) ?? (req.query.cityId ? [parseInt(req.query.cityId)] : null),
+    cityIds,
     page: parseInt(req.query.page) || 1,
     limit: parseInt(req.query.limit) || 10,
   });
@@ -533,6 +562,7 @@ const deleteBanner = catchAsync(async (req, res) => {
 const zoneSchema = Joi.object({
   name:        Joi.string().trim().required(),
   description: Joi.string().trim().allow("", null),
+  cityIds:     Joi.array().items(Joi.number().integer()).default([]),
   cities:      Joi.array().items(Joi.string()).default([]),
   pincodes:    Joi.array().items(Joi.string()).default([]),
   isActive:    Joi.boolean().default(true),
@@ -723,7 +753,7 @@ const deletePackageHandler = catchAsync(async (req, res) => {
 });
 
 module.exports = {
-  login, logout,
+  login, logout, devAdminHints,
   listUsers, getUserById, updateUserStatus, deleteUser, createUser,
   listPartners, getPartnerById, updatePartnerStatus, createPartner,
   listCategories, createCategory, updateCategory, deleteCategory,

@@ -4,6 +4,7 @@ const fs = require("fs");
 const path = require("path");
 const Partner = require("../../models/partner.model");
 const PartnerService = require("../../models/partnerService.model");
+const PartnerSkillCategory = require("../../../skills/models/PartnerSkillCategory");
 const Booking = require("../../../bookings/models/booking.model");
 const Service = require("../../../services/models/service.model");
 const User = require("../../../users/models/user.model");
@@ -30,7 +31,8 @@ const saveBase64Image = (base64DataUri, partnerId) => {
 
 const updateProfile = async (partnerId, updateData) => {
   const allowed = ["name", "email", "profilePicture", "bio", "experience", "cityId",
-    "locationLat", "locationLng", "locationAddress", "locationCity", "locationState", "locationPincode"];
+    "locationLat", "locationLng", "locationAddress", "locationCity", "locationState", "locationPincode",
+    "serviceCategoryIds"];
   const filtered = {};
   allowed.forEach((f) => { if (updateData[f] !== undefined) filtered[f] = updateData[f]; });
 
@@ -53,18 +55,25 @@ const updateProfile = async (partnerId, updateData) => {
 
   await Partner.update(filtered, { where: { id: partnerId } });
 
-  // Handle services array
+  // Handle services array (legacy)
   if (Array.isArray(updateData.services) && updateData.services.length > 0) {
     await PartnerService.destroy({ where: { partnerId } });
-
     const partnerServices = updateData.services.map((serviceId) => {
-      if (typeof serviceId === 'number') {
-        return { partnerId, serviceId };
-      }
+      if (typeof serviceId === 'number') return { partnerId, serviceId };
       return { partnerId, serviceId: serviceId.serviceId, categoryId: serviceId.categoryId, price: serviceId.price };
     });
-
     await PartnerService.bulkCreate(partnerServices);
+  }
+
+  // Handle skill category selection
+  if (Array.isArray(updateData.skillCategoryIds)) {
+    await PartnerSkillCategory.destroy({ where: { partnerId } });
+    if (updateData.skillCategoryIds.length > 0) {
+      await PartnerSkillCategory.bulkCreate(
+        updateData.skillCategoryIds.map((skillCategoryId) => ({ partnerId, skillCategoryId })),
+        { ignoreDuplicates: true }
+      );
+    }
   }
 
   const partner = await Partner.findByPk(partnerId);
@@ -72,10 +81,39 @@ const updateProfile = async (partnerId, updateData) => {
   return partner;
 };
 
+const saveBase64Doc = (base64DataUri, partnerId, prefix) => {
+  const matches = base64DataUri.match(/^data:image\/(jpeg|jpg|png|webp);base64,(.+)$/);
+  if (!matches) return null;
+  const ext = matches[1] === "jpeg" ? "jpg" : matches[1];
+  const buffer = Buffer.from(matches[2], "base64");
+  const filename = `${prefix}-${partnerId}-${Date.now()}.${ext}`;
+  const uploadsDir = path.join(__dirname, "../../../../uploads");
+  if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+  fs.writeFileSync(path.join(uploadsDir, filename), buffer);
+  return `/uploads/${filename}`;
+};
+
 const updateDocuments = async (partnerId, documentData) => {
   const fields = {};
-  if (documentData.aadhar !== undefined) fields.aadharUrl = documentData.aadhar;
+
+  if (documentData.aadhar !== undefined) {
+    if (documentData.aadhar && documentData.aadhar.startsWith("data:")) {
+      fields.aadharUrl = saveBase64Doc(documentData.aadhar, partnerId, "aadhar") ?? null;
+    } else {
+      fields.aadharUrl = documentData.aadhar;
+    }
+  }
+
+  if (documentData.agreement !== undefined) {
+    if (documentData.agreement && documentData.agreement.startsWith("data:")) {
+      fields.agreementUrl = saveBase64Doc(documentData.agreement, partnerId, "agreement") ?? null;
+    } else {
+      fields.agreementUrl = documentData.agreement;
+    }
+  }
+
   if (documentData.pan !== undefined) fields.panUrl = documentData.pan;
+
   if (documentData.bankDetails) {
     const bd = documentData.bankDetails;
     if (bd.accountNo !== undefined) fields.bankAccountNo = bd.accountNo;
@@ -83,11 +121,13 @@ const updateDocuments = async (partnerId, documentData) => {
     if (bd.bankName !== undefined) fields.bankName = bd.bankName;
     if (bd.holderName !== undefined) fields.bankHolderName = bd.holderName;
   }
+
   await Partner.update(fields, { where: { id: partnerId } });
   const partner = await Partner.findByPk(partnerId);
   if (!partner) throw new AppError("Partner not found", 404);
   return {
     aadhar: partner.aadharUrl,
+    agreement: partner.agreementUrl,
     pan: partner.panUrl,
     bankDetails: {
       accountNo: partner.bankAccountNo,
@@ -223,7 +263,7 @@ const updateDeviceToken = async (partnerId, fcmToken) => {
   const tokens = Array.from(new Set([...(partner.deviceTokens || []), fcmToken]));
   await partner.update({ fcmToken, deviceTokens: tokens });
 
-  logger.info(`Device token updated for partner ${partnerId}. Token: ${fcmToken.substring(0, 20)}..., Total tokens: ${tokens.length}`);
+  // token update logged implicitly
 
   return { message: "Device token updated" };
 };

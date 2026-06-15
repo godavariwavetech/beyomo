@@ -12,7 +12,7 @@ const logger = require("./logger");
  *   router.get('/route', adminAuthenticate(['super_admin']), handler)
  */
 const adminAuthenticate = (allowedRoles = []) => {
-  return (req, res, next) => {
+  return async (req, res, next) => {
     try {
       const authHeader = req.get("Authorization");
       if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -39,7 +39,17 @@ const adminAuthenticate = (allowedRoles = []) => {
         );
       }
 
-      req.admin = decoded;
+      // Always fetch fresh allowedZones from DB so zone changes take effect without re-login
+      try {
+        const AdminUser = require("../api/adminUsers/models/adminUser.model");
+        const adminRecord = await AdminUser.findByPk(decoded.userId, {
+          attributes: ["allowedZones"],
+        });
+        req.admin = { ...decoded, allowedZones: adminRecord?.allowedZones ?? null };
+      } catch (_) {
+        req.admin = decoded;
+      }
+
       next();
     } catch (error) {
       logger.error(`Admin authentication error: ${error.message}`);

@@ -8,6 +8,9 @@ const adminAuthenticate = require("../../../../utils/adminAuthenticate");
 const uploadsDir = path.join(__dirname, "../../../../uploads");
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
+const publicDir = path.join(__dirname, "../../../../public");
+if (!fs.existsSync(publicDir)) fs.mkdirSync(publicDir, { recursive: true });
+
 const upload = multer({
   storage: multer.diskStorage({
     destination: (req, file, cb) => cb(null, uploadsDir),
@@ -23,8 +26,22 @@ const upload = multer({
       : cb(new Error("Only JPEG, PNG, WebP images allowed"));
   },
 });
+
+// Multer for PDF agreement upload (saved directly as agreement.pdf in public/)
+const agreementUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, publicDir),
+    filename: (req, file, cb) => cb(null, "agreement.pdf"),
+  }),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    file.mimetype === "application/pdf"
+      ? cb(null, true)
+      : cb(new Error("Only PDF files allowed"));
+  },
+});
 const {
-  login, logout,
+  login, logout, devAdminHints,
   listBanners, createBanner, updateBanner, deleteBanner,
   listZones, createZone, updateZone, deleteZone,
   listCities, createCity, updateCity, deleteCity,
@@ -51,9 +68,20 @@ router.post("/upload", adminAuthenticate(), upload.single("image"), (req, res) =
   res.status(200).json({ status: true, url: `${baseUrl}/uploads/${req.file.filename}` });
 });
 
+// Agreement PDF upload/status
+router.post("/settings/agreement", adminAuthenticate(["super_admin", "admin"]), agreementUpload.single("pdf"), (req, res) => {
+  if (!req.file) return res.status(400).json({ status: false, message: "No PDF uploaded" });
+  res.status(200).json({ status: true, message: "Agreement PDF updated successfully" });
+});
+router.get("/settings/agreement/status", adminAuthenticate(), (req, res) => {
+  const exists = fs.existsSync(path.join(publicDir, "agreement.pdf"));
+  res.status(200).json({ status: true, exists });
+});
+
 // Auth (no middleware on login)
 router.post("/auth/login", login);
 router.post("/auth/logout", adminAuthenticate(), logout);
+router.get("/auth/dev-hints", devAdminHints);
 
 // Users
 router.get("/users", adminAuthenticate(), listUsers);

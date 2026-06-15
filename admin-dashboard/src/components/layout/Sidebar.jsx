@@ -3,7 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Users, UserCog, CalendarCheck, Sparkles,
   DollarSign, Tag, Star, Bell, BarChart2, Settings, LogOut, X,
-  ShieldCheck, MessageCircle, Image, Building2, Gift, Package, TrendingUp
+  ShieldCheck, MessageCircle, Building2, Globe, Gift, Package, TrendingUp, BookOpen, Inbox
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { ROLE_LABELS } from '../../data/mockData';
@@ -22,6 +22,7 @@ const NAV_SECTIONS = [
       { path: '/partners',  label: 'Partners',        icon: UserCog,        perm: 'partners' },
       { path: '/bookings',  label: 'Bookings',        icon: CalendarCheck,  perm: 'bookings' },
       { path: '/services',  label: 'Services',        icon: Sparkles,       perm: 'services' },
+      { path: '/skills',    label: 'Skills',          icon: BookOpen,       perm: 'skills' },
     ],
   },
   {
@@ -36,8 +37,9 @@ const NAV_SECTIONS = [
   {
     label: 'Engagement',
     items: [
-      { path: '/reviews',       label: 'Reviews',       icon: Star,     perm: 'reviews' },
-      { path: '/notifications', label: 'Notifications', icon: Bell,     perm: 'notifications' },
+      { path: '/reviews',            label: 'Reviews',            icon: Star,           perm: 'reviews' },
+      { path: '/notifications',      label: 'Notifications',      icon: Bell,           perm: 'notifications' },
+      { path: '/contact-inquiries',  label: 'Contact Inquiries',  icon: Inbox,          perm: 'contacts' },
     ],
   },
   {
@@ -53,8 +55,8 @@ const NAV_SECTIONS = [
   {
     label: 'App Content',
     items: [
-      { path: '/banners', label: 'Banners', icon: Image,      perm: 'banners' },
-      { path: '/cities',  label: 'Cities',  icon: Building2,  perm: 'cities' },
+      { path: '/zones',  label: 'Zones',  icon: Globe,     perm: 'zones'  },
+      { path: '/cities', label: 'Cities', icon: Building2, perm: 'cities' },
     ],
   },
 ];

@@ -31,7 +31,7 @@ const adminLogin = async (email, password) => {
 
   await admin.update({ lastLogin: new Date() });
 
-  const token = signToken({ userId: admin.id, userType: "admin", role: admin.role, email: admin.email });
+  const token = signToken({ userId: admin.id, userType: "admin", role: admin.role, email: admin.email, allowedZones: admin.allowedZones || null });
   const adminData = admin.get({ plain: true });
   delete adminData.password;
   if (!adminData.customPermissions?.length) adminData.customPermissions = null;
@@ -680,6 +680,14 @@ const deleteCity = async (id) => {
 };
 
 // ==================== ZONES ====================
+
+const resolveZoneCityIds = async (zoneIds) => {
+  if (!zoneIds?.length) return null;
+  const zones = await ServiceZone.findAll({ where: { id: zoneIds, isActive: true } });
+  const cityIds = [...new Set(zones.flatMap(z => z.cityIds || []))].filter(Boolean);
+  return cityIds.length ? cityIds : null;
+};
+
 const listZones = async () => ServiceZone.findAll({ order: [["createdAt", "ASC"]] });
 const createZone = async (data) => ServiceZone.create(data);
 const updateZone = async (id, data) => {
@@ -714,7 +722,7 @@ module.exports = {
   listFeedback, updateFeedbackStatus,
   listEarnings,
   listBanners, createBanner, updateBanner, deleteBanner,
-  listZones, createZone, updateZone, deleteZone,
+  resolveZoneCityIds, listZones, createZone, updateZone, deleteZone,
   listCities, createCity, updateCity, deleteCity,
   listOffers, createOffer, updateOffer, deleteOffer,
 };

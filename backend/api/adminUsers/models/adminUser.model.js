@@ -2,6 +2,12 @@
 const bcrypt = require("bcryptjs");
 const { sequelize } = require("../../../utils/dbconnect");
 
+const parseJsonArr = (val) => {
+  if (!val) return null;
+  if (Array.isArray(val)) return val;
+  try { const p = JSON.parse(val); return Array.isArray(p) ? p : null; } catch { return null; }
+};
+
 const AdminUser = sequelize.define("AdminUser", {
   id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
   name: { type: DataTypes.STRING(100), allowNull: false },
@@ -11,8 +17,26 @@ const AdminUser = sequelize.define("AdminUser", {
     type: DataTypes.ENUM("super_admin", "admin", "manager", "analyst", "support"),
     defaultValue: "support",
   },
-  customPermissions: { type: DataTypes.JSON, defaultValue: [] },
-  allowedCities:     { type: DataTypes.JSON, allowNull: true, defaultValue: null },
+  customPermissions: {
+    type: DataTypes.JSON,
+    defaultValue: [],
+    get() { return parseJsonArr(this.getDataValue("customPermissions")) ?? []; },
+    set(val) { this.setDataValue("customPermissions", Array.isArray(val) ? val : []); },
+  },
+  allowedCities: {
+    type: DataTypes.JSON,
+    allowNull: true,
+    defaultValue: null,
+    get() { return parseJsonArr(this.getDataValue("allowedCities")); },
+    set(val) { this.setDataValue("allowedCities", Array.isArray(val) ? val : null); },
+  },
+  allowedZones: {
+    type: DataTypes.JSON,
+    allowNull: true,
+    defaultValue: null,
+    get() { return parseJsonArr(this.getDataValue("allowedZones")); },
+    set(val) { this.setDataValue("allowedZones", Array.isArray(val) ? val : null); },
+  },
   fcmToken:          { type: DataTypes.TEXT, allowNull: true, defaultValue: null },
   status: { type: DataTypes.ENUM("active", "inactive"), defaultValue: "active" },
   lastLogin: { type: DataTypes.DATE, allowNull: true },

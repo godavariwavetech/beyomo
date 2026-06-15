@@ -1,4 +1,5 @@
 const express = require("express");
+const path = require("path");
 const router = express.Router();
 const partnerAuthenticate = require("../../../../utils/partnerAuthenticate");
 const {
@@ -17,6 +18,14 @@ const {
   proposeServiceChanges,
   sendTestNotification,
 } = require("../../controllers/v1/partners.controller");
+
+// Public: agreement PDF download (no auth required)
+router.get("/agreement.pdf", (req, res) => {
+  const pdfPath = path.join(__dirname, "../../../../public/agreement.pdf");
+  res.download(pdfPath, "Beyomo_Partner_Agreement.pdf", (err) => {
+    if (err) res.status(404).json({ status: false, message: "Agreement PDF not found" });
+  });
+});
 
 router.use(partnerAuthenticate);
 

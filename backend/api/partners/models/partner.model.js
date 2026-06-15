@@ -17,6 +17,13 @@ const Partner = sequelize.define("Partner", {
   cityId: { type: DataTypes.INTEGER, allowNull: true },
   locationPincode: { type: DataTypes.STRING(10), allowNull: true },
   aadharUrl: { type: DataTypes.TEXT, allowNull: true },
+  agreementUrl: { type: DataTypes.TEXT, allowNull: true },
+  serviceCategoryIds: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+    get() { try { return JSON.parse(this.getDataValue('serviceCategoryIds') || '[]'); } catch { return []; } },
+    set(val) { this.setDataValue('serviceCategoryIds', JSON.stringify(val || [])); },
+  },
   panUrl: { type: DataTypes.TEXT, allowNull: true },
   bankAccountNo: { type: DataTypes.STRING(30), allowNull: true },
   bankIfsc: { type: DataTypes.STRING(20), allowNull: true },

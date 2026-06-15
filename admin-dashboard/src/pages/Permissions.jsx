@@ -1,23 +1,23 @@
 import React, { useState, useEffect } from 'react';
-import { ShieldCheck, Plus, Edit2, Trash2, User, CheckCircle, XCircle, MapPin } from 'lucide-react';
+import { ShieldCheck, Plus, Edit2, Trash2, User, CheckCircle, XCircle, Globe } from 'lucide-react';
 import { ROLE_LABELS, ROLE_COLORS, ROLE_PERMISSIONS, ALL_MODULES } from '../data/mockData';
 import { Badge } from '../components/common/Badge';
 import Modal from '../components/common/Modal';
 import { useAuth } from '../context/AuthContext';
 import { useAdminUsers } from '../hooks/useAdminUsers';
-import { useCityFilter } from '../context/CityContext';
+import { useZones } from '../hooks/useZones';
 
 const MODULE_LABELS = {
   dashboard:'Dashboard', users:'Users', partners:'Partners', bookings:'Bookings',
   services:'Services', earnings:'Earnings', coupons:'Coupons', reviews:'Reviews',
   notifications:'Notifications', reports:'Reports', settings:'Settings',
-  permissions:'Permissions', feedback:'App Feedback', banners:'Banners', zones:'Zones', cities:'Cities',
+  permissions:'Permissions', feedback:'App Feedback', zones:'Zones', cities:'Cities',
 };
 
 const MODULE_ICONS = {
   dashboard:'📊', users:'👥', partners:'🤝', bookings:'📅', services:'✨',
   earnings:'💰', coupons:'🏷️', reviews:'⭐', notifications:'🔔', reports:'📈',
-  settings:'⚙️', permissions:'🛡️', feedback:'💬', banners:'🖼️', zones:'🗺️', cities:'🏙️',
+  settings:'⚙️', permissions:'🛡️', feedback:'💬', zones:'🗺️', cities:'🏙️',
 };
 
 const parseJSON = (val) => {
@@ -29,18 +29,20 @@ const parseJSON = (val) => {
 export default function Permissions() {
   const { user, showToast } = useAuth();
   const { fetchList, create, update, remove } = useAdminUsers();
-  const { cities } = useCityFilter();
-  const [admins, setAdmins]           = useState([]);
-  const [addingAdmin, setAddingAdmin] = useState(false);
+  const { fetchList: fetchZones } = useZones();
+  const [admins, setAdmins]             = useState([]);
+  const [zones, setZones]               = useState([]);
+  const [addingAdmin, setAddingAdmin]   = useState(false);
   const [editingAdmin, setEditingAdmin] = useState(null);
-  const [adminForm, setAdminForm]     = useState({});
-  const [customPerms, setCustomPerms] = useState(null);
-  const [useCustom, setUseCustom]     = useState(false);
-  const [allowAllCities, setAllowAllCities] = useState(true);
-  const [selectedCities, setSelectedCities] = useState([]);
+  const [adminForm, setAdminForm]       = useState({});
+  const [customPerms, setCustomPerms]   = useState(null);
+  const [useCustom, setUseCustom]       = useState(false);
+  const [allowAllZones, setAllowAllZones]   = useState(true);
+  const [selectedZones, setSelectedZones]   = useState([]);
 
   useEffect(() => {
     fetchList().then(res => { if (res.ok) setAdmins(res.data?.data ?? []); });
+    fetchZones().then(res => { if (res.ok) setZones(res.data?.data ?? []); });
   }, []);
 
   const isSuperAdmin = user?.role === 'super_admin';
@@ -50,8 +52,8 @@ export default function Permissions() {
     const defaultPerms = ROLE_PERMISSIONS['support'] || [];
     setCustomPerms([...defaultPerms]);
     setUseCustom(false);
-    setAllowAllCities(true);
-    setSelectedCities([]);
+    setAllowAllZones(true);
+    setSelectedZones([]);
     setAddingAdmin(true);
   };
 
@@ -61,9 +63,9 @@ export default function Permissions() {
     const perms = parseJSON(a.customPermissions) || ROLE_PERMISSIONS[a.role] || [];
     setCustomPerms([...perms]);
     setUseCustom(!!parseJSON(a.customPermissions));
-    const ac = parseJSON(a.allowedCities);
-    setAllowAllCities(!ac || ac.length === 0);
-    setSelectedCities(ac || []);
+    const az = parseJSON(a.allowedZones);
+    setAllowAllZones(!az || az.length === 0);
+    setSelectedZones(az || []);
   };
 
   const handleRoleChange = (role) => {
@@ -82,19 +84,19 @@ export default function Permissions() {
       showToast('Please fill all required fields.', 'danger'); return;
     }
     const finalPerms = useCustom ? customPerms : undefined;
-    const finalCities = allowAllCities ? null : (selectedCities.length ? selectedCities : null);
+    const finalZones = allowAllZones ? null : (selectedZones.length ? selectedZones : null);
     if (editingAdmin) {
       const id = editingAdmin._id ?? editingAdmin.id;
-      const res = await update(id, {...adminForm, customPermissions: finalPerms, allowedCities: finalCities}, 'put');
+      const res = await update(id, {...adminForm, customPermissions: finalPerms, allowedZones: finalZones}, 'put');
       if (res.ok) {
-        setAdmins(prev => prev.map(a => (a._id ?? a.id) === id ? {...a, ...adminForm, customPermissions: finalPerms ?? null, allowedCities: finalCities} : a));
+        setAdmins(prev => prev.map(a => (a._id ?? a.id) === id ? {...a, ...adminForm, customPermissions: finalPerms ?? null, allowedZones: finalZones} : a));
         showToast('Admin updated!', 'success');
         setEditingAdmin(null);
       } else {
         showToast(res.error, 'danger');
       }
     } else {
-      const res = await create({...adminForm, customPermissions: finalPerms, allowedCities: finalCities});
+      const res = await create({...adminForm, customPermissions: finalPerms, allowedZones: finalZones});
       if (res.ok) {
         fetchList().then(r => { if (r.ok) setAdmins(r.data?.data ?? []); });
         showToast('Admin account created!', 'success');
@@ -160,7 +162,7 @@ export default function Permissions() {
                 <th>Role</th>
                 <th>Permission Type</th>
                 <th>Module Access</th>
-                <th>City Access</th>
+                <th>Zone Access</th>
                 <th>Status</th>
                 <th>Actions</th>
               </tr>
@@ -217,16 +219,16 @@ export default function Permissions() {
                     </td>
                     <td>
                       {(() => {
-                        const ac = parseJSON(a.allowedCities);
-                        return !ac?.length ? (
-                          <span style={{ fontSize:11, color:'var(--c-text-muted)', fontWeight:500 }}>All Cities</span>
+                        const az = parseJSON(a.allowedZones);
+                        return !az?.length ? (
+                          <span style={{ fontSize:11, color:'var(--c-text-muted)', fontWeight:500 }}>All Zones</span>
                         ) : (
                           <div style={{ display:'flex', flexWrap:'wrap', gap:3 }}>
-                            {ac.map(cid => {
-                              const city = cities.find(c => c.id === cid);
-                              return city ? (
-                                <span key={cid} style={{ fontSize:10, fontWeight:600, padding:'2px 6px', borderRadius:'var(--r-full)', background:'var(--c-brand-teal-bg,#e0f7f4)', color:'var(--c-primary)' }}>
-                                  {city.name}
+                            {az.map(zid => {
+                              const zone = zones.find(z => z.id === zid);
+                              return zone ? (
+                                <span key={zid} style={{ fontSize:10, fontWeight:600, padding:'2px 6px', borderRadius:'var(--r-full)', background:'var(--c-brand-teal-bg,#e0f7f4)', color:'var(--c-primary)', display:'flex', alignItems:'center', gap:3 }}>
+                                  <Globe size={9}/> {zone.name}
                                 </span>
                               ) : null;
                             })}
@@ -394,53 +396,55 @@ export default function Permissions() {
             </div>
           )}
 
-          {/* City Access */}
-          {cities.length > 0 && (
+          {/* Zone Access */}
+          {zones.length > 0 && (
             <>
               <div className="divider"/>
               <div className="form-section-title" style={{ display:'flex', alignItems:'center', gap:6 }}>
-                <MapPin size={14}/> City Access
+                <Globe size={14}/> Zone Access
               </div>
               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', background:'var(--c-border-light)', borderRadius:'var(--r-md)', padding:'12px 16px', marginBottom:12 }}>
                 <div>
-                  <div style={{ fontWeight:600, fontSize:14 }}>Restrict to Specific Cities</div>
+                  <div style={{ fontWeight:600, fontSize:14 }}>Restrict to Specific Zones</div>
                   <div style={{ fontSize:12, color:'var(--c-text-secondary)', marginTop:2 }}>
-                    {allowAllCities ? 'This admin can view data from all cities' : 'Select which cities this admin can access'}
+                    {allowAllZones ? 'This admin can view data from all zones' : 'Select which zones this admin can access'}
                   </div>
                 </div>
                 <label className="toggle-switch">
-                  <input type="checkbox" checked={!allowAllCities} onChange={e => {
-                    setAllowAllCities(!e.target.checked);
-                    if (!e.target.checked) setSelectedCities([]);
+                  <input type="checkbox" checked={!allowAllZones} onChange={e => {
+                    setAllowAllZones(!e.target.checked);
+                    if (!e.target.checked) setSelectedZones([]);
                   }}/>
                   <span className="toggle-slider"/>
                 </label>
               </div>
 
-              {!allowAllCities && (
-                <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:8 }}>
-                  {cities.map(city => {
-                    const checked = selectedCities.includes(city.id);
+              {!allowAllZones && (
+                <div style={{ display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:8 }}>
+                  {zones.filter(z => z.isActive).map(zone => {
+                    const checked = selectedZones.includes(zone.id);
                     return (
                       <div
-                        key={city.id}
-                        onClick={() => setSelectedCities(prev =>
-                          prev.includes(city.id) ? prev.filter(id => id !== city.id) : [...prev, city.id]
+                        key={zone.id}
+                        onClick={() => setSelectedZones(prev =>
+                          prev.includes(zone.id) ? prev.filter(id => id !== zone.id) : [...prev, zone.id]
                         )}
                         style={{
                           border:`1.5px solid ${checked ? 'var(--c-success)' : 'var(--c-border)'}`,
-                          borderRadius:'var(--r-md)', padding:'10px 12px',
+                          borderRadius:'var(--r-md)', padding:'12px 14px',
                           background: checked ? 'var(--c-success-bg)' : 'var(--c-border-light)',
                           cursor:'pointer', transition:'var(--t-fast)',
-                          display:'flex', alignItems:'center', gap:8,
+                          display:'flex', alignItems:'flex-start', gap:10,
                         }}
                       >
-                        <MapPin size={14} style={{ color: checked ? 'var(--c-success)' : 'var(--c-text-muted)', flexShrink:0 }}/>
+                        <Globe size={16} style={{ color: checked ? 'var(--c-success)' : 'var(--c-text-muted)', flexShrink:0, marginTop:1 }}/>
                         <div style={{ flex:1, minWidth:0 }}>
-                          <div style={{ fontSize:12, fontWeight:600, color: checked ? 'var(--c-success-text)' : 'var(--c-text-secondary)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
-                            {city.name}
+                          <div style={{ fontSize:13, fontWeight:700, color: checked ? 'var(--c-success-text)' : 'var(--c-text-secondary)' }}>
+                            {zone.name}
                           </div>
-                          {city.state && <div style={{ fontSize:10, color:'var(--c-text-muted)' }}>{city.state}</div>}
+                          <div style={{ fontSize:11, color:'var(--c-text-muted)', marginTop:2 }}>
+                            {(() => { const n = parseJSON(zone.cityIds)?.length ?? 0; return `${n} ${n === 1 ? 'city' : 'cities'}`; })()}
+                          </div>
                         </div>
                         {checked
                           ? <CheckCircle size={14} style={{ color:'var(--c-success)', flexShrink:0 }}/>
@@ -451,9 +455,9 @@ export default function Permissions() {
                   })}
                 </div>
               )}
-              {!allowAllCities && (
+              {!allowAllZones && (
                 <div style={{ fontSize:12, color:'var(--c-text-secondary)', textAlign:'center', marginTop:4 }}>
-                  {selectedCities.length} of {cities.length} cities selected
+                  {selectedZones.length} of {zones.filter(z => z.isActive).length} zones selected
                 </div>
               )}
             </>

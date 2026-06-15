@@ -7,16 +7,35 @@ const {
   logoutService,
 } = require("../../services/v1/auth.service");
 const Joi = require("joi");
+const fs = require("fs");
+const path = require("path");
 const Partner = require("../../../partners/models/partner.model");
+const PartnerSkillCategory = require("../../../skills/models/PartnerSkillCategory");
+
+const saveBase64 = (dataUri, prefix) => {
+  const m = dataUri.match(/^data:image\/(jpeg|jpg|png|webp);base64,(.+)$/);
+  if (!m) return null;
+  const ext = m[1] === "jpeg" ? "jpg" : m[1];
+  const buf = Buffer.from(m[2], "base64");
+  const fname = `${prefix}-${Date.now()}.${ext}`;
+  const dir = path.join(__dirname, "../../../../uploads");
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, fname), buf);
+  return `/uploads/${fname}`;
+};
 
 const partnerApplySchema = Joi.object({
   name: Joi.string().trim().min(2).required(),
   phone: Joi.string().pattern(/^[6-9]\d{9}$/).required().messages({ "string.pattern.base": "Enter a valid 10-digit Indian mobile number" }),
   email: Joi.string().email().allow("", null),
+  cityId: Joi.number().integer().positive().allow(null),
   city: Joi.string().trim().allow("", null),
   experience: Joi.number().integer().min(0).default(0),
-  categories: Joi.array().items(Joi.alternatives().try(Joi.string(), Joi.number())).default([]),
-  skills: Joi.array().items(Joi.string()).default([]),
+  serviceCategoryIds: Joi.array().items(Joi.number().integer().positive()).default([]),
+  skillCategoryIds: Joi.array().items(Joi.number().integer().positive()).default([]),
+  selfie: Joi.string().allow("", null),
+  aadhar: Joi.string().allow("", null),
+  agreement: Joi.string().allow("", null),
 });
 
 const sendOtpSchema = Joi.object({
@@ -130,14 +149,30 @@ const partnerApply = catchAsync(async (req, res, next) => {
     return next(new AppError("An application with this phone number already exists.", 400));
   }
 
-  await Partner.create({
+  const partnerData = {
     name: value.name,
     phone: value.phone,
     email: value.email || null,
+    cityId: value.cityId || null,
     locationCity: value.city || null,
     experience: value.experience || 0,
     status: "pending",
-  });
+  };
+
+  if (value.selfie?.startsWith("data:")) partnerData.profilePicture = saveBase64(value.selfie, "selfie") ?? null;
+  if (value.aadhar?.startsWith("data:")) partnerData.aadharUrl = saveBase64(value.aadhar, "aadhar") ?? null;
+  if (value.agreement?.startsWith("data:")) partnerData.agreementUrl = saveBase64(value.agreement, "agreement") ?? null;
+  if (value.serviceCategoryIds?.length > 0) partnerData.serviceCategoryIds = value.serviceCategoryIds;
+
+  const partner = await Partner.create(partnerData);
+
+  // Save skill category selections
+  if (Array.isArray(value.skillCategoryIds) && value.skillCategoryIds.length > 0) {
+    await PartnerSkillCategory.bulkCreate(
+      value.skillCategoryIds.map(skillCategoryId => ({ partnerId: partner.id, skillCategoryId })),
+      { ignoreDuplicates: true }
+    );
+  }
 
   res.status(201).json({
     status: true,

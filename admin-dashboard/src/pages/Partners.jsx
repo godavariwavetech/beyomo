@@ -3,6 +3,7 @@ import { Search, UserPlus, Download, Eye, Ban, CheckCircle, ShieldCheck, Phone, 
 import { usePartners } from '../hooks/usePartners';
 import { useAuth } from '../context/AuthContext';
 import { useCityFilter } from '../context/CityContext';
+import api from '../services/api';
 import { Badge, StarRating } from '../components/common/Badge';
 import Modal from '../components/common/Modal';
 
@@ -459,7 +460,11 @@ export default function Partners() {
                   <td><Badge status={p.status} /></td>
                   <td>
                     <div style={{ display:'flex', gap:4 }}>
-                      <button className="btn btn-ghost btn-icon" title="View" onClick={() => { setSelected(p); setTab('info'); }}><Eye size={15}/></button>
+                      <button className="btn btn-ghost btn-icon" title="View" onClick={async () => {
+                        setSelected(p); setTab('info');
+                        const res = await action('get', `/api/v1/admin/partners/${p.id}`);
+                        if (res.ok) setSelected(normalizePartner(res.data?.data ?? res.data));
+                      }}><Eye size={15}/></button>
                       {p.status === 'pending' && (<>
                         <button className="btn btn-ghost btn-icon" title="Approve" onClick={() => verifyPartner(p.id)} style={{ color:'var(--c-success)' }}><ShieldCheck size={15}/></button>
                         <button className="btn btn-ghost btn-icon" title="Reject" onClick={() => rejectPartner(p.id)} style={{ color:'var(--c-danger)' }}><XCircle size={15}/></button>
@@ -588,7 +593,7 @@ export default function Partners() {
             </div>
 
             <div className="detail-tabs">
-              {['info','jobs','earnings'].map(t => (
+              {['info','documents','jobs','earnings'].map(t => (
                 <div key={t} className={`detail-tab ${tab===t?'active':''}`} onClick={() => setTab(t)}>
                   {t.charAt(0).toUpperCase() + t.slice(1)}
                 </div>
@@ -618,6 +623,39 @@ export default function Partners() {
                   ))}
                 </div>
               </>
+            )}
+
+            {tab === 'documents' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 20, padding: '8px 0' }}>
+                {[
+                  { label: 'Selfie / Profile Photo', key: 'profilePicture' },
+                  { label: 'Aadhar Card', key: 'aadharUrl' },
+                  { label: 'Signed Agreement', key: 'agreementUrl' },
+                ].map(({ label, key }) => (
+                  <div key={key}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--c-text-secondary)', marginBottom: 8 }}>{label}</div>
+                    {selected[key] ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <img
+                          src={`${api.defaults.baseURL}${selected[key]}`}
+                          alt={label}
+                          style={{ width: 180, height: 110, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--c-border)' }}
+                          onError={e => { e.target.style.display = 'none'; }}
+                        />
+                        <a
+                          href={`${api.defaults.baseURL}${selected[key]}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="btn btn-outline btn-sm">
+                          View Full
+                        </a>
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 13, color: 'var(--c-text-muted)', fontStyle: 'italic' }}>Not uploaded yet</div>
+                    )}
+                  </div>
+                ))}
+              </div>
             )}
 
             {tab === 'jobs' && (

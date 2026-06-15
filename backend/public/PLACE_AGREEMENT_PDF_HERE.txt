@@ -1,0 +1,3 @@
+Place your "agreement.pdf" file in this directory (backend/public/agreement.pdf).
+Partners will be able to download it from the registration screen.
+The route is: GET /api/v1/partners/agreement.pdf

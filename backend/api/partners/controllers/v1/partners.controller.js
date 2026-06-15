@@ -42,11 +42,14 @@ const updateProfileSchema = Joi.object({
       })
     )
   ),
+  skillCategoryIds: Joi.array().items(Joi.number().integer().positive()),
+  serviceCategoryIds: Joi.array().items(Joi.number().integer().positive()),
 });
 
 const documentsSchema = Joi.object({
-  aadhar: Joi.string().uri().allow(null, ""),
-  pan: Joi.string().uri().allow(null, ""),
+  aadhar: Joi.string().allow(null, ""),   // base64 data URI or URL
+  agreement: Joi.string().allow(null, ""), // base64 data URI or URL
+  pan: Joi.string().allow(null, ""),
   bankDetails: Joi.object({
     accountNo: Joi.string().trim(),
     ifsc: Joi.string().trim().uppercase(),

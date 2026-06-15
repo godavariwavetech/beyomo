@@ -2,16 +2,18 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Shield, Users, BarChart2, Bell, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { ADMIN_USERS, ROLE_LABELS } from '../data/mockData';
+import { ROLE_LABELS, ROLE_COLORS } from '../data/mockData';
+import api from '../services/api';
 
 export default function Login() {
   const { login, user } = useAuth();
   const navigate = useNavigate();
-  const [email, setEmail]       = useState('');
-  const [password, setPassword] = useState('');
-  const [showPass, setShowPass]  = useState(false);
-  const [error, setError]       = useState('');
-  const [loading, setLoading]   = useState(false);
+  const [email, setEmail]         = useState('');
+  const [password, setPassword]   = useState('');
+  const [showPass, setShowPass]   = useState(false);
+  const [error, setError]         = useState('');
+  const [loading, setLoading]     = useState(false);
+  const [adminHints, setAdminHints] = useState([]);
 
   useEffect(() => {
     if (user) {
@@ -19,6 +21,9 @@ export default function Login() {
     } else {
       localStorage.removeItem('adminToken');
       localStorage.removeItem('adminUser');
+      api.get('/api/v1/admin/auth/dev-hints')
+        .then(r => setAdminHints(r.data?.data ?? []))
+        .catch(() => {});
     }
   }, [user, navigate]);
 
@@ -126,14 +131,32 @@ export default function Login() {
         </form>
 
         <div className="login-creds">
-          <h4>Demo Credentials (click to fill)</h4>
-          {ADMIN_USERS.map(u => (
-            <div key={u.id} className="login-cred-item" onClick={() => fillCred(u)}>
-              <span className="cred-role">{ROLE_LABELS[u.role]}</span>
-              <span className="cred-email">{u.email}</span>
-            </div>
-          ))}
-          <div style={{ fontSize: 11, color: 'var(--c-text-muted)', marginTop: 8 }}>Password: <strong>Admin@123</strong></div>
+          <h4>Admin Accounts (click to fill)</h4>
+          {adminHints.length === 0 ? (
+            <div style={{ fontSize: 12, color: 'var(--c-text-muted)', padding: '6px 0' }}>Loading…</div>
+          ) : (
+            adminHints.map(u => {
+              const rc = ROLE_COLORS[u.role] || {};
+              return (
+                <div
+                  key={u.id}
+                  className="login-cred-item"
+                  onClick={() => fillCred({ email: u.email, password: u.role === 'super_admin' ? 'Admin@123' : 'beyomo@123' })}
+                >
+                  <span className="cred-role" style={{ background: rc.bg, color: rc.text }}>
+                    {ROLE_LABELS[u.role] || u.role}
+                  </span>
+                  <span className="cred-email">{u.email}</span>
+                  {u.status === 'inactive' && (
+                    <span style={{ fontSize: 10, color: 'var(--c-danger)', fontWeight: 600, marginLeft: 'auto' }}>inactive</span>
+                  )}
+                </div>
+              );
+            })
+          )}
+          <div style={{ fontSize: 11, color: 'var(--c-text-muted)', marginTop: 8 }}>
+            Super Admin: <strong>Admin@123</strong> &nbsp;·&nbsp; Others: <strong>beyomo@123</strong>
+          </div>
         </div>
       </div>
     </div>
