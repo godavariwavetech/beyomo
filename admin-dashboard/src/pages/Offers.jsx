@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2, Gift, Search } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useCityFilter } from '../context/CityContext';
 import { Badge } from '../components/common/Badge';
 import Modal from '../components/common/Modal';
+import RevenueSplitFields from '../components/common/RevenueSplitFields';
 import api from '../services/api';
 
 const TRIGGER_LABELS = {
@@ -29,10 +31,14 @@ const emptyForm = () => ({
   validFrom: '', validTill: '',
   isActive: true,
   cityId: '', maxUses: '',
+  adminPercent: 20,
+  partnerPercent: 80,
+  gstPercent: 5,
 });
 
 export default function Offers() {
   const { showToast } = useAuth();
+  const { cityParam } = useCityFilter();
   const [offers, setOffers]           = useState([]);
   const [services, setServices]       = useState([]);
   const [categories, setCategories]   = useState([]);
@@ -49,7 +55,6 @@ export default function Offers() {
   const [deleteTarget, setDeleteTarget] = useState(null);
 
   useEffect(() => {
-    fetchOffers();
     api.get('/api/v1/admin/services', { params: { limit: 500 } })
       .then(r => setServices(r.data?.data?.data ?? r.data?.data ?? []))
       .catch(() => {});
@@ -63,11 +68,14 @@ export default function Offers() {
 
   const fetchOffers = () => {
     setLoading(true);
-    api.get('/api/v1/admin/offers')
+    const params = cityParam ? { cityIds: cityParam } : {};
+    api.get('/api/v1/admin/offers', { params })
       .then(r => setOffers(r.data?.data?.data ?? r.data?.data ?? []))
       .catch(() => showToast('Failed to load offers', 'danger'))
       .finally(() => setLoading(false));
   };
+
+  useEffect(() => { fetchOffers(); }, [cityParam]);
 
   const openCreate = () => {
     setEditTarget(null);
@@ -94,6 +102,9 @@ export default function Offers() {
       isActive: offer.isActive ?? true,
       cityId: offer.cityId ? String(offer.cityId) : '',
       maxUses: offer.maxUses ? String(offer.maxUses) : '',
+      adminPercent: parseFloat(offer.adminPercent ?? 20),
+      partnerPercent: parseFloat(offer.partnerPercent ?? 80),
+      gstPercent: parseFloat(offer.gstPercent ?? 5),
     });
     setModal(true);
   };
@@ -124,6 +135,9 @@ export default function Offers() {
         isActive: form.isActive,
         cityId: form.cityId ? Number(form.cityId) : null,
         maxUses: form.maxUses ? Number(form.maxUses) : null,
+        adminPercent: parseFloat(form.adminPercent ?? 20),
+        partnerPercent: parseFloat(form.partnerPercent ?? 80),
+        gstPercent: parseFloat(form.gstPercent ?? 5),
       };
       if (editTarget) {
         await api.patch(`/api/v1/admin/offers/${editTarget.id}`, payload);
@@ -436,6 +450,8 @@ export default function Offers() {
             <input type="checkbox" checked={form.isActive} onChange={e => setForm(f => ({ ...f, isActive: e.target.checked }))} />
             <span style={{ fontSize: 14 }}>Active (visible to users immediately)</span>
           </label>
+
+          <RevenueSplitFields form={form} setForm={setForm} />
         </div>
       </Modal>
 

@@ -11,7 +11,6 @@ import {
   Platform,
   ScrollView,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -20,6 +19,8 @@ import {useDispatch, useSelector} from 'react-redux';
 import {fonts} from '../../config/theme';
 import {updatePartnerProfile} from '../../redux/reducers/partner';
 import type {AppDispatch, RootState} from '../../redux/store';
+import {useAppAlert} from '../../hooks/useAppAlert';
+import AppAlertModal from '../../components/AppAlertModal/AppAlertModal';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
@@ -36,10 +37,11 @@ const EditProfileScreen = ({navigation}: {navigation: any}) => {
   const [city, setCity] = useState(profile?.locationCity ?? profile?.city ?? '');
   const [state, setState] = useState(profile?.locationState ?? profile?.state ?? '');
   const [loading, setLoading] = useState(false);
+  const {alertConfig, showAlert, hideAlert} = useAppAlert();
 
   const handleSave = async () => {
     if (!name.trim()) {
-      Alert.alert('Required', 'Name cannot be empty.');
+      showAlert('Required', 'Name cannot be empty.');
       return;
     }
     setLoading(true);
@@ -57,11 +59,11 @@ const EditProfileScreen = ({navigation}: {navigation: any}) => {
         }),
       );
       if (updatePartnerProfile.fulfilled.match(result)) {
-        Alert.alert('Success', 'Profile updated successfully.', [
+        showAlert('Success', 'Profile updated successfully.', [
           {text: 'OK', onPress: () => navigation.goBack()},
         ]);
       } else {
-        Alert.alert('Error', (result.payload as string) ?? 'Failed to update profile.');
+        showAlert('Error', (result.payload as string) ?? 'Failed to update profile.');
       }
     } finally {
       setLoading(false);
@@ -162,6 +164,8 @@ const EditProfileScreen = ({navigation}: {navigation: any}) => {
 
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <AppAlertModal config={alertConfig} onRequestClose={hideAlert} />
     </LinearGradient>
   );
 };

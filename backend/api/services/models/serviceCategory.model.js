@@ -12,7 +12,7 @@ const ServiceCategory = sequelize.define("ServiceCategory", {
   // Revenue split — adminPercent + partnerPercent should equal 100
   adminPercent:   { type: DataTypes.DECIMAL(5, 2), allowNull: false, defaultValue: 20.00 },
   partnerPercent: { type: DataTypes.DECIMAL(5, 2), allowNull: false, defaultValue: 80.00 },
-  gstPercent:     { type: DataTypes.DECIMAL(5, 2), allowNull: false, defaultValue: 18.00 },
+  gstPercent:     { type: DataTypes.DECIMAL(5, 2), allowNull: false, defaultValue: 5.00 },
   // Array of city IDs this category is active in; empty/null = global
   cityIds: {
     type: DataTypes.JSON,

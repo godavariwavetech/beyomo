@@ -8,6 +8,9 @@ const PartnerSkillCategory = require("../../../skills/models/PartnerSkillCategor
 const Booking = require("../../../bookings/models/booking.model");
 const Service = require("../../../services/models/service.model");
 const User = require("../../../users/models/user.model");
+const ServicePackage = require("../../../packages/models/package.model");
+const settlementsService = require("../../../settlements/services/v1/settlements.service");
+const { resolveRatesForBooking } = require("../../../../utils/revenueSplit");
 const AppError = require("../../../../utils/errorHandlers/appError");
 const logger = require("../../../../utils/logger");
 
@@ -144,14 +147,34 @@ const getDashboard = async (partnerId) => {
   });
   if (!partner) throw new AppError("Partner not found", 404);
 
+  const pidInt = parseInt(partnerId);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
 
-  const [totalBookings, pendingBookings, completedToday, totalCompleted] = await Promise.all([
-    Booking.count({ where: { partnerId } }),
-    Booking.count({ where: { partnerId, status: "pending" } }),
-    Booking.count({ where: { partnerId, status: "completed", completedAt: { [Op.gte]: today } } }),
-    Booking.count({ where: { partnerId, status: "completed" } }),
+  // Include bookings where this partner is primary OR has claimed services (multi-partner) —
+  // matches the same condition used by getBookings, so the counts here are consistent with
+  // what actually shows up in the partner's Jobs list.
+  const partnerCondition = {
+    [Op.or]: [
+      { partnerId: pidInt },
+      literal(
+        `JSON_CONTAINS(JSON_EXTRACT(COALESCE(\`Booking\`.\`services\`, '[]'), '$[*].assignedPartnerId'), '${pidInt}')`
+      ),
+    ],
+  };
+
+  const [totalBookings, todayJobs, completedToday, totalCompleted] = await Promise.all([
+    Booking.count({ where: partnerCondition }),
+    // "Today Jobs" = this partner's active (not cancelled) jobs scheduled for today —
+    // NOT status: "pending", since an assigned booking is never "pending" (that status
+    // means unassigned), so that query always returned 0 regardless of actual workload.
+    Booking.count({
+      where: { ...partnerCondition, scheduledAt: { [Op.gte]: today, [Op.lt]: tomorrow }, status: { [Op.ne]: "cancelled" } },
+    }),
+    Booking.count({ where: { ...partnerCondition, status: "completed", completedAt: { [Op.gte]: today } } }),
+    Booking.count({ where: { ...partnerCondition, status: "completed" } }),
   ]);
 
   return {
@@ -159,7 +182,7 @@ const getDashboard = async (partnerId) => {
     pendingEarnings: partner.pendingEarnings,
     ratings: { average: partner.ratingsAverage, count: partner.ratingsCount },
     status: partner.status,
-    bookingStats: { total: totalBookings, pending: pendingBookings, completedToday, totalCompleted },
+    bookingStats: { total: totalBookings, todayJobs, completedToday, totalCompleted },
   };
 };
 
@@ -193,7 +216,24 @@ const getBookings = async (partnerId, page = 1, limit = 10, status) => {
   return { data: bookings, pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } };
 };
 
-const updateBookingStatus = async (partnerId, bookingId, status) => {
+const getBookingById = async (partnerId, bookingId) => {
+  const booking = await Booking.findByPk(bookingId, {
+    include: [
+      { model: User, as: "user", attributes: ["name", "phone", "profilePicture"] },
+      { model: Service, as: "service", attributes: ["name", "image", "basePrice", "duration"] },
+    ],
+  });
+  if (!booking) throw new AppError("Booking not found", 404);
+
+  const svcs = (() => { const s = booking.services; if (Array.isArray(s)) return s; if (typeof s === 'string') { try { return JSON.parse(s); } catch { return []; } } return []; })();
+  const isAuthorised = String(booking.partnerId) === String(partnerId)
+    || svcs.some(s => String(s.assignedPartnerId) === String(partnerId));
+  if (!isAuthorised) throw new AppError("Booking not found", 404);
+
+  return booking;
+};
+
+const updateBookingStatus = async (partnerId, bookingId, status, cashCollected = false) => {
   const booking = await Booking.findByPk(bookingId);
   if (!booking) throw new AppError("Booking not found", 404);
 
@@ -220,13 +260,44 @@ const updateBookingStatus = async (partnerId, bookingId, status) => {
       throw new AppError(`Cannot complete a booking with status "${booking.status}"`, 400);
     }
 
-    if (!hasTracking) {
-      // Old single-partner flow: booking must be in_progress
+    // Whether the customer already paid (captured via the online gateway before now).
+    // If not — regardless of whether the booking was originally booked online or COD —
+    // the partner may simply collect cash on the spot instead, so we ask them to confirm
+    // rather than blocking completion outright.
+    const wasAlreadyPaid = booking.paymentStatus === "paid";
+
+    // A genuine multi-partner split is when this partner only owns specific claimed
+    // services and is NOT the booking's primary partner. Otherwise — legacy bookings
+    // with no per-service tracking, OR a primary partner whose assignment never got
+    // stamped onto the services array (e.g. via the admin "Assign Partner" dropdown,
+    // for bookings assigned before that was fixed) — they're responsible for the whole
+    // booking and must not get stuck waiting on a per-service claim that never happened.
+    const isSplitPartner = hasTracking && !isPrimaryPartner && hasClaimedServices;
+
+    if (!isSplitPartner) {
       if (booking.status !== "in_progress") {
         throw new AppError(`Cannot complete a booking with status "${booking.status}"`, 400);
       }
-      await booking.update({ status: "completed", completedAt: new Date() });
-      return booking.reload();
+      const updates = { status: "completed", completedAt: new Date() };
+      if (!wasAlreadyPaid) {
+        if (!cashCollected) throw new AppError("Please confirm whether you collected the payment before completing this job", 400);
+        updates.paymentStatus = "paid";
+      }
+      if (hasTracking) {
+        updates.services = svcs.map(s => s.removed ? s : {
+          ...s,
+          serviceStatus: "completed",
+          assignedPartnerId: s.assignedPartnerId ?? partnerId,
+        });
+      }
+      await booking.update(updates);
+      const reloaded = await booking.reload();
+
+      const activeServices = (updates.services ?? svcs).filter(s => !s.removed);
+      await settlementsService.createLedgerEntryForCompletion(reloaded, partnerId, activeServices, { collectedAsCash: !wasAlreadyPaid })
+        .catch(err => logger.error(`[settlements] ledger entry failed for booking ${booking.id} partner ${partnerId}: ${err.message}`));
+
+      return reloaded;
     }
 
     // Multi-partner: mark only this partner's services as completed
@@ -245,15 +316,86 @@ const updateBookingStatus = async (partnerId, bookingId, status) => {
     const allDone = updatedSvcs.every(s => !s.serviceStatus || s.serviceStatus === "completed");
     const updates = { services: updatedSvcs };
     if (allDone) {
+      if (!wasAlreadyPaid) {
+        if (!cashCollected) throw new AppError("Please confirm whether you collected the payment before completing this job", 400);
+        updates.paymentStatus = "paid";
+      }
       updates.status = "completed";
       updates.completedAt = new Date();
     }
 
     await booking.update(updates);
-    return booking.reload();
+    const reloaded = await booking.reload();
+
+    if (wasAlreadyPaid) {
+      // Money already sits with admin — settle this partner's slice as soon as it's done,
+      // without waiting for every other partner on the booking to finish.
+      const myServices = updatedSvcs.filter(s => String(s.assignedPartnerId) === String(partnerId) && !s.removed);
+      const myDone = myServices.length > 0 && myServices.every(s => s.serviceStatus === "completed");
+      if (myDone) {
+        await settlementsService.createLedgerEntryForCompletion(reloaded, partnerId, myServices, { collectedAsCash: false })
+          .catch(err => logger.error(`[settlements] ledger entry failed for booking ${booking.id} partner ${partnerId}: ${err.message}`));
+      }
+    } else if (allDone) {
+      // Cash — whether COD from the start, or collected on the spot as a fallback — is only
+      // confirmed once, at the booking-closing completion: settle every contributing partner
+      // together at that point.
+      const partnerIds = [...new Set(updatedSvcs.filter(s => s.assignedPartnerId && !s.removed).map(s => String(s.assignedPartnerId)))];
+      for (const pid of partnerIds) {
+        const theirServices = updatedSvcs.filter(s => String(s.assignedPartnerId) === pid && !s.removed);
+        await settlementsService.createLedgerEntryForCompletion(reloaded, pid, theirServices, { collectedAsCash: true })
+          .catch(err => logger.error(`[settlements] ledger entry failed for booking ${booking.id} partner ${pid}: ${err.message}`));
+      }
+    }
+
+    return reloaded;
   }
 
   throw new AppError(`Invalid status: ${status}`, 400);
+};
+
+/**
+ * Records that the partner has arrived at the customer's location. This does NOT
+ * move the booking to "in_progress" — that only happens once the partner taps
+ * "Start Service" after reviewing the checklist. Purely informational + notifies
+ * the customer; safe to call more than once (idempotent on arrivedAt).
+ */
+const markArrived = async (partnerId, bookingId) => {
+  const Notification = require("../../../notifications/models/notification.model");
+  const { sendPushNotification } = require("../../../../utils/firebaseUtils");
+
+  const booking = await Booking.findByPk(bookingId);
+  if (!booking) throw new AppError("Booking not found", 404);
+
+  const svcs = (() => { const s = booking.services; if (Array.isArray(s)) return s; if (typeof s === 'string') { try { return JSON.parse(s); } catch { return []; } } return []; })();
+  const isPrimaryPartner = String(booking.partnerId) === String(partnerId);
+  const hasClaimedServices = svcs.some(s => String(s.assignedPartnerId) === String(partnerId));
+  if (!isPrimaryPartner && !hasClaimedServices) throw new AppError("Booking not found", 404);
+
+  if (!["confirmed", "in_progress"].includes(booking.status)) {
+    throw new AppError(`Cannot mark arrival on a booking with status "${booking.status}"`, 400);
+  }
+
+  if (!booking.arrivedAt) {
+    await booking.update({ arrivedAt: new Date() });
+  }
+  const reloaded = await booking.reload();
+
+  const user = await User.findByPk(booking.userId, { attributes: ["fcmToken"] });
+  const msg = `Your service partner has arrived at your location for booking ${booking.bookingCode}.`;
+  if (user?.fcmToken) {
+    await sendPushNotification([user.fcmToken], "Partner Arrived", msg,
+      { bookingId: String(booking.id), type: "booking" }, "beyomo_booking").catch(() => {});
+  }
+  await Notification.create({
+    userId: booking.userId,
+    title: "Partner Arrived",
+    body: msg,
+    data: { bookingId: String(booking.id) },
+    type: "booking",
+  });
+
+  return reloaded;
 };
 
 const updateDeviceToken = async (partnerId, fcmToken) => {
@@ -287,7 +429,7 @@ const getEarnings = async (partnerId, period = "month") => {
     [Op.or]: [
       { partnerId: pidInt },
       literal(
-        `JSON_CONTAINS(JSON_EXTRACT(COALESCE(\`Booking\`.\`services\`, '[]'), '$[*].assignedPartnerId'), CAST(${pidInt} AS JSON))`
+        `JSON_CONTAINS(JSON_EXTRACT(COALESCE(\`Booking\`.\`services\`, '[]'), '$[*].assignedPartnerId'), '${pidInt}')`
       ),
     ],
   };
@@ -303,9 +445,15 @@ const getEarnings = async (partnerId, period = "month") => {
     Partner.findByPk(partnerId, { attributes: ["totalEarnings", "ratingsAverage", "ratingsCount"] }),
   ]);
 
+  const parseSvcs = (s) => {
+    if (Array.isArray(s)) return s;
+    if (typeof s === "string") { try { return JSON.parse(s); } catch { return []; } }
+    return [];
+  };
+
   // Edge case 5: compute this partner's actual earning from their slice of services
   const partnerEarningForBooking = (b) => {
-    const svcs = Array.isArray(b.services) ? b.services : [];
+    const svcs = parseSvcs(b.services);
     const hasTracking = svcs.length > 0 && svcs[0].serviceStatus !== undefined;
     if (!hasTracking) return parseFloat(b.partnerEarning || b.totalAmount || 0);
     return svcs
@@ -318,7 +466,7 @@ const getEarnings = async (partnerId, period = "month") => {
 
   const recentEarnings = completedBookings.slice(0, 10).map((b) => {
     const myEarning = partnerEarningForBooking(b);
-    const svcs = Array.isArray(b.services) ? b.services : [];
+    const svcs = parseSvcs(b.services);
     const myServiceNames = svcs
       .filter(s => String(s.assignedPartnerId) === String(partnerId))
       .map(s => s.name)
@@ -395,12 +543,15 @@ const proposeServiceChanges = async (partnerId, bookingId, proposedServices) => 
   const newBaseAmount = proposedServices.reduce((sum, s) => sum + (parseFloat(s.price) || 0) * (s.qty || 1), 0);
   const couponDiscount = parseFloat(booking.couponDiscountAmount || 0);
   const taxableAmount = newBaseAmount - couponDiscount;
-  const tax = parseFloat((taxableAmount * 0.18).toFixed(2));
+  const pkg = booking.packageId ? await ServicePackage.findByPk(booking.packageId) : null;
+  const { gstPercent } = await resolveRatesForBooking({ serviceItems: proposedServices, package: pkg });
+  const tax = parseFloat((taxableAmount * gstPercent / 100).toFixed(2));
   const newTotal = parseFloat((taxableAmount + tax).toFixed(2));
 
   await booking.update({
     serviceUpdatePending: true,
     pendingServicesUpdate: { services: proposedServices, totalAmount: newTotal, requestedAt: new Date() },
+    lastServiceUpdateDecision: null,
   });
 
   const user = await User.findByPk(booking.userId);
@@ -409,7 +560,7 @@ const proposeServiceChanges = async (partnerId, bookingId, proposedServices) => 
 
   if (user?.fcmToken) {
     await sendPushNotification([user.fcmToken], 'Service Update Request', msg,
-      { bookingId: String(booking.id), type: 'service_update' }).catch(() => {});
+      { bookingId: String(booking.id), type: 'service_update' }, 'beyomo_booking').catch(() => {});
   }
   await Notification.create({ userId: booking.userId, title: 'Service Update Request', body: msg,
     data: { bookingId: String(booking.id), type: 'service_update' }, type: 'booking' });
@@ -502,7 +653,7 @@ const acceptBooking = async (partnerId, bookingId) => {
   const svcsResult = await Booking.findByPk(bookingId);
   if (!svcsResult) throw new AppError('Booking not found', 404);
 
-  const svcs = Array.isArray(svcsResult.services) ? svcsResult.services : [];
+  const svcs = (() => { const s = svcsResult.services; if (Array.isArray(s)) return s; if (typeof s === 'string') { try { return JSON.parse(s); } catch { return []; } } return []; })();
   const hasTracking = svcs.length > 0 && svcs[0].serviceStatus !== undefined;
 
   if (!hasTracking) {
@@ -524,7 +675,7 @@ const acceptBooking = async (partnerId, bookingId) => {
     if (user?.fcmToken) {
       await sendPushNotification([user.fcmToken], 'Partner Assigned',
         `A partner has accepted your booking ${booking.bookingCode}.`,
-        { bookingId: String(booking.id), type: 'booking' });
+        { bookingId: String(booking.id), type: 'booking' }, 'beyomo_booking');
     }
     await Notification.create({
       userId: booking.userId, title: 'Partner Assigned',
@@ -590,15 +741,18 @@ const addExtraServices = async (partnerId, bookingId, serviceItems) => {
   const newBaseAmount = updatedServices.reduce((sum, s) => sum + s.price * (s.qty || 1), 0);
   const couponDiscount = parseFloat(booking.couponDiscountAmount || 0);
   const taxableAmount = newBaseAmount - couponDiscount;
-  const tax = parseFloat((taxableAmount * 0.18).toFixed(2));
+  const pkg = booking.packageId ? await ServicePackage.findByPk(booking.packageId) : null;
+  const { partnerPercent, gstPercent } = await resolveRatesForBooking({ serviceItems: updatedServices, package: pkg });
+  const tax = parseFloat((taxableAmount * gstPercent / 100).toFixed(2));
   const total = parseFloat((taxableAmount + tax).toFixed(2));
+  const partnerEarning = parseFloat((taxableAmount * partnerPercent / 100).toFixed(2));
 
   await booking.update({
     services: updatedServices,
     baseAmount: newBaseAmount,
     taxAmount: tax,
     totalAmount: total,
-    partnerEarning: total,
+    partnerEarning,
   });
 
   const user = await User.findByPk(booking.userId);
@@ -624,6 +778,6 @@ const addExtraServices = async (partnerId, bookingId, serviceItems) => {
 
 module.exports = {
   getProfile, updateProfile, updateDocuments,
-  getDashboard, getBookings, getAvailableBookings, acceptBooking, claimServices, updateBookingStatus,
-  updateDeviceToken, getEarnings, addExtraServices, proposeServiceChanges,
+  getDashboard, getBookings, getBookingById, getAvailableBookings, acceptBooking, claimServices, updateBookingStatus,
+  markArrived, updateDeviceToken, getEarnings, addExtraServices, proposeServiceChanges,
 };

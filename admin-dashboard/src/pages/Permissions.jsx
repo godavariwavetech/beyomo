@@ -9,14 +9,14 @@ import { useZones } from '../hooks/useZones';
 
 const MODULE_LABELS = {
   dashboard:'Dashboard', users:'Users', partners:'Partners', bookings:'Bookings',
-  services:'Services', earnings:'Earnings', coupons:'Coupons', reviews:'Reviews',
+  services:'Services', earnings:'Earnings', settlements:'Settlements', coupons:'Coupons', reviews:'Reviews',
   notifications:'Notifications', reports:'Reports', settings:'Settings',
   permissions:'Permissions', feedback:'App Feedback', zones:'Zones', cities:'Cities',
 };
 
 const MODULE_ICONS = {
   dashboard:'📊', users:'👥', partners:'🤝', bookings:'📅', services:'✨',
-  earnings:'💰', coupons:'🏷️', reviews:'⭐', notifications:'🔔', reports:'📈',
+  earnings:'💰', settlements:'💳', coupons:'🏷️', reviews:'⭐', notifications:'🔔', reports:'📈',
   settings:'⚙️', permissions:'🛡️', feedback:'💬', zones:'🗺️', cities:'🏙️',
 };
 

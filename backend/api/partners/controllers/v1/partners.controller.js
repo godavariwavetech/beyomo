@@ -1,6 +1,7 @@
 const catchAsync = require("../../../../utils/errorHandlers/catchAsync");
 const AppError = require("../../../../utils/errorHandlers/appError");
 const partnersService = require("../../services/v1/partners.service");
+const settlementsService = require("../../../settlements/services/v1/settlements.service");
 const {sendSinglePushNotification} = require("../../../../utils/firebaseUtils");
 const Joi = require("joi");
 
@@ -109,10 +110,18 @@ const getBookings = catchAsync(async (req, res, next) => {
 });
 
 /**
+ * GET /api/v1/partners/bookings/:id
+ */
+const getBookingById = catchAsync(async (req, res, next) => {
+  const booking = await partnersService.getBookingById(req.partner.userId, req.params.id);
+  res.status(200).json({ status: true, data: booking });
+});
+
+/**
  * PATCH /api/v1/partners/bookings/:id/status
  */
 const updateBookingStatus = catchAsync(async (req, res, next) => {
-  const { status } = req.body;
+  const { status, cashCollected } = req.body;
   const validStatuses = ["in_progress", "completed"];
   if (!status || !validStatuses.includes(status)) {
     return next(new AppError(`Status must be one of: ${validStatuses.join(", ")}`, 400));
@@ -121,9 +130,18 @@ const updateBookingStatus = catchAsync(async (req, res, next) => {
   const booking = await partnersService.updateBookingStatus(
     req.partner.userId,
     req.params.id,
-    status
+    status,
+    cashCollected === true
   );
   res.status(200).json({ status: true, message: "Booking status updated", data: booking });
+});
+
+/**
+ * PATCH /api/v1/partners/bookings/:id/arrived
+ */
+const markArrived = catchAsync(async (req, res, next) => {
+  const booking = await partnersService.markArrived(req.partner.userId, req.params.id);
+  res.status(200).json({ status: true, message: "Arrival recorded", data: booking });
 });
 
 /**
@@ -223,19 +241,33 @@ const proposeServiceChanges = catchAsync(async (req, res, next) => {
   res.json({ status: true, message: "Service update sent to customer for approval", data: booking });
 });
 
+/**
+ * GET /api/v1/partners/wallet
+ */
+const getWallet = catchAsync(async (req, res) => {
+  const result = await settlementsService.getPartnerLedger(req.partner.userId, {
+    page: parseInt(req.query.page) || 1,
+    limit: parseInt(req.query.limit) || 20,
+  });
+  res.status(200).json({ status: true, data: result });
+});
+
 module.exports = {
   getProfile,
   updateProfile,
   uploadDocuments,
   getDashboard,
   getBookings,
+  getBookingById,
   getAvailableBookings,
   acceptBooking,
   proposeServiceChanges,
   claimServices,
   updateBookingStatus,
+  markArrived,
   updateDeviceToken,
   getEarnings,
   addExtraServices,
   sendTestNotification,
+  getWallet,
 };

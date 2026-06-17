@@ -14,18 +14,27 @@ import {
   Modal,
   TextInput,
   FlatList,
+  RefreshControl,
+  AppState,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import DatePicker from 'react-native-date-picker';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {fonts} from '../../config/theme';
 import {useDispatch, useSelector} from 'react-redux';
 import {useFocusEffect} from '@react-navigation/native';
-import {fetchBookingById, cancelBooking, respondServiceUpdate, addUserServices} from '../../redux/reducers/bookings';
+import {fetchBookingById, cancelBooking, rescheduleBooking, respondServiceUpdate, addUserServices} from '../../redux/reducers/bookings';
 import networkCall from '../../utils/networkCall';
+import {payWithRazorpay} from '../../utils/payments';
+import {resolveImageUrl} from '../../utils/utils';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
+
+const ONE_HOUR_MS = 60 * 60 * 1000;
+const ONE_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
+const FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=200&q=80&fit=crop';
 
 const formatDateTime = (dateStr: string) => {
   if (!dateStr) return '';
@@ -35,15 +44,31 @@ const formatDateTime = (dateStr: string) => {
   return {date, time};
 };
 
+const validateRescheduleDate = (date: Date): string => {
+  const now = Date.now();
+  if (date.getTime() < now + ONE_HOUR_MS) return 'New time must be at least 1 hour from now.';
+  if (date.getTime() > now + ONE_MONTH_MS) return 'New time cannot be more than 1 month in advance.';
+  return '';
+};
+
+const STATUS_BANNER: Record<string, {icon: string; title: string; color: string}> = {
+  pending:     {icon: 'time-outline',         title: 'Booking Pending',     color: '#C87B1A'},
+  confirmed:   {icon: 'checkmark-circle',     title: 'Booking Confirmed!',  color: '#105641'},
+  in_progress: {icon: 'construct',            title: 'Service In Progress', color: '#0369A1'},
+  completed:   {icon: 'checkmark-done-circle', title: 'Service Completed',  color: '#105641'},
+  cancelled:   {icon: 'close-circle',         title: 'Booking Cancelled',   color: '#B91C1C'},
+};
+
 interface AvailableSvc { id: number; name: string; basePrice: string; duration: number; }
 type CartItem = {svc: AvailableSvc; qty: number};
 
-const SvcTag = ({type}: {type: 'admin' | 'partner' | 'user' | 'removed'}) => {
+const SvcTag = ({type}: {type: 'admin' | 'partner' | 'user' | 'removed' | 'free'}) => {
   const cfg = {
     admin:   {label: 'Admin +',   bg: '#EDE9FE', text: '#7C3AED'},
     partner: {label: 'Partner +', bg: '#E0F2FE', text: '#0369A1'},
     user:    {label: 'You +',     bg: '#FEF3C7', text: '#D97706'},
     removed: {label: 'Removed',   bg: '#FEE2E2', text: '#B91C1C'},
+    free:    {label: 'FREE',      bg: '#E6F4EC', text: '#1B6B3A'},
   }[type];
   return (
     <View style={{backgroundColor: cfg.bg, borderRadius: sw(4), paddingHorizontal: sw(5), paddingVertical: sw(1)}}>
@@ -56,14 +81,23 @@ const BookingDetailScreen = ({navigation, route}: any) => {
   const insets = useSafeAreaInsets();
   const dispatch = useDispatch<any>();
   const {selected: booking, loading, actionLoading} = useSelector((s: any) => s.Bookings);
+  const {profile} = useSelector((s: any) => s.User);
 
   const passedBookingId = route?.params?.bookingId ?? route?.params?.booking?._id ?? route?.params?.booking?.id;
 
+  const [payingNow, setPayingNow] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [availableServices, setAvailableServices] = useState<AvailableSvc[]>([]);
   const [loadingSvcs, setLoadingSvcs] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [svcCart, setSvcCart] = useState<CartItem[]>([]);
+
+  const [showRescheduleModal, setShowRescheduleModal] = useState(false);
+  const [rescheduleDate, setRescheduleDate] = useState<Date>(new Date(Date.now() + ONE_HOUR_MS * 2));
+  const [rescheduleError, setRescheduleError] = useState('');
+  const [showReschedDatePicker, setShowReschedDatePicker] = useState(false);
+  const [showReschedTimePicker, setShowReschedTimePicker] = useState(false);
+  const [autoOpenedReschedule, setAutoOpenedReschedule] = useState(false);
 
   const fetchServices = useCallback(async () => {
     if (availableServices.length > 0) return;
@@ -105,11 +139,46 @@ const BookingDetailScreen = ({navigation, route}: any) => {
   const filteredSvcs = availableServices.filter(s => s.name.toLowerCase().includes(searchQuery.toLowerCase()));
   const cartTotal = svcCart.reduce((sum, item) => sum + parseFloat(item.svc.basePrice) * item.qty, 0);
 
+  // Poll while this screen is focused, but only while the app is actually in the
+  // foreground — `useFocusEffect` only tracks navigation focus, not whether the app
+  // itself is backgrounded, so without this the interval kept firing (and dispatching
+  // state updates) after the user left the app, which was crashing it.
   useFocusEffect(
     useCallback(() => {
-      if (passedBookingId) dispatch(fetchBookingById(passedBookingId));
+      if (!passedBookingId) return;
+      dispatch(fetchBookingById(passedBookingId));
+
+      let interval: ReturnType<typeof setInterval> | null = setInterval(
+        () => dispatch(fetchBookingById(passedBookingId)),
+        10000,
+      );
+
+      const sub = AppState.addEventListener('change', state => {
+        if (state === 'active') {
+          if (!interval) {
+            dispatch(fetchBookingById(passedBookingId));
+            interval = setInterval(() => dispatch(fetchBookingById(passedBookingId)), 10000);
+          }
+        } else if (interval) {
+          clearInterval(interval);
+          interval = null;
+        }
+      });
+
+      return () => {
+        if (interval) clearInterval(interval);
+        sub.remove();
+      };
     }, [passedBookingId]),
   );
+
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = async () => {
+    if (!passedBookingId) return;
+    setRefreshing(true);
+    await dispatch(fetchBookingById(passedBookingId));
+    setRefreshing(false);
+  };
 
   const handleCancel = () => {
     Alert.alert('Cancel Booking', 'Are you sure you want to cancel this booking?', [
@@ -124,6 +193,42 @@ const BookingDetailScreen = ({navigation, route}: any) => {
       },
     ]);
   };
+
+  const openRescheduleModal = () => {
+    const base = booking?.scheduledAt ? new Date(booking.scheduledAt) : new Date();
+    const minAllowed = Date.now() + ONE_HOUR_MS;
+    const initial = base.getTime() > minAllowed ? base : new Date(minAllowed + 60 * 60 * 1000);
+    setRescheduleDate(initial);
+    setRescheduleError(validateRescheduleDate(initial));
+    setShowRescheduleModal(true);
+  };
+
+  const handleConfirmReschedule = async () => {
+    const err = validateRescheduleDate(rescheduleDate);
+    if (err) {
+      setRescheduleError(err);
+      return;
+    }
+    const result = await dispatch(rescheduleBooking({
+      bookingId: booking?.id ?? booking?._id,
+      scheduledAt: rescheduleDate.toISOString(),
+    }));
+    if (result.meta.requestStatus === 'fulfilled') {
+      setShowRescheduleModal(false);
+      Alert.alert('Booking Rescheduled', 'Your booking has been rescheduled successfully.');
+    } else {
+      Alert.alert('Error', result.payload ?? 'Failed to reschedule booking. Please try again.');
+    }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      if (route?.params?.openReschedule && booking && !autoOpenedReschedule) {
+        setAutoOpenedReschedule(true);
+        openRescheduleModal();
+      }
+    }, [route?.params?.openReschedule, booking, autoOpenedReschedule]),
+  );
 
   const handleRespond = (action: 'approve' | 'reject') => {
     const label = action === 'approve' ? 'Approve' : 'Reject';
@@ -151,7 +256,29 @@ const BookingDetailScreen = ({navigation, route}: any) => {
     ]);
   };
 
-  if (loading) {
+  const handleCompletePayment = async () => {
+    const bookingId = booking?.id ?? booking?._id;
+    setPayingNow(true);
+    const result = await payWithRazorpay({
+      bookingId,
+      bookingCode: booking?.bookingCode,
+      contact: profile?.phone,
+      name: profile?.name,
+      email: profile?.email,
+    });
+    setPayingNow(false);
+    if (result.success) {
+      Alert.alert('Payment Successful', 'Your payment has been received.');
+      dispatch(fetchBookingById(bookingId));
+    } else if (result.reason !== 'cancelled') {
+      Alert.alert('Payment Failed', result.message);
+    }
+  };
+
+  // Only show the full-screen spinner on the very first load — background polling
+  // refreshes (and pull-to-refresh, which has its own RefreshControl spinner) should
+  // update the data silently without replacing the screen.
+  if (loading && !booking) {
     return (
       <View style={[styles.root, {alignItems: 'center', justifyContent: 'center'}]}>
         <ActivityIndicator size="large" color="#105641" />
@@ -183,17 +310,26 @@ const BookingDetailScreen = ({navigation, route}: any) => {
   const total = booking.totalAmount ?? (subtotal + platformFee);
   const partner = booking.partner ?? {};
   const partnerName = partner.name ?? booking.partnerName ?? '';
-  const partnerAvatar = partner.avatar ?? partner.photo ?? '';
+  const partnerAvatar = resolveImageUrl(partner.profilePicture ?? partner.avatar ?? partner.photo) ?? '';
   const partnerPhone = partner.phone ?? '';
   const partnerRole = partner.specialty ?? partner.role ?? 'Beauty Expert';
-  const partnerRating = partner.averageRating ?? partner.rating ?? '';
+  const partnerRating = partner.ratingsAverage ?? partner.averageRating ?? partner.rating ?? '';
   const partnerExp = partner.experience ? `${partner.experience}+ yrs experience` : '';
   const address = booking.address?.formatted ?? booking.address?.line1 ?? booking.address ?? '';
+  const paymentModeLabel = booking.paymentMode === 'cod' ? 'Cash on Delivery' : 'Paid Online';
+  const paymentStatusLabel = booking.paymentStatus === 'paid' ? 'Paid' : booking.paymentMode === 'cod' ? 'Due on completion' : 'Unpaid';
 
   const dt = booking.scheduledAt ? formatDateTime(booking.scheduledAt) : null;
 
-  const isCancellable = !['completed', 'cancelled'].includes(booking.status?.toLowerCase() ?? '');
+  // Backend only allows cancel/reschedule while the booking is pending or confirmed —
+  // once a partner has started the job (in_progress) it can no longer be cancelled/rescheduled.
+  const isCancellable = ['pending', 'confirmed'].includes(booking.status?.toLowerCase() ?? '');
   const isCompleted = booking.status?.toLowerCase() === 'completed';
+  const needsPayment = booking.paymentMode === 'online'
+    && booking.paymentStatus !== 'paid'
+    && !['cancelled'].includes(booking.status?.toLowerCase() ?? '');
+
+  const statusInfo = STATUS_BANNER[booking.status?.toLowerCase() ?? ''] ?? STATUS_BANNER.pending;
 
   const hasPendingUpdate = !!booking.serviceUpdatePending;
   const pendingUpdate = (() => {
@@ -219,17 +355,36 @@ const BookingDetailScreen = ({navigation, route}: any) => {
 
       <ScrollView
         showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#105641']} />}
         contentContainerStyle={[styles.scroll, {paddingBottom: insets.bottom + sw(32)}]}>
 
-        <View style={styles.confirmedBanner}>
+        <View style={[styles.confirmedBanner, {backgroundColor: statusInfo.color}]}>
           <View style={styles.confirmedIconWrap}>
-            <Ionicons name="checkmark-circle" size={sw(36)} color="#FFFFFF" />
+            <Ionicons name={statusInfo.icon} size={sw(36)} color="#FFFFFF" />
           </View>
           <View style={{flex: 1}}>
-            <Text style={styles.confirmedTitle}>Booking Confirmed!</Text>
+            <Text style={styles.confirmedTitle}>{statusInfo.title}</Text>
             <Text style={styles.confirmedCode}>Booking ID: {bookingId}</Text>
           </View>
         </View>
+
+        {needsPayment && (
+          <View style={styles.paymentDueCard}>
+            <View style={{flex: 1}}>
+              <Text style={styles.paymentDueTitle}>Payment Pending</Text>
+              <Text style={styles.paymentDueSub}>Complete your online payment to confirm this booking.</Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.paymentDueBtn, payingNow && {opacity: 0.6}]}
+              activeOpacity={0.8}
+              disabled={payingNow}
+              onPress={handleCompletePayment}>
+              {payingNow ? <ActivityIndicator size="small" color="#FFFFFF" /> : (
+                <Text style={styles.paymentDueBtnText}>Pay Now</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
 
         {hasPendingUpdate && (
           <View style={styles.pendingCard}>
@@ -347,13 +502,20 @@ const BookingDetailScreen = ({navigation, route}: any) => {
             </View>
             {services.map((svc: any, idx: number) => {
               const isRemoved = !!svc.removed;
-              const tagType: 'admin' | 'partner' | 'user' | 'removed' | null =
+              const isFreeOffer = !!svc.addedByOffer;
+              const tagType: 'admin' | 'partner' | 'user' | 'removed' | 'free' | null =
                 isRemoved ? 'removed' :
+                isFreeOffer ? 'free' :
                 svc.addedByAdmin ? 'admin' :
                 svc.addedByPartner ? 'partner' :
                 svc.addedByUser ? 'user' : null;
               return (
                 <View key={svc._id ?? svc.id ?? idx} style={[styles.serviceRow, idx > 0 && styles.serviceRowBorder, isRemoved && {opacity: 0.5}]}>
+                  <Image
+                    source={{uri: svc.image || FALLBACK_IMAGE}}
+                    style={styles.serviceThumb}
+                    resizeMode="cover"
+                  />
                   <View style={{flex: 1}}>
                     <View style={{flexDirection: 'row', alignItems: 'center', gap: sw(6), flexWrap: 'wrap'}}>
                       <Text style={[styles.serviceName, isRemoved && {textDecorationLine: 'line-through', color: '#9CA3AF'}]}>
@@ -363,11 +525,13 @@ const BookingDetailScreen = ({navigation, route}: any) => {
                     </View>
                     {!!svc.duration && <Text style={styles.serviceDuration}>{svc.duration} min</Text>}
                   </View>
-                  {!!svc.price && (
+                  {isFreeOffer ? (
+                    <Text style={[styles.servicePrice, {color: '#1B6B3A'}]}>FREE</Text>
+                  ) : !!svc.price ? (
                     <Text style={[styles.servicePrice, isRemoved && {textDecorationLine: 'line-through', color: '#9CA3AF'}]}>
                       ₹{svc.price}
                     </Text>
-                  )}
+                  ) : null}
                 </View>
               );
             })}
@@ -392,6 +556,14 @@ const BookingDetailScreen = ({navigation, route}: any) => {
             <Text style={styles.billTotalKey}>Total Paid</Text>
             <Text style={styles.billTotalVal}>₹{total}</Text>
           </View>
+          <View style={styles.billRow}>
+            <Text style={styles.billKey}>Payment Method</Text>
+            <Text style={styles.billVal}>{paymentModeLabel}</Text>
+          </View>
+          <View style={styles.billRow}>
+            <Text style={styles.billKey}>Payment Status</Text>
+            <Text style={styles.billVal}>{paymentStatusLabel}</Text>
+          </View>
         </View>
 
         <View style={styles.safetyCard}>
@@ -407,7 +579,7 @@ const BookingDetailScreen = ({navigation, route}: any) => {
             activeOpacity={0.8}
             onPress={() => navigation?.navigate('ServiceCompleted', {booking})}>
             <Ionicons name="star" size={sw(16)} color="#FFFFFF" />
-            <Text style={styles.reviewBtnText}>Write a Review</Text>
+            <Text style={styles.reviewBtnText}>{booking.review ? 'View My Review' : 'Write a Review'}</Text>
           </TouchableOpacity>
         )}
 
@@ -416,10 +588,7 @@ const BookingDetailScreen = ({navigation, route}: any) => {
             <TouchableOpacity
               style={styles.rescheduleBtn}
               activeOpacity={0.8}
-              onPress={() => Alert.alert('Reschedule', 'Reschedule requests are handled by our support team.', [
-                {text: 'Cancel', style: 'cancel'},
-                {text: 'Contact Support', onPress: () => navigation?.navigate('HelpSupport')},
-              ])}>
+              onPress={openRescheduleModal}>
               <Text style={styles.rescheduleBtnText}>Reschedule</Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -530,6 +699,87 @@ const BookingDetailScreen = ({navigation, route}: any) => {
           </View>
         </View>
       </Modal>
+
+      {/* Reschedule Modal */}
+      <Modal visible={showRescheduleModal} animationType="slide" transparent onRequestClose={() => setShowRescheduleModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalSheet, {maxHeight: undefined, flex: undefined}]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Reschedule Booking</Text>
+              <TouchableOpacity onPress={() => setShowRescheduleModal(false)} hitSlop={{top:8,bottom:8,left:8,right:8}}>
+                <Ionicons name="close" size={sw(22)} color="#171816" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={{paddingHorizontal: sw(16), paddingTop: sw(14), paddingBottom: sw(8), gap: sw(10)}}>
+              <Text style={styles.reschedLabel}>New Date & Time</Text>
+              <TouchableOpacity
+                style={[styles.reschedDateBox, !!rescheduleError && styles.reschedDateBoxError]}
+                activeOpacity={0.7}
+                onPress={() => setShowReschedDatePicker(true)}>
+                <Ionicons name="calendar-outline" size={sw(16)} color="#105641" />
+                <Text style={styles.reschedDateText}>
+                  {rescheduleDate.toLocaleDateString('en-IN', {day: '2-digit', month: 'short', year: 'numeric'})}
+                  {'  |  '}
+                  {rescheduleDate.toLocaleTimeString('en-IN', {hour: '2-digit', minute: '2-digit', hour12: true})}
+                </Text>
+              </TouchableOpacity>
+              {!!rescheduleError && <Text style={styles.reschedErrorText}>{rescheduleError}</Text>}
+            </View>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowRescheduleModal(false)}>
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalAddBtn, (!!rescheduleError || actionLoading) && styles.modalAddBtnDisabled]}
+                disabled={!!rescheduleError || actionLoading}
+                onPress={handleConfirmReschedule}>
+                {actionLoading
+                  ? <ActivityIndicator color="#FFFFFF" size="small" />
+                  : <Text style={styles.modalAddText}>Confirm Reschedule</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <DatePicker
+        modal
+        open={showReschedDatePicker}
+        date={rescheduleDate}
+        mode="date"
+        minimumDate={new Date()}
+        title="Select Date"
+        confirmText="Next"
+        cancelText="Cancel"
+        onConfirm={date => {
+          const merged = new Date(rescheduleDate);
+          merged.setFullYear(date.getFullYear(), date.getMonth(), date.getDate());
+          setRescheduleDate(merged);
+          setRescheduleError(validateRescheduleDate(merged));
+          setShowReschedDatePicker(false);
+          setShowReschedTimePicker(true);
+        }}
+        onCancel={() => setShowReschedDatePicker(false)}
+      />
+      <DatePicker
+        modal
+        open={showReschedTimePicker}
+        date={rescheduleDate}
+        mode="time"
+        title="Select Time"
+        confirmText="Confirm"
+        cancelText="Cancel"
+        onConfirm={time => {
+          const merged = new Date(rescheduleDate);
+          merged.setHours(time.getHours(), time.getMinutes(), 0, 0);
+          setRescheduleDate(merged);
+          setRescheduleError(validateRescheduleDate(merged));
+          setShowReschedTimePicker(false);
+        }}
+        onCancel={() => setShowReschedTimePicker(false)}
+      />
     </View>
   );
 };
@@ -567,6 +817,26 @@ const styles = StyleSheet.create({
   },
   confirmedTitle: {fontFamily: fonts.title, fontSize: sw(16), fontWeight: '700', color: '#FFFFFF'},
   confirmedCode: {fontFamily: fonts.textFont, fontSize: sw(12), color: 'rgba(255,255,255,0.75)', marginTop: sw(2)},
+
+  paymentDueCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: sw(12),
+    backgroundColor: '#FFFBF0',
+    borderRadius: sw(12),
+    borderWidth: 1.5,
+    borderColor: '#F5C842',
+    padding: sw(14),
+  },
+  paymentDueTitle: {fontFamily: fonts.title, fontSize: sw(13), fontWeight: '700', color: '#C87B1A'},
+  paymentDueSub: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#6B4C0A', marginTop: sw(2)},
+  paymentDueBtn: {
+    backgroundColor: '#105641',
+    borderRadius: sw(8),
+    paddingHorizontal: sw(16),
+    paddingVertical: sw(10),
+  },
+  paymentDueBtnText: {fontFamily: fonts.title, fontSize: sw(13), fontWeight: '700', color: '#FFFFFF'},
 
   card: {
     backgroundColor: '#FFFFFF',
@@ -620,8 +890,9 @@ const styles = StyleSheet.create({
   },
   addServiceBtnText: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#105641', fontWeight: '600'},
 
-  serviceRow: {flexDirection: 'row', alignItems: 'center', paddingVertical: sw(8)},
+  serviceRow: {flexDirection: 'row', alignItems: 'center', paddingVertical: sw(8), gap: sw(10)},
   serviceRowBorder: {borderTopWidth: 1, borderTopColor: '#F0F0F0'},
+  serviceThumb: {width: sw(44), height: sw(44), borderRadius: sw(8), backgroundColor: '#EEEDED'},
   serviceName: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#171816', fontWeight: '500'},
   serviceDuration: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#656565', marginTop: sw(2)},
   servicePrice: {fontFamily: fonts.title, fontSize: sw(14), color: '#105641', fontWeight: '700'},
@@ -693,6 +964,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   rescheduleBtnText: {fontFamily: fonts.title, fontSize: sw(13), fontWeight: '600', color: '#105641'},
+  reschedLabel: {fontFamily: fonts.textFont, fontSize: sw(12), fontWeight: '600', color: '#656565'},
+  reschedDateBox: {
+    flexDirection: 'row', alignItems: 'center', gap: sw(10),
+    backgroundColor: '#F5F5F5', borderRadius: sw(10), borderWidth: 1.5, borderColor: 'transparent',
+    paddingHorizontal: sw(14), height: sw(50),
+  },
+  reschedDateBoxError: {borderColor: '#FB1616'},
+  reschedDateText: {fontFamily: fonts.title, fontSize: sw(14), fontWeight: '700', color: '#171816'},
+  reschedErrorText: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#FB1616'},
   cancelBtn: {
     flex: 1,
     height: sw(46),

@@ -8,6 +8,7 @@ import {store, persistorStore} from './src/redux/store';
 import AppNavigation from './src/navigation/AppNavigation';
 import {updatePartnerDeviceToken} from './src/redux/reducers/partner';
 import {createNotificationChannels, getFCMToken} from './src/services/NotificationsService';
+import {requestNotificationPermission} from './src/utils/requestPermissions';
 
 // Register background handler at module scope (required by RN Firebase)
 messaging().setBackgroundMessageHandler(async () => {});
@@ -29,17 +30,22 @@ function AppContent() {
     const register = async () => {
       try {
         console.log('[FCM] Requesting notification permissions...');
-        const authStatus = await messaging().requestPermission();
-        console.log('[FCM] Authorization status:', authStatus);
-
-        const granted =
-          authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
-          authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+        // Explicitly requests the OS-level notification permission (Android 13+
+        // POST_NOTIFICATIONS, or iOS UNUserNotificationCenter authorization) via
+        // react-native-permissions, so the system prompt reliably shows.
+        const granted = await requestNotificationPermission();
+        console.log('[FCM] Notification permission granted:', granted);
 
         if (!granted) {
           console.log('[FCM] Permission denied or not granted');
           return;
         }
+
+        // Also informs Firebase of the authorization state (needed for APNs
+        // registration on iOS); permission was already granted above so this
+        // won't show a second prompt.
+        const authStatus = await messaging().requestPermission().catch(() => null);
+        console.log('[FCM] Firebase authorization status:', authStatus);
 
         const fcmToken = await getFCMToken();
         console.log('[FCM] Got FCM token:', fcmToken ? fcmToken.substring(0, 20) + '...' : 'null');

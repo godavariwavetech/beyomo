@@ -24,6 +24,8 @@ const SkillCategory = require("../api/skills/models/SkillCategory");
 const Skill = require("../api/skills/models/Skill");
 const PartnerSkillCategory = require("../api/skills/models/PartnerSkillCategory");
 const ContactInquiry = require("../api/contacts/models/contact.model");
+const PartnerLedgerEntry = require("../api/settlements/models/partnerLedgerEntry.model");
+const PartnerSettlement = require("../api/settlements/models/partnerSettlement.model");
 
 // ---- User associations ----
 User.hasMany(UserAddress, { foreignKey: "userId", as: "addresses" });
@@ -47,6 +49,7 @@ Booking.belongsTo(User, { foreignKey: "userId", as: "user" });
 Booking.belongsTo(Partner, { foreignKey: "partnerId", as: "partner" });
 Booking.belongsTo(Service, { foreignKey: "serviceId", as: "service" });
 Booking.belongsTo(Coupon, { foreignKey: "couponId", as: "coupon" });
+Booking.belongsTo(Offer, { foreignKey: "offerId", as: "offer" });
 User.hasMany(Booking, { foreignKey: "userId", as: "bookings" });
 Partner.hasMany(Booking, { foreignKey: "partnerId", as: "bookings" });
 
@@ -56,6 +59,7 @@ Payment.belongsTo(User, { foreignKey: "userId", as: "user" });
 Booking.hasOne(Payment, { foreignKey: "bookingId", as: "payment" });
 
 // ---- Review associations ----
+Booking.hasOne(Review, { foreignKey: "bookingId", as: "review" });
 Review.belongsTo(Booking, { foreignKey: "bookingId", as: "booking" });
 Review.belongsTo(User, { foreignKey: "userId", as: "user" });
 Review.belongsTo(Partner, { foreignKey: "partnerId", as: "partner" });
@@ -82,6 +86,16 @@ Partner.hasMany(PartnerSkillCategory, { foreignKey: "partnerId", as: "skillCateg
 PartnerSkillCategory.belongsTo(Partner, { foreignKey: "partnerId" });
 PartnerSkillCategory.belongsTo(SkillCategory, { foreignKey: "skillCategoryId", as: "skillCategory" });
 
+// ---- Settlement associations ----
+PartnerLedgerEntry.belongsTo(Partner, { foreignKey: "partnerId", as: "partner" });
+PartnerLedgerEntry.belongsTo(Booking, { foreignKey: "bookingId", as: "booking" });
+PartnerLedgerEntry.belongsTo(PartnerSettlement, { foreignKey: "settlementId", as: "settlement" });
+PartnerSettlement.belongsTo(Partner, { foreignKey: "partnerId", as: "partner" });
+PartnerSettlement.belongsTo(AdminUser, { foreignKey: "settledByAdminId", as: "settledBy" });
+PartnerSettlement.hasMany(PartnerLedgerEntry, { foreignKey: "settlementId", as: "entries" });
+Partner.hasMany(PartnerLedgerEntry, { foreignKey: "partnerId", as: "ledgerEntries" });
+Partner.hasMany(PartnerSettlement, { foreignKey: "partnerId", as: "settlements" });
+
 module.exports = {
   User, UserAddress, Partner, PartnerService,
   ServiceCategory, Service, ServiceCityMap,
@@ -91,4 +105,5 @@ module.exports = {
   City, ServicePackage,
   SkillCategory, Skill, PartnerSkillCategory,
   ContactInquiry,
+  PartnerLedgerEntry, PartnerSettlement,
 };

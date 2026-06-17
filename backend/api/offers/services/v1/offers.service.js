@@ -130,9 +130,12 @@ const parseOfferRow = (row) => {
   return plain;
 };
 
-const listAll = async ({ page = 1, limit = 20 } = {}) => {
+const listAll = async ({ page = 1, limit = 20, cityIds } = {}) => {
   const offset = (page - 1) * limit;
+  // City-specific offers for the selected cities, plus global (cityId: null) offers
+  const where = cityIds?.length ? { [Op.or]: [{ cityId: { [Op.in]: cityIds } }, { cityId: null }] } : {};
   const { count, rows } = await Offer.findAndCountAll({
+    where,
     include: [freeServiceInclude],
     order: [["createdAt", "DESC"]],
     limit,

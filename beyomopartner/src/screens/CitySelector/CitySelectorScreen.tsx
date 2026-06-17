@@ -8,7 +8,6 @@ import {
   Dimensions,
   StatusBar,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -19,6 +18,8 @@ import {BASE_URL, endpoints} from '../../config/config';
 import {setSelectedCity} from '../../redux/reducers/city';
 import type {RootState} from '../../redux/store';
 import type {CityGeo} from '../../utils/geoUtils';
+import {useAppAlert} from '../../hooks/useAppAlert';
+import AppAlertModal from '../../components/AppAlertModal/AppAlertModal';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
@@ -44,6 +45,7 @@ const CitySelectorScreen = ({navigation, route}: Props) => {
   const [cities, setCities] = useState<CityGeo[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<CityGeo | null>(null);
+  const {alertConfig, showAlert, hideAlert} = useAppAlert();
 
   const nextRoute: string = route?.params?.nextRoute ?? resolveNext(token, partner);
 
@@ -57,7 +59,7 @@ const CitySelectorScreen = ({navigation, route}: Props) => {
 
   const confirm = () => {
     if (!selected) {
-      Alert.alert('Select City', 'Please select a city to continue.');
+      showAlert('Select City', 'Please select a city to continue.');
       return;
     }
     dispatch(setSelectedCity(selected));
@@ -143,6 +145,8 @@ const CitySelectorScreen = ({navigation, route}: Props) => {
           <Ionicons name="arrow-forward" size={sw(18)} color="#FFFFFF" />
         </TouchableOpacity>
       </View>
+
+      <AppAlertModal config={alertConfig} onRequestClose={hideAlert} />
     </View>
   );
 };

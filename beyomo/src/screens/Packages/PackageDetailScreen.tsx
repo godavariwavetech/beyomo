@@ -22,7 +22,7 @@ const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
 
 const FALLBACK_IMAGE =
-  'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=400&q=80';
+  'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=800&q=90&fit=crop';
 
 interface ServiceItem {
   serviceId: number;

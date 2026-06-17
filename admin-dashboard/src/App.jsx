@@ -11,6 +11,7 @@ import Partners from './pages/Partners';
 import Bookings from './pages/Bookings';
 import Services from './pages/Services';
 import Earnings from './pages/Earnings';
+import Settlements from './pages/Settlements';
 import Coupons from './pages/Coupons';
 import Reviews from './pages/Reviews';
 import Notifications from './pages/Notifications';
@@ -57,6 +58,7 @@ function ProtectedRoutes() {
         <Route path="bookings"      element={<PermissionGuard page="bookings"><Bookings /></PermissionGuard>} />
         <Route path="services"      element={<PermissionGuard page="services"><Services /></PermissionGuard>} />
         <Route path="earnings"      element={<PermissionGuard page="earnings"><Earnings /></PermissionGuard>} />
+        <Route path="settlements"   element={<PermissionGuard page="settlements"><Settlements /></PermissionGuard>} />
         <Route path="coupons"       element={<PermissionGuard page="coupons"><Coupons /></PermissionGuard>} />
         <Route path="reviews"       element={<PermissionGuard page="reviews"><Reviews /></PermissionGuard>} />
         <Route path="notifications" element={<PermissionGuard page="notifications"><Notifications /></PermissionGuard>} />

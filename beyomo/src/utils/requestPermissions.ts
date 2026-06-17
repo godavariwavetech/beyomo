@@ -1,4 +1,4 @@
-import { request, check, PERMISSIONS, RESULTS } from 'react-native-permissions';
+import { request, check, checkNotifications, requestNotifications, PERMISSIONS, RESULTS } from 'react-native-permissions';
 import { Platform } from 'react-native';
 
 export const requestCameraPermission = async (): Promise<boolean> => {
@@ -27,6 +27,24 @@ export const requestCameraPermission = async (): Promise<boolean> => {
   }
 };
 
+
+// Push notification permission — on Android 13+ this requests the POST_NOTIFICATIONS
+// runtime permission (declared in AndroidManifest.xml); on iOS it requests
+// UNUserNotificationCenter authorization (alert/sound/badge). Pre-Android 13 there's
+// no runtime permission to request, so `requestNotifications` resolves granted immediately.
+export const requestNotificationPermission = async (): Promise<boolean> => {
+  try {
+    const {status} = await checkNotifications();
+    if (status === RESULTS.GRANTED || status === RESULTS.LIMITED) {
+      return true;
+    }
+    const {status: requestedStatus} = await requestNotifications(['alert', 'sound', 'badge']);
+    return requestedStatus === RESULTS.GRANTED || requestedStatus === RESULTS.LIMITED;
+  } catch (error) {
+    console.error('Error requesting notification permission:', error);
+    return false;
+  }
+};
 
 export const requestMicrophonePermission = async (): Promise<boolean> => {
   try {

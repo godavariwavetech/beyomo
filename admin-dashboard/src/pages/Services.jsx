@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit2, Power, Search, Users, ShoppingBag, DollarSign, Trash2, FolderOpen, Upload, RefreshCw, MapPin, CheckCircle, XCircle, PieChart } from 'lucide-react';
+import { Plus, Edit2, Power, Search, Users, ShoppingBag, DollarSign, Trash2, FolderOpen, Upload, RefreshCw, MapPin, CheckCircle, XCircle } from 'lucide-react';
 import { Badge, StarRating } from '../components/common/Badge';
 import Modal from '../components/common/Modal';
+import RevenueSplitFields from '../components/common/RevenueSplitFields';
 import { useAuth } from '../context/AuthContext';
 import { useServices, useCategories } from '../hooks/useServices';
 import { useCityFilter } from '../context/CityContext';
@@ -202,73 +203,6 @@ const ServiceCityEditor = ({ mappings, cities, onToggle, onAdd, onRemove }) => {
   );
 };
 
-const RevenueSplitFields = ({ form, setForm }) => {
-  const admin   = parseFloat(form.adminPercent   ?? 20) || 0;
-  const partner = parseFloat(form.partnerPercent ?? 80) || 0;
-  const gst     = parseFloat(form.gstPercent     ?? 18) || 0;
-  const splitSum = admin + partner;
-  const splitOk  = Math.abs(splitSum - 100) < 0.01;
-
-  return (
-    <div style={{ marginTop: 12 }}>
-      <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
-        <PieChart size={14} /> Revenue Split & GST
-      </label>
-
-      {/* Three inputs */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
-        <div className="form-group" style={{ margin: 0 }}>
-          <label className="form-label" style={{ fontSize: 11 }}>Admin Cut (%)</label>
-          <input
-            className="form-input"
-            type="number" min="0" max="100" step="0.01"
-            placeholder="20"
-            value={form.adminPercent ?? ''}
-            onChange={e => setForm(f => ({ ...f, adminPercent: e.target.value }))}
-          />
-        </div>
-        <div className="form-group" style={{ margin: 0 }}>
-          <label className="form-label" style={{ fontSize: 11 }}>Partner Cut (%)</label>
-          <input
-            className="form-input"
-            type="number" min="0" max="100" step="0.01"
-            placeholder="80"
-            value={form.partnerPercent ?? ''}
-            onChange={e => setForm(f => ({ ...f, partnerPercent: e.target.value }))}
-          />
-        </div>
-        <div className="form-group" style={{ margin: 0 }}>
-          <label className="form-label" style={{ fontSize: 11 }}>GST (%)</label>
-          <input
-            className="form-input"
-            type="number" min="0" max="100" step="0.01"
-            placeholder="18"
-            value={form.gstPercent ?? ''}
-            onChange={e => setForm(f => ({ ...f, gstPercent: e.target.value }))}
-          />
-        </div>
-      </div>
-
-      {/* Visual bar */}
-      <div style={{ marginTop: 10, borderRadius: 6, overflow: 'hidden', height: 10, display: 'flex', background: 'var(--c-border)' }}>
-        <div style={{ width: `${Math.min(admin, 100)}%`, background: 'var(--c-brand-teal-mid)', transition: 'width 0.2s' }} title={`Admin ${admin}%`} />
-        <div style={{ width: `${Math.min(partner, 100 - admin)}%`, background: '#C49738', transition: 'width 0.2s' }} title={`Partner ${partner}%`} />
-      </div>
-      <div style={{ display: 'flex', gap: 16, marginTop: 5, fontSize: 11, color: 'var(--c-text-secondary)', flexWrap: 'wrap' }}>
-        <span><span style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 2, background: 'var(--c-brand-teal-mid)', marginRight: 4 }} />Admin {admin}%</span>
-        <span><span style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 2, background: '#C49738', marginRight: 4 }} />Partner {partner}%</span>
-        <span style={{ marginLeft: 'auto' }}>GST {gst}%</span>
-        {!splitOk && (
-          <span style={{ color: 'var(--c-danger)', fontWeight: 600 }}>
-            ⚠ Admin + Partner = {splitSum.toFixed(1)}% (should be 100%)
-          </span>
-        )}
-        {splitOk && <span style={{ color: 'var(--c-success)', fontWeight: 600 }}>✓ Split valid</span>}
-      </div>
-    </div>
-  );
-};
-
 export default function Services() {
   const { showToast } = useAuth();
   const { fetchList: fetchServices, action: svcAction } = useServices();
@@ -331,7 +265,7 @@ export default function Services() {
   };
 
   // ---- Categories ----
-  const defaultCatForm = () => ({ cityIds: [], adminPercent: 20, partnerPercent: 80, gstPercent: 18 });
+  const defaultCatForm = () => ({ cityIds: [], adminPercent: 20, partnerPercent: 80, gstPercent: 5 });
 
   const saveCat = async () => {
     if (!catForm.name) { showToast('Category name is required.', 'danger'); return; }
@@ -556,7 +490,7 @@ export default function Services() {
             <select className="filter-select" value={catFilter} onChange={e => setCat(e.target.value)}>
               {categories.map(c => <option key={c} value={c}>{c === 'all' ? 'All Categories' : c}</option>)}
             </select>
-            <button className="btn btn-outline btn-sm" onClick={() => { setMngCats(true); setEditingCat(null); setCatForm({ cityIds: [], adminPercent: 20, partnerPercent: 80, gstPercent: 18 }); }} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <button className="btn btn-outline btn-sm" onClick={() => { setMngCats(true); setEditingCat(null); setCatForm({ cityIds: [], adminPercent: 20, partnerPercent: 80, gstPercent: 5 }); }} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <FolderOpen size={14}/> Categories
             </button>
             <button className="btn btn-primary btn-sm" onClick={() => { setAdding(true); setForm({ name: '', basePrice: '', description: '', image: '', cityIds: [] }); }} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -733,13 +667,13 @@ export default function Services() {
       </Modal>
 
       {/* Manage Categories Modal */}
-      <Modal isOpen={managingCats} onClose={() => { setMngCats(false); setEditingCat(null); setCatForm({ cityIds: [], adminPercent: 20, partnerPercent: 80, gstPercent: 18 }); }} title="Manage Categories" size="md"
+      <Modal isOpen={managingCats} onClose={() => { setMngCats(false); setEditingCat(null); setCatForm({ cityIds: [], adminPercent: 20, partnerPercent: 80, gstPercent: 5 }); }} title="Manage Categories" size="md"
         footer={
           <div style={{ display: 'flex', gap: 8, width: '100%', justifyContent: 'space-between' }}>
             <button className="btn btn-outline btn-sm" onClick={seedCategories} disabled={seedingCats} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <RefreshCw size={13} style={{ animation: seedingCats ? 'spin 1s linear infinite' : 'none' }}/> Seed Default Categories
             </button>
-            <button className="btn btn-outline" onClick={() => { setMngCats(false); setEditingCat(null); setCatForm({ cityIds: [], adminPercent: 20, partnerPercent: 80, gstPercent: 18 }); }}>Close</button>
+            <button className="btn btn-outline" onClick={() => { setMngCats(false); setEditingCat(null); setCatForm({ cityIds: [], adminPercent: 20, partnerPercent: 80, gstPercent: 5 }); }}>Close</button>
           </div>
         }
       >
@@ -767,7 +701,7 @@ export default function Services() {
             <RevenueSplitFields form={catForm} setForm={setCatForm} />
             <div style={{ marginTop: 10, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button className="btn btn-primary btn-sm" onClick={saveCat} style={{ whiteSpace: 'nowrap' }}>{editingCat ? 'Update' : 'Add'}</button>
-              {editingCat && <button className="btn btn-outline btn-sm" onClick={() => { setEditingCat(null); setCatForm({ cityIds: [], adminPercent: 20, partnerPercent: 80, gstPercent: 18 }); }}>Cancel</button>}
+              {editingCat && <button className="btn btn-outline btn-sm" onClick={() => { setEditingCat(null); setCatForm({ cityIds: [], adminPercent: 20, partnerPercent: 80, gstPercent: 5 }); }}>Cancel</button>}
             </div>
           </div>
 
@@ -811,7 +745,7 @@ export default function Services() {
                     <span>·</span>
                     <span style={{ color: '#C49738', fontWeight: 600 }}>Partner {parseFloat(c.partnerPercent ?? 80)}%</span>
                     <span>·</span>
-                    <span>GST {parseFloat(c.gstPercent ?? 18)}%</span>
+                    <span>GST {parseFloat(c.gstPercent ?? 5)}%</span>
                   </div>
                 </div>
                 <button
@@ -822,7 +756,7 @@ export default function Services() {
                 >
                   <Power size={14}/>
                 </button>
-                <button className="btn btn-ghost btn-icon" title="Edit" onClick={() => { setEditingCat(c); setCatForm({ name: c.name, description: c.description || '', image: c.image || '', cityIds: c.cityIds ?? [], adminPercent: parseFloat(c.adminPercent ?? 20), partnerPercent: parseFloat(c.partnerPercent ?? 80), gstPercent: parseFloat(c.gstPercent ?? 18) }); }}><Edit2 size={14}/></button>
+                <button className="btn btn-ghost btn-icon" title="Edit" onClick={() => { setEditingCat(c); setCatForm({ name: c.name, description: c.description || '', image: c.image || '', cityIds: c.cityIds ?? [], adminPercent: parseFloat(c.adminPercent ?? 20), partnerPercent: parseFloat(c.partnerPercent ?? 80), gstPercent: parseFloat(c.gstPercent ?? 5) }); }}><Edit2 size={14}/></button>
                 <button className="btn btn-ghost btn-icon" title="Delete" style={{ color: 'var(--c-danger)' }} onClick={() => deleteCat(c._id ?? c.id)}><Trash2 size={14}/></button>
               </div>
             );

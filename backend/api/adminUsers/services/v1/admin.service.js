@@ -12,12 +12,15 @@ const ServiceCityMap = require("../../../services/models/service_city_map.model"
 const Booking = require("../../../bookings/models/booking.model");
 const Payment = require("../../../payments/models/payment.model");
 const Coupon = require("../../../coupons/models/coupon.model");
+const Offer = require("../../../offers/models/offer.model");
+const ServicePackage = require("../../../packages/models/package.model");
 const ReferralProgram = require("../../../coupons/models/referralProgram.model");
 const Review = require("../../../reviews/models/review.model");
 const Notification = require("../../../notifications/models/notification.model");
 const AppFeedback = require("../../../feedback/models/feedback.model");
 const { signToken } = require("../../../../utils/jwtUtils");
 const { sendPushNotification } = require("../../../../utils/firebaseUtils");
+const { resolveRatesForBooking } = require("../../../../utils/revenueSplit");
 const AppError = require("../../../../utils/errorHandlers/appError");
 
 // ==================== AUTH ====================
@@ -302,10 +305,25 @@ const getBookingDetail = async (bookingId) => {
       { model: Partner, as: "partner", attributes: ["name", "phone", "email"] },
       { model: Service, as: "service", attributes: ["name", "basePrice", "duration"] },
       { model: Payment, as: "payment" },
+      { model: Coupon, as: "coupon", attributes: ["code", "type", "discount"] },
+      { model: Offer, as: "offer", attributes: ["title"] },
     ],
   });
   if (!booking) throw new AppError("Booking not found", 404);
-  return booking;
+
+  const PartnerLedgerEntry = require("../../../settlements/models/partnerLedgerEntry.model");
+  const ledgerEntries = await PartnerLedgerEntry.findAll({
+    where: { bookingId, status: { [Op.ne]: "voided" } },
+    include: [{ model: Partner, as: "partner", attributes: ["name"] }],
+  });
+
+  const plain = booking.toJSON();
+  plain.ledgerEntries = ledgerEntries.map(e => ({
+    id: e.id, partnerId: e.partnerId, partnerName: e.partner?.name,
+    direction: e.direction, amount: parseFloat(e.amount), status: e.status,
+    partnerNetAmount: parseFloat(e.partnerNetAmount), adminCommissionAmount: parseFloat(e.adminCommissionAmount),
+  }));
+  return plain;
 };
 
 const assignPartner = async (bookingId, partnerId) => {
@@ -319,7 +337,20 @@ const assignPartner = async (bookingId, partnerId) => {
     throw new AppError("Partner is not in the same city as this booking", 400);
   }
 
-  await booking.update({ partnerId, status: "confirmed" });
+  // Keep per-service tracking consistent with the booking-level assignment — every
+  // booking carries this tracking now, and completion/settlement logic only credits a
+  // partner for services stamped with their assignedPartnerId. Without this, a booking
+  // assigned this way could never be marked completed (services stay "unassigned" forever).
+  const svcs = (() => { const s = booking.services; if (Array.isArray(s)) return [...s]; if (typeof s === "string") { try { return JSON.parse(s); } catch { return []; } } return []; })();
+  const updatedSvcs = svcs.map(s => {
+    if (s.removed) return s;
+    if (!s.assignedPartnerId || !s.serviceStatus || s.serviceStatus === "unassigned") {
+      return { ...s, serviceStatus: "claimed", assignedPartnerId: partner.id, assignedPartnerName: partner.name };
+    }
+    return s;
+  });
+
+  await booking.update({ partnerId, status: "confirmed", services: updatedSvcs });
 
   // Notify partner about the new assignment
   const msg = `You have been assigned to booking ${booking.bookingCode}. Scheduled: ${new Date(booking.scheduledAt).toLocaleString("en-IN")}.`;
@@ -338,13 +369,20 @@ const assignPartner = async (bookingId, partnerId) => {
   return booking;
 };
 
-const editBookingServices = async (bookingId, serviceItems = [], removeIndices = []) => {
+const editBookingServices = async (bookingId, serviceItems = [], removeIndices = [], updateQty = []) => {
   const booking = await Booking.findByPk(bookingId);
   if (!booking) throw new AppError("Booking not found", 404);
   if (booking.status === "cancelled") throw new AppError("Cannot edit services on a cancelled booking", 400);
 
   const existing = (() => { const s = booking.services; if (Array.isArray(s)) return s; if (typeof s === 'string') { try { return JSON.parse(s); } catch { return []; } } return []; })();
   let updatedServices = [...existing];
+
+  // Update quantity on existing (non-removed) entries
+  updateQty.forEach(({ index, qty }) => {
+    if (index >= 0 && index < updatedServices.length && !updatedServices[index].removed) {
+      updatedServices[index] = { ...updatedServices[index], qty };
+    }
+  });
 
   // Soft-remove by index
   removeIndices.forEach(idx => {
@@ -372,17 +410,20 @@ const editBookingServices = async (bookingId, serviceItems = [], removeIndices =
   const newBase = activeServices.reduce((sum, s) => sum + (parseFloat(s.price ?? s.basePrice ?? 0)) * (s.qty || 1), 0);
   const couponDiscount = parseFloat(booking.couponDiscountAmount || 0);
   const taxable = newBase - couponDiscount;
-  const tax = parseFloat((taxable * 0.18).toFixed(2));
+  const pkg = booking.packageId ? await ServicePackage.findByPk(booking.packageId) : null;
+  const { partnerPercent, gstPercent } = await resolveRatesForBooking({ serviceItems: activeServices, package: pkg });
+  const tax = parseFloat((taxable * gstPercent / 100).toFixed(2));
   const total = parseFloat((taxable + tax).toFixed(2));
+  const partnerEarning = parseFloat((taxable * partnerPercent / 100).toFixed(2));
 
-  await booking.update({ services: updatedServices, baseAmount: newBase, taxAmount: tax, totalAmount: total });
+  await booking.update({ services: updatedServices, baseAmount: newBase, taxAmount: tax, totalAmount: total, partnerEarning });
 
   // Notify user and assigned partners about the service change
   const userNotifMsg = `The services on your booking ${booking.bookingCode} have been updated by support. New total: ₹${total}.`;
   const userRecord = await User.findByPk(booking.userId);
   if (userRecord?.fcmToken) {
     await sendPushNotification([userRecord.fcmToken], "Booking Updated", userNotifMsg,
-      { bookingId: String(booking.id), type: "booking" }).catch(() => {});
+      { bookingId: String(booking.id), type: "booking" }, "beyomo_booking").catch(() => {});
   }
   await Notification.create({
     userId: booking.userId,
@@ -413,7 +454,7 @@ const cancelBooking = async (bookingId) => {
   await booking.update({ status: "cancelled", cancelledBy: "admin", cancellationReason: "Cancelled by admin" });
 
   // Notify claimed partners and the user
-  const svcs = Array.isArray(booking.services) ? booking.services : [];
+  const svcs = (() => { const s = booking.services; if (Array.isArray(s)) return s; if (typeof s === "string") { try { return JSON.parse(s); } catch { return []; } } return []; })();
   const claimedPartnerIds = [...new Set(svcs.filter(s => s.assignedPartnerId).map(s => s.assignedPartnerId))];
   // Also notify primary partner if set and not already in the list
   if (booking.partnerId && !claimedPartnerIds.includes(booking.partnerId)) {
@@ -432,7 +473,7 @@ const cancelBooking = async (bookingId) => {
   const userMsg = `Your booking ${booking.bookingCode} has been cancelled by support. Contact us for help.`;
   if (user?.fcmToken) {
     await sendPushNotification([user.fcmToken], "Booking Cancelled", userMsg,
-      { bookingId: String(booking.id), type: "booking" }).catch(() => {});
+      { bookingId: String(booking.id), type: "booking" }, "beyomo_booking").catch(() => {});
   }
   await Notification.create({
     userId: booking.userId,
@@ -441,6 +482,52 @@ const cancelBooking = async (bookingId) => {
     data: { bookingId: String(booking.id) },
     type: "booking",
   });
+
+  return booking;
+};
+
+const rescheduleBooking = async (bookingId, scheduledAt, reason) => {
+  const booking = await Booking.findByPk(bookingId);
+  if (!booking) throw new AppError("Booking not found", 404);
+  if (["completed", "cancelled"].includes(booking.status)) {
+    throw new AppError("Cannot reschedule a completed or cancelled booking", 400);
+  }
+
+  const previousScheduledAt = booking.scheduledAt;
+  const newScheduledAt = new Date(scheduledAt);
+
+  await booking.update({
+    scheduledAt: newScheduledAt,
+    previousScheduledAt,
+    rescheduledBy: "admin",
+    rescheduleReason: reason || "Rescheduled by admin",
+    rescheduledCount: (booking.rescheduledCount || 0) + 1,
+  });
+
+  const newTimeStr = newScheduledAt.toLocaleString("en-IN");
+
+  const user = await User.findByPk(booking.userId);
+  const userMsg = `Your booking ${booking.bookingCode} has been rescheduled to ${newTimeStr} by support.`;
+  if (user?.fcmToken) {
+    await sendPushNotification([user.fcmToken], "Booking Rescheduled", userMsg,
+      { bookingId: String(booking.id), type: "booking" }, "beyomo_booking").catch(() => {});
+  }
+  await Notification.create({
+    userId: booking.userId,
+    title: "Booking Rescheduled",
+    body: userMsg,
+    data: { bookingId: String(booking.id) },
+    type: "booking",
+  });
+
+  if (booking.partnerId) {
+    const partner = await Partner.findByPk(booking.partnerId, { attributes: ["fcmToken"] });
+    if (partner?.fcmToken) {
+      await sendPushNotification([partner.fcmToken], "Booking Rescheduled",
+        `Booking ${booking.bookingCode} has been rescheduled to ${newTimeStr} by admin.`,
+        { bookingId: String(booking.id), type: "booking" }).catch(() => {});
+    }
+  }
 
   return booking;
 };
@@ -536,12 +623,13 @@ const listNotifications = async ({ page = 1, limit = 20 }) => {
   return { data, pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } };
 };
 
-const broadcastNotification = async ({ title, body, data, segment }) => {
+const broadcastNotification = async ({ title, body, data, segment, cityIds }) => {
   let userTokens = [];
   let partnerTokens = [];
+  const cityFilter = cityIdsFilter(cityIds);
 
   if (segment === "all_users" || segment === "all") {
-    const users = await User.findAll({ where: { status: "active", fcmToken: { [Op.ne]: null } }, attributes: ["fcmToken", "id"] });
+    const users = await User.findAll({ where: { status: "active", fcmToken: { [Op.ne]: null }, ...cityFilter }, attributes: ["fcmToken", "id"] });
     userTokens = users.map((u) => u.fcmToken).filter(Boolean);
     if (users.length > 0) {
       await Notification.bulkCreate(users.map((u) => ({ userId: u.id, title, body, data: data || {}, type: "promo" })));
@@ -549,7 +637,7 @@ const broadcastNotification = async ({ title, body, data, segment }) => {
   }
 
   if (segment === "all_partners" || segment === "all") {
-    const partners = await Partner.findAll({ where: { status: "approved", fcmToken: { [Op.ne]: null } }, attributes: ["fcmToken", "id"] });
+    const partners = await Partner.findAll({ where: { status: "approved", fcmToken: { [Op.ne]: null }, ...cityFilter }, attributes: ["fcmToken", "id"] });
     partnerTokens = partners.map((p) => p.fcmToken).filter(Boolean);
     if (partners.length > 0) {
       await Notification.bulkCreate(partners.map((p) => ({ partnerId: p.id, title, body, data: data || {}, type: "promo" })));
@@ -615,15 +703,21 @@ const deleteAdminUser = async (id, requesterId) => {
 
 // ==================== FEEDBACK ====================
 
-const listFeedback = async ({ status, type, page = 1, limit = 20 }) => {
+const listFeedback = async ({ status, type, page = 1, limit = 20, cityIds }) => {
   const offset = (page - 1) * limit;
   const where = {};
   if (status) where.status = status;
   if (type) where.type = type;
 
+  const userInclude = { model: User, as: "user", attributes: ["name", "phone", "cityId"] };
+  if (cityIds?.length) {
+    userInclude.where = cityIdsFilter(cityIds);
+    userInclude.required = true;
+  }
+
   const { count: total, rows: data } = await AppFeedback.findAndCountAll({
     where, order: [["createdAt", "DESC"]], offset, limit,
-    include: [{ model: User, as: "user", attributes: ["name", "phone"] }],
+    include: [userInclude],
   });
   return { data, pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } };
 };
@@ -714,7 +808,7 @@ module.exports = {
   listPartners, getPartnerById, updatePartnerStatus, createPartner,
   listCategories, createCategory, updateCategory, deleteCategory,
   listServices, createService, updateService, deleteService, toggleServiceCityStatus,
-  listBookings, getBookingDetail, assignPartner, cancelBooking, editBookingServices,
+  listBookings, getBookingDetail, assignPartner, cancelBooking, rescheduleBooking, editBookingServices,
   listCoupons, createCoupon, updateCoupon, deleteCoupon, getReferralProgram, updateReferralProgram,
   listReviews, updateReviewStatus,
   listNotifications, broadcastNotification,

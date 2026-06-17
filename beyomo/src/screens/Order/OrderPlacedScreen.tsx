@@ -1,4 +1,4 @@
-import React from 'react';
+import React, {useEffect} from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,8 @@ import {fonts} from '../../config/theme';
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
 
+const AUTO_REDIRECT_MS = 2500;
+
 interface Props {
   navigation?: any;
   route?: any;
@@ -21,6 +23,16 @@ interface Props {
 
 const OrderPlacedScreen = ({navigation, route}: Props) => {
   const bookingCode = route?.params?.bookingCode;
+  const bookingId = route?.params?.bookingId;
+
+  useEffect(() => {
+    if (!bookingId) return;
+    const t = setTimeout(() => {
+      navigation?.replace('BookingDetail', {bookingId});
+    }, AUTO_REDIRECT_MS);
+    return () => clearTimeout(t);
+  }, [bookingId]);
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
@@ -41,8 +53,8 @@ const OrderPlacedScreen = ({navigation, route}: Props) => {
         <TouchableOpacity
           style={styles.homeBtn}
           activeOpacity={0.85}
-          onPress={() => navigation?.navigate('Main')}>
-          <Text style={styles.homeBtnText}>Go to Home</Text>
+          onPress={() => navigation?.replace('BookingDetail', {bookingId})}>
+          <Text style={styles.homeBtnText}>View Booking</Text>
         </TouchableOpacity>
       </View>
 

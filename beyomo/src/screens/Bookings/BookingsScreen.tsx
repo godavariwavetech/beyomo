@@ -1,4 +1,5 @@
-import React, {useState, useEffect} from 'react';
+import React, {useState, useCallback} from 'react';
+import {useFocusEffect} from '@react-navigation/native';
 import {
   View,
   Text,
@@ -9,6 +10,7 @@ import {
   StatusBar,
   Alert,
   RefreshControl,
+  AppState,
 } from 'react-native';
 import {BookingsScreenSkeleton} from '../../components/Skeleton/Skeleton';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
@@ -24,7 +26,7 @@ const sw = (px: number) => (px / 393) * width;
 
 type TabType = 'upcoming' | 'completed';
 
-const UPCOMING_STATUSES = ['pending', 'confirmed', 'assigned', 'in_progress'];
+const UPCOMING_STATUSES = ['pending', 'confirmed', 'in_progress'];
 const COMPLETED_STATUSES = ['completed', 'cancelled'];
 
 interface Props {
@@ -37,9 +39,32 @@ const BookingsScreen = ({navigation}: Props) => {
   const {list, loading, actionLoading} = useSelector((state: RootState) => state.Bookings);
   const [activeTab, setActiveTab] = useState<TabType>('upcoming');
 
-  useEffect(() => {
-    dispatch(fetchUserBookings());
-  }, [dispatch]);
+  // Refresh on focus, then keep polling while focused — but only while the app is
+  // actually in the foreground (AppState), since useFocusEffect alone doesn't pause
+  // when the app is backgrounded.
+  useFocusEffect(
+    useCallback(() => {
+      dispatch(fetchUserBookings());
+      let interval: ReturnType<typeof setInterval> | null = setInterval(() => dispatch(fetchUserBookings()), 10000);
+
+      const sub = AppState.addEventListener('change', state => {
+        if (state === 'active') {
+          if (!interval) {
+            dispatch(fetchUserBookings());
+            interval = setInterval(() => dispatch(fetchUserBookings()), 10000);
+          }
+        } else if (interval) {
+          clearInterval(interval);
+          interval = null;
+        }
+      });
+
+      return () => {
+        if (interval) clearInterval(interval);
+        sub.remove();
+      };
+    }, [dispatch]),
+  );
 
   const bookings = list.filter((b: any) => {
     const status = (b.status ?? '').toLowerCase();
@@ -132,6 +157,7 @@ const BookingsScreen = ({navigation}: Props) => {
                 }
                 onBookAgain={() => navigation?.navigate('ServiceListing')}
                 onCancel={() => handleCancel(booking.id ?? booking._id, booking.bookingCode)}
+                onReschedule={() => navigation?.navigate('BookingDetail', {bookingId: booking.id ?? booking._id, openReschedule: true})}
               />
             ))
           )}
@@ -147,12 +173,14 @@ const BookingCard = ({
   onViewDetails,
   onBookAgain,
   onCancel,
+  onReschedule,
 }: {
   booking: any;
   isCompleted: boolean;
   onViewDetails: () => void;
   onBookAgain: () => void;
   onCancel: () => void;
+  onReschedule: () => void;
 }) => {
   const bookingCode = booking.bookingCode ?? booking._id?.slice(-8).toUpperCase();
   const scheduledAt = booking.scheduledAt
@@ -166,6 +194,9 @@ const BookingCard = ({
   const serviceCount = booking.services?.length ?? booking.serviceCount ?? 0;
   const totalAmount = booking.totalAmount ?? booking.price ?? 0;
   const status = booking.status ?? 'Confirmed';
+  // Backend only allows cancel/reschedule while pending or confirmed — not once a partner
+  // has started the job (in_progress).
+  const isReschedulable = ['pending', 'confirmed'].includes((booking.status ?? '').toLowerCase());
   const createdAt = booking.createdAt
     ? new Date(booking.createdAt).toLocaleString('en-IN')
     : booking.createdAt ?? '';
@@ -263,24 +294,26 @@ const BookingCard = ({
       </View>
     ) : (
       <View style={styles.actionStrip}>
-        <TouchableOpacity
-          style={styles.actionBtn}
-          activeOpacity={0.7}
-          onPress={() =>
-            Alert.alert('Reschedule', 'Reschedule feature coming soon.')
-          }>
-          <Ionicons name="calendar-outline" size={sw(16)} color="#105641" />
-          <Text style={styles.actionTextGreen}>Reschedule</Text>
-        </TouchableOpacity>
+        {isReschedulable && (
+          <>
+            <TouchableOpacity
+              style={styles.actionBtn}
+              activeOpacity={0.7}
+              onPress={onReschedule}>
+              <Ionicons name="calendar-outline" size={sw(16)} color="#105641" />
+              <Text style={styles.actionTextGreen}>Reschedule</Text>
+            </TouchableOpacity>
 
-        <View style={styles.actionDivider} />
+            <View style={styles.actionDivider} />
 
-        <TouchableOpacity style={styles.actionBtn} activeOpacity={0.7} onPress={onCancel}>
-          <Ionicons name="close-circle-outline" size={sw(16)} color="#FB1616" />
-          <Text style={styles.actionTextRed}>Cancel Order</Text>
-        </TouchableOpacity>
+            <TouchableOpacity style={styles.actionBtn} activeOpacity={0.7} onPress={onCancel}>
+              <Ionicons name="close-circle-outline" size={sw(16)} color="#FB1616" />
+              <Text style={styles.actionTextRed}>Cancel Order</Text>
+            </TouchableOpacity>
 
-        <View style={styles.actionDivider} />
+            <View style={styles.actionDivider} />
+          </>
+        )}
 
         <TouchableOpacity
           style={styles.actionBtn}

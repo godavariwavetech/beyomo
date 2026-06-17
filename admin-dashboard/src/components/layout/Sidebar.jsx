@@ -3,7 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Users, UserCog, CalendarCheck, Sparkles,
   DollarSign, Tag, Star, Bell, BarChart2, Settings, LogOut, X,
-  ShieldCheck, MessageCircle, Building2, Globe, Gift, Package, TrendingUp, BookOpen, Inbox
+  ShieldCheck, MessageCircle, Building2, Globe, Gift, Package, TrendingUp, BookOpen, Inbox, Wallet
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { ROLE_LABELS } from '../../data/mockData';
@@ -29,6 +29,7 @@ const NAV_SECTIONS = [
     label: 'Finance',
     items: [
       { path: '/earnings',  label: 'Earnings',        icon: DollarSign,     perm: 'earnings' },
+      { path: '/settlements', label: 'Settlements',   icon: Wallet,         perm: 'settlements' },
       { path: '/coupons',   label: 'Coupons',         icon: Tag,            perm: 'coupons' },
       { path: '/offers',    label: 'Offers',          icon: Gift,           perm: 'offers' },
       { path: '/packages',  label: 'Packages',        icon: Package,        perm: 'packages' },

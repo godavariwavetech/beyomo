@@ -7,7 +7,6 @@ import {
   StyleSheet,
   Dimensions,
   StatusBar,
-  Alert,
   ActivityIndicator,
   Image,
   Linking,
@@ -17,12 +16,13 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {fonts} from '../../config/theme';
 import api from '../../utils/api';
-import {endpoints} from '../../config/config';
 import {resolveImageUrl} from '../../utils/utils';
+import {useAppAlert} from '../../hooks/useAppAlert';
+import AppAlertModal from '../../components/AppAlertModal/AppAlertModal';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
-const FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=200&q=80';
+const FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=800&q=90&fit=crop';
 
 const parseServices = (s: any): any[] => {
   if (Array.isArray(s)) return s;
@@ -40,15 +40,7 @@ const IncomingRequestScreen = ({navigation, route}: any) => {
   );
   const [loading, setLoading] = useState(!booking);
   const [accepting, setAccepting] = useState(false);
-
-  const [selectedIndices, setSelectedIndices] = useState<Set<number>>(() => {
-    const svcs = parseServices(route?.params?.booking?.services);
-    const s = new Set<number>();
-    svcs.forEach((svc: any, i: number) => {
-      if (!svc.serviceStatus || svc.serviceStatus === 'unassigned') s.add(i);
-    });
-    return s;
-  });
+  const {alertConfig, showAlert, hideAlert} = useAppAlert();
 
   React.useEffect(() => {
     const bookingId = route?.params?.bookingId;
@@ -59,13 +51,7 @@ const IncomingRequestScreen = ({navigation, route}: any) => {
       .then(res => {
         const found = (res.data?.data ?? []).find((b: any) => String(b.id) === String(bookingId));
         if (found) {
-          const parsed = {...found, services: parseServices(found.services)};
-          setBooking(parsed);
-          const s = new Set<number>();
-          parsed.services.forEach((svc: any, i: number) => {
-            if (!svc.serviceStatus || svc.serviceStatus === 'unassigned') s.add(i);
-          });
-          setSelectedIndices(s);
+          setBooking({...found, services: parseServices(found.services)});
         }
         setLoading(false);
       })
@@ -79,11 +65,11 @@ const IncomingRequestScreen = ({navigation, route}: any) => {
     (s: any) => !s.serviceStatus || s.serviceStatus === 'unassigned',
   );
 
+  // Accepting always claims every unassigned service, so earnings reflect that full set.
   const selectedEarnings = useMemo(() => {
     if (!isMultiService) return booking?.partnerEarning ?? booking?.totalAmount ?? 0;
-    return services.reduce((sum: number, svc: any, i: number) =>
-      selectedIndices.has(i) ? sum + svc.price * (svc.qty || 1) : sum, 0);
-  }, [selectedIndices, services, isMultiService, booking]);
+    return unassignedServices.reduce((sum: number, svc: any) => sum + svc.price * (svc.qty || 1), 0);
+  }, [unassignedServices, isMultiService, booking]);
 
   const orderId = booking?.bookingCode
     ?? (booking?.id ? String(booking.id).slice(-8).toUpperCase() : '—');
@@ -110,52 +96,29 @@ const IncomingRequestScreen = ({navigation, route}: any) => {
   const hasCoords = !!(lat && lng);
 
   // ── Actions ──────────────────────────────────────────────────────────────────
-  const toggleService = (idx: number) => {
-    const svc = services[idx];
-    if (svc?.serviceStatus && svc.serviceStatus !== 'unassigned') return;
-    setSelectedIndices(prev => {
-      const next = new Set(prev);
-      next.has(idx) ? next.delete(idx) : next.add(idx);
-      return next;
-    });
-  };
-
   const handleDirections = () => {
-    if (hasCoords) {
-      navigation.navigate('GoToCustomer', {job: booking});
-    } else {
-      Linking.openURL(
-        `https://maps.google.com/?q=${encodeURIComponent(fullAddress)}`
-      );
-    }
+    const url = hasCoords
+      ? `https://maps.google.com/?daddr=${lat},${lng}`
+      : `https://maps.google.com/?q=${encodeURIComponent(fullAddress)}`;
+    Linking.openURL(url);
   };
 
+  // Accepting always claims every unassigned service on the booking — there's no
+  // partial-selection step; the partner takes the whole job (or the whole remainder
+  // of it, for a multi-partner booking where some services were already claimed).
   const handleAccept = async () => {
     if (!booking?.id) { navigation.replace('JobDetails', {job: booking}); return; }
     setAccepting(true);
     try {
-      if (isMultiService) {
-        if (selectedIndices.size === 0) {
-          Alert.alert('Select Services', 'Please select at least one service to accept.');
-          setAccepting(false);
-          return;
-        }
-        const res = await api.post(
-          endpoints.PARTNER_CLAIM_SERVICES(String(booking.id)),
-          {serviceIndices: Array.from(selectedIndices)},
-        );
-        navigation.replace('JobDetails', {job: res.data.data ?? booking});
-      } else {
-        const res = await api.post(`/api/v1/partners/bookings/${booking.id}/accept`);
-        navigation.replace('JobDetails', {job: res.data.data ?? booking});
-      }
+      const res = await api.post(`/api/v1/partners/bookings/${booking.id}/accept`);
+      navigation.replace('JobDetails', {job: res.data.data ?? booking});
     } catch (e: any) {
       setAccepting(false);
       const isGone = e.response?.status === 409;
-      Alert.alert(
+      showAlert(
         isGone ? 'Already Taken' : 'Error',
         isGone
-          ? 'One or more selected services were accepted by another partner.'
+          ? 'This booking is no longer available.'
           : (e.response?.data?.message ?? 'Could not accept booking.'),
         [{text: 'OK', onPress: () => (isGone ? navigation.goBack() : null)}],
       );
@@ -163,7 +126,7 @@ const IncomingRequestScreen = ({navigation, route}: any) => {
   };
 
   const handleReject = () => {
-    Alert.alert('Reject Request', 'Are you sure you want to reject this booking?', [
+    showAlert('Reject Request', 'Are you sure you want to reject this booking?', [
       {text: 'Cancel', style: 'cancel'},
       {text: 'Reject', style: 'destructive', onPress: () => navigation.goBack()},
     ]);
@@ -271,42 +234,16 @@ const IncomingRequestScreen = ({navigation, route}: any) => {
             <Text style={styles.sectionTitle}>
               {isMultiService ? `Services (${services.length})` : 'Service'}
             </Text>
-            {isMultiService && (
-              <TouchableOpacity
-                style={styles.selectAllBtn}
-                onPress={() => {
-                  if (selectedIndices.size === unassignedServices.length) {
-                    setSelectedIndices(new Set());
-                  } else {
-                    const s = new Set<number>();
-                    services.forEach((svc: any, i: number) => {
-                      if (!svc.serviceStatus || svc.serviceStatus === 'unassigned') s.add(i);
-                    });
-                    setSelectedIndices(s);
-                  }
-                }}>
-                <Text style={styles.selectAllText}>
-                  {selectedIndices.size === unassignedServices.length ? 'Deselect All' : 'Select All'}
-                </Text>
-              </TouchableOpacity>
-            )}
           </View>
 
           {services.map((svc: any, idx: number) => {
             const isTaken = svc.serviceStatus && svc.serviceStatus !== 'unassigned';
-            const isSelected = selectedIndices.has(idx);
             const imgUri = resolveImageUrl(svc.image ?? booking?.service?.image) ?? FALLBACK_IMAGE;
 
             return (
-              <TouchableOpacity
+              <View
                 key={idx}
-                style={[
-                  styles.svcRow,
-                  isSelected && styles.svcRowSelected,
-                  isTaken && styles.svcRowTaken,
-                ]}
-                activeOpacity={isTaken ? 1 : 0.8}
-                onPress={() => isMultiService && !isTaken && toggleService(idx)}>
+                style={[styles.svcRow, isTaken && styles.svcRowTaken]}>
 
                 {/* Service image */}
                 <Image
@@ -342,19 +279,13 @@ const IncomingRequestScreen = ({navigation, route}: any) => {
                   <Text style={[styles.svcPrice, isTaken && {color: '#9CA3AF'}]}>
                     ₹{Number(svc.price * (svc.qty || 1)).toLocaleString('en-IN')}
                   </Text>
-                  {isMultiService && (
-                    isTaken ? (
-                      <View style={styles.takenBadge}>
-                        <Text style={styles.takenBadgeText}>Taken</Text>
-                      </View>
-                    ) : (
-                      <View style={[styles.checkbox, isSelected && styles.checkboxChecked]}>
-                        {isSelected && <Ionicons name="checkmark" size={sw(12)} color="#FFFFFF" />}
-                      </View>
-                    )
+                  {isTaken && (
+                    <View style={styles.takenBadge}>
+                      <Text style={styles.takenBadgeText}>Taken</Text>
+                    </View>
                   )}
                 </View>
-              </TouchableOpacity>
+              </View>
             );
           })}
 
@@ -370,11 +301,7 @@ const IncomingRequestScreen = ({navigation, route}: any) => {
         <LinearGradient colors={['#0E5843', '#022723']} style={styles.earningsCard}
           start={{x: 0, y: 0}} end={{x: 1, y: 0}}>
           <View>
-            <Text style={styles.earningsLabel}>
-              {isMultiService && selectedIndices.size > 0
-                ? `Earnings for ${selectedIndices.size} service${selectedIndices.size !== 1 ? 's' : ''}`
-                : 'Your Earnings'}
-            </Text>
+            <Text style={styles.earningsLabel}>Your Earnings</Text>
             <Text style={styles.earningsAmount}>
               ₹{Number(selectedEarnings).toLocaleString('en-IN')}
             </Text>
@@ -401,9 +328,6 @@ const IncomingRequestScreen = ({navigation, route}: any) => {
 
       {/* ── Bottom action bar ── */}
       <View style={[styles.footer, {paddingBottom: insets.bottom + sw(8)}]}>
-        {isMultiService && selectedIndices.size === 0 && (
-          <Text style={styles.selectHint}>Select at least one service to accept</Text>
-        )}
         <View style={styles.actionRow}>
           <TouchableOpacity style={styles.rejectBtn} activeOpacity={0.85} onPress={handleReject}>
             <Ionicons name="close-circle-outline" size={sw(20)} color="#DB1919" />
@@ -412,11 +336,11 @@ const IncomingRequestScreen = ({navigation, route}: any) => {
           <TouchableOpacity
             style={[
               styles.acceptBtnWrap,
-              (accepting || (isMultiService && selectedIndices.size === 0)) && {opacity: 0.6},
+              (accepting || (isMultiService && unassignedServices.length === 0)) && {opacity: 0.6},
             ]}
             activeOpacity={0.85}
             onPress={handleAccept}
-            disabled={accepting || (isMultiService && selectedIndices.size === 0)}>
+            disabled={accepting || (isMultiService && unassignedServices.length === 0)}>
             <LinearGradient
               colors={['#0E5843', '#022723']}
               style={styles.acceptGradient}
@@ -427,8 +351,8 @@ const IncomingRequestScreen = ({navigation, route}: any) => {
                 <>
                   <Ionicons name="checkmark-circle-outline" size={sw(20)} color="#FFFFFF" />
                   <Text style={styles.acceptText}>
-                    {isMultiService && selectedIndices.size > 0
-                      ? `Accept ${selectedIndices.size} Service${selectedIndices.size !== 1 ? 's' : ''}`
+                    {isMultiService
+                      ? `Accept All (${unassignedServices.length})`
                       : 'Accept Job'}
                   </Text>
                 </>
@@ -437,6 +361,8 @@ const IncomingRequestScreen = ({navigation, route}: any) => {
           </TouchableOpacity>
         </View>
       </View>
+
+      <AppAlertModal config={alertConfig} onRequestClose={hideAlert} />
     </View>
   );
 };
@@ -499,19 +425,13 @@ const styles = StyleSheet.create({
   /* ── Services ── */
   sectionTitle: {fontFamily: fonts.title, fontSize: sw(14), fontWeight: '700', color: '#171816'},
   svcHeaderRow: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'},
-  selectAllBtn: {
-    borderWidth: 1, borderColor: '#105641', borderRadius: sw(20),
-    paddingHorizontal: sw(10), paddingVertical: sw(4),
-  },
-  selectAllText: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#105641', fontWeight: '600'},
 
   svcRow: {
     flexDirection: 'row', alignItems: 'center', gap: sw(12),
     padding: sw(10), borderRadius: sw(12),
     borderWidth: 1.5, borderColor: '#EEEDED', backgroundColor: '#FAFAFA',
   },
-  svcRowSelected: {borderColor: '#105641', backgroundColor: 'rgba(16,86,65,0.05)'},
-  svcRowTaken:    {borderColor: '#E5E5E5', backgroundColor: '#F5F5F5', opacity: 0.7},
+  svcRowTaken: {borderColor: '#E5E5E5', backgroundColor: '#F5F5F5', opacity: 0.7},
   svcImage: {
     width: sw(56), height: sw(56), borderRadius: sw(10),
     backgroundColor: '#E5E5E5', flexShrink: 0,
@@ -531,12 +451,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: sw(7), paddingVertical: sw(3),
   },
   takenBadgeText: {fontFamily: fonts.textFont, fontSize: sw(10), color: '#6B7280', fontWeight: '600'},
-  checkbox: {
-    width: sw(22), height: sw(22), borderRadius: sw(6),
-    borderWidth: 1.5, borderColor: '#C0C0C0', backgroundColor: '#FFFFFF',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  checkboxChecked: {backgroundColor: '#105641', borderColor: '#105641'},
   allTakenBanner: {
     flexDirection: 'row', alignItems: 'center', gap: sw(8),
     backgroundColor: '#FEF3C7', borderRadius: sw(8), padding: sw(10),
@@ -558,7 +472,6 @@ const styles = StyleSheet.create({
     elevation: 8, shadowColor: '#000', shadowOffset: {width: 0, height: -3},
     shadowOpacity: 0.08, shadowRadius: 8,
   },
-  selectHint: {fontFamily: fonts.textFont, fontSize: sw(12), color: '#9CA3AF', textAlign: 'center'},
   actionRow: {flexDirection: 'row', gap: sw(12)},
   rejectBtn: {
     flex: 1, height: sw(52), borderRadius: sw(12),

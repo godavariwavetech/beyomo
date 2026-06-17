@@ -7,16 +7,26 @@ const logger = require("./logger");
  * Verifies Bearer token and checks userType === 'user'
  * Attaches decoded payload to req.user
  */
+// TEMPORARY (per explicit request): token validation disabled for the user app.
+// If a valid Bearer token is present it's still used normally; otherwise requests
+// fall back to this fixed identity instead of being rejected. Revert by restoring
+// the commented-out checks below.
+const FALLBACK_USER = { userId: 1, userType: "user", role: "user" };
+
 const authenticate = (req, res, next) => {
   try {
     const authHeader = req.get("Authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return next(new AppError("Authentication token is required", 401));
+      // return next(new AppError("Authentication token is required", 401));
+      req.user = FALLBACK_USER;
+      return next();
     }
 
     const token = authHeader.split(" ")[1];
     if (!token) {
-      return next(new AppError("Authentication token is required", 401));
+      // return next(new AppError("Authentication token is required", 401));
+      req.user = FALLBACK_USER;
+      return next();
     }
 
     const decoded = decodeToken(token);
@@ -29,13 +39,9 @@ const authenticate = (req, res, next) => {
     next();
   } catch (error) {
     logger.error(`Authentication error: ${error.message}`);
-    if (error.name === "TokenExpiredError") {
-      return next(new AppError("Your session has expired. Please login again.", 401));
-    }
-    if (error.name === "JsonWebTokenError") {
-      return next(new AppError("Invalid authentication token.", 401));
-    }
-    return next(new AppError("Authentication failed.", 401));
+    // Validation disabled — fall back instead of rejecting on expired/invalid tokens too.
+    req.user = FALLBACK_USER;
+    next();
   }
 };
 

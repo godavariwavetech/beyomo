@@ -33,6 +33,8 @@ const Partner = sequelize.define("Partner", {
   ratingsCount: { type: DataTypes.INTEGER, defaultValue: 0 },
   totalEarnings: { type: DataTypes.DECIMAL(12, 2), defaultValue: 0 },
   pendingEarnings: { type: DataTypes.DECIMAL(12, 2), defaultValue: 0 },
+  // Signed running settlement balance: positive = admin owes partner; negative = partner owes admin
+  walletBalance: { type: DataTypes.DECIMAL(12, 2), defaultValue: 0 },
   status: { type: DataTypes.ENUM("pending", "approved", "suspended", "rejected"), defaultValue: "pending" },
   deviceTokens: { type: DataTypes.JSON, defaultValue: [] },
   fcmToken: { type: DataTypes.TEXT, allowNull: true, defaultValue: null },

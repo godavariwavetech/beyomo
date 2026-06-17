@@ -11,7 +11,6 @@ import {
   Linking,
 } from 'react-native';
 import {HomeScreenSkeleton} from '../../components/Skeleton/Skeleton';
-import LinearGradient from 'react-native-linear-gradient';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useDispatch, useSelector} from 'react-redux';
@@ -29,7 +28,7 @@ const ELLIPSE_H = sw(384.37);
 const ELLIPSE_LEFT = (width - ELLIPSE_W) / 2;
 const ELLIPSE_TOP = -sw(146.19);
 
-const FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=200&q=80';
+const FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=800&q=90&fit=crop';
 
 const chunkArray = <T,>(arr: T[], size: number): T[][] => {
   const chunks: T[][] = [];
@@ -132,56 +131,28 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
             </View>
           </View>
 
-          {/* ── Offers carousel at top ── */}
+          {/* ── Offers banner at top — one full-width poster at a time, swipe for next ── */}
           {offers.length > 0 ? (
             <View style={{marginTop: sw(8)}}>
               <ScrollView
                 horizontal
+                pagingEnabled
                 showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{gap: sw(12), paddingHorizontal: sw(16), paddingBottom: sw(4)}}>
-                {offers.map((offer: any) => {
-                  const tv = offer.triggerValue ?? {};
-                  let triggerLine = '';
-                  let requiresLine = '';
-                  if (offer.triggerType === 'min_spend') {
-                    triggerLine = `Book services worth ₹${tv.amount ?? 0}+`;
-                  } else if (offer.triggerType === 'min_count') {
-                    triggerLine = `Book any ${tv.count ?? 1}+ services`;
-                  } else if (offer.triggerType === 'specific_services') {
-                    const names = (offer.requiredServices ?? []).map((s: any) => s.name);
-                    triggerLine = 'Book all required services';
-                    requiresLine = names.length > 0 ? names.join(' + ') : '';
-                  } else if (offer.triggerType === 'category') {
-                    triggerLine = `Book ${tv.count ?? 1}+ services from same category`;
-                  }
-                  return (
-                    <TouchableOpacity
-                      key={offer.id}
-                      style={styles.offerCard}
-                      activeOpacity={0.88}
-                      onPress={() => navigation.navigate('ServiceListing', {offer})}>
-                      <LinearGradient
-                        colors={['#105641', '#012823']}
-                        style={styles.offerGradient}
-                        start={{x: 0, y: 0}}
-                        end={{x: 1, y: 1}}>
-                        <Text style={styles.offerGiftIcon}>🎁</Text>
-                        <Text style={styles.offerTitle} numberOfLines={2}>{offer.title}</Text>
-                        <Text style={styles.offerTrigger}>{triggerLine}</Text>
-                        {requiresLine ? (
-                          <Text style={styles.offerRequires} numberOfLines={2}>{requiresLine}</Text>
-                        ) : null}
-                        <View style={styles.offerFreeRow}>
-                          <Text style={styles.offerFreeLabel}>FREE</Text>
-                          <Text style={styles.offerFreeName} numberOfLines={1}>{offer.freeService?.name ?? ''}</Text>
-                        </View>
-                        <View style={styles.offerBookBtn}>
-                          <Text style={styles.offerBookBtnText}>Book Now →</Text>
-                        </View>
-                      </LinearGradient>
-                    </TouchableOpacity>
-                  );
-                })}
+                decelerationRate="fast"
+                contentContainerStyle={{paddingBottom: sw(4)}}>
+                {offers.map((offer: any) => (
+                  <TouchableOpacity
+                    key={offer.id}
+                    activeOpacity={0.88}
+                    style={{width}}
+                    onPress={() => navigation.navigate('ServiceListing', {offer})}>
+                    <Image
+                      source={{uri: offer.image || FALLBACK_IMAGE}}
+                      style={styles.topBannerImg}
+                      resizeMode="cover"
+                    />
+                  </TouchableOpacity>
+                ))}
               </ScrollView>
             </View>
           ) : null}
@@ -221,7 +192,7 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
         </View>
 
         {/* ══════════════════════════════════
-            POPULAR PACKAGES
+            POPULAR PACKAGES — poster images only, no overlaid UI
         ══════════════════════════════════ */}
         {packages.length > 0 && (
           <View style={styles.packagesSection}>
@@ -233,51 +204,18 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={{gap: sw(12), paddingHorizontal: sw(16)}}>
-              {packages.map((pkg: any) => {
-                const savings =
-                  pkg.originalPrice && pkg.originalPrice > pkg.price
-                    ? Math.round(pkg.originalPrice - pkg.price)
-                    : null;
-                const serviceCountLabel =
-                  pkg.packageType === 'fixed'
-                    ? `${(pkg.services ?? []).length} services included`
-                    : `Any ${pkg.serviceCount ?? 1} services`;
-                return (
-                  <TouchableOpacity
-                    key={pkg.id}
-                    style={styles.packageCard}
-                    activeOpacity={0.88}
-                    onPress={() => navigation.navigate('PackageDetail', {package: pkg})}>
-                    <View style={styles.packageImgWrap}>
-                      {pkg.image ? (
-                        <Image source={{uri: pkg.image}} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
-                      ) : null}
-                      <LinearGradient
-                        colors={['rgba(1,40,35,0.05)', 'rgba(1,40,35,0.7)']}
-                        style={StyleSheet.absoluteFillObject}
-                      />
-                      {savings ? (
-                        <View style={styles.packageSavingsBadge}>
-                          <Text style={styles.packageSavingsText}>Save ₹{savings}</Text>
-                        </View>
-                      ) : null}
-                    </View>
-                    <View style={styles.packageBody}>
-                      <Text style={styles.packageTitle} numberOfLines={1}>{pkg.title}</Text>
-                      <Text style={styles.packageServiceCount}>{serviceCountLabel}</Text>
-                      <View style={styles.packagePriceRow}>
-                        <Text style={styles.packagePrice}>₹{Math.round(pkg.price)}</Text>
-                        {pkg.originalPrice && pkg.originalPrice > pkg.price ? (
-                          <Text style={styles.packageOriginalPrice}>₹{Math.round(pkg.originalPrice)}</Text>
-                        ) : null}
-                      </View>
-                      <View style={styles.packageBookBtn}>
-                        <Text style={styles.packageBookBtnText}>Book Now →</Text>
-                      </View>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
+              {packages.map((pkg: any) => (
+                <TouchableOpacity
+                  key={pkg.id}
+                  activeOpacity={0.88}
+                  onPress={() => navigation.navigate('PackageDetail', {package: pkg})}>
+                  <Image
+                    source={{uri: pkg.image || FALLBACK_IMAGE}}
+                    style={styles.bannerImg}
+                    resizeMode="cover"
+                  />
+                </TouchableOpacity>
+              ))}
             </ScrollView>
           </View>
         )}
@@ -296,103 +234,21 @@ const styles = StyleSheet.create({
   scroll: {flex: 1},
   contentContainer: {paddingBottom: sw(16)},
 
-  /* ── Offers (top) ── */
-  offerCard: { width: sw(210), borderRadius: sw(16), overflow: 'hidden' },
-  offerGradient: { padding: sw(14), gap: sw(5), minHeight: sw(148) },
-  offerGiftIcon: { fontSize: sw(22) },
-  offerTitle: { fontFamily: fonts.title, fontSize: sw(13), fontWeight: '700', color: '#FFFFFF', lineHeight: sw(17) },
-  offerTrigger: { fontFamily: fonts.textFont, fontSize: sw(10), color: 'rgba(255,255,255,0.7)' },
-  offerRequires: { fontFamily: fonts.textFont, fontSize: sw(10), color: '#FDD77A', fontWeight: '600', fontStyle: 'italic' },
-  offerFreeRow: { flexDirection: 'row', alignItems: 'center', gap: sw(6), marginTop: sw(6) },
-  offerFreeLabel: {
-    fontFamily: fonts.title, fontSize: sw(9), fontWeight: '800', color: '#012823',
-    backgroundColor: '#FDD77A', paddingHorizontal: sw(6), paddingVertical: sw(2), borderRadius: sw(4),
-  },
-  offerFreeName: { fontFamily: fonts.textFont, fontSize: sw(11), color: '#FFFFFF', fontWeight: '600', flex: 1 },
-  offerBookBtn: { marginTop: sw(8), backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: sw(6), paddingVertical: sw(5), alignItems: 'center' },
-  offerBookBtnText: { fontFamily: fonts.title, fontSize: sw(11), fontWeight: '700', color: '#FDD77A' },
-
-  /* ── Packages (bottom) ── */
-  packagesSection: {paddingBottom: sw(4), paddingTop: sw(24)},
-  packageCard: {
-    width: sw(190),
-    borderRadius: sw(16),
-    overflow: 'hidden',
-    backgroundColor: '#FFFFFF',
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-  },
-  packageImgWrap: {
-    width: '100%',
-    height: sw(100),
+  /* ── Offer/package banners — plain poster images, no overlaid UI ── */
+  bannerImg: {
+    width: sw(280),
+    height: sw(140),
+    borderRadius: sw(12),
     backgroundColor: '#D4EDE1',
-    overflow: 'hidden',
   },
-  packageSavingsBadge: {
-    position: 'absolute',
-    top: sw(8),
-    left: sw(8),
-    backgroundColor: '#FDD77A',
-    borderRadius: sw(6),
-    paddingHorizontal: sw(8),
-    paddingVertical: sw(3),
+  topBannerImg: {
+    width: width - sw(32),
+    height: sw(160),
+    marginHorizontal: sw(16),
+    borderRadius: sw(12),
+    backgroundColor: '#D4EDE1',
   },
-  packageSavingsText: {
-    fontFamily: fonts.title,
-    fontSize: sw(10),
-    fontWeight: '700',
-    color: '#012823',
-  },
-  packageBody: {
-    padding: sw(12),
-    gap: sw(4),
-  },
-  packageTitle: {
-    fontFamily: fonts.title,
-    fontSize: sw(13),
-    fontWeight: '700',
-    color: '#171816',
-  },
-  packageServiceCount: {
-    fontFamily: fonts.textFont,
-    fontSize: sw(10),
-    color: '#105641',
-    fontWeight: '600',
-  },
-  packagePriceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: sw(6),
-    marginTop: sw(2),
-  },
-  packagePrice: {
-    fontFamily: fonts.title,
-    fontSize: sw(16),
-    fontWeight: '800',
-    color: '#012823',
-  },
-  packageOriginalPrice: {
-    fontFamily: fonts.textFont,
-    fontSize: sw(11),
-    color: '#AAAAAA',
-    textDecorationLine: 'line-through',
-  },
-  packageBookBtn: {
-    marginTop: sw(6),
-    backgroundColor: '#012823',
-    borderRadius: sw(6),
-    paddingVertical: sw(6),
-    alignItems: 'center',
-  },
-  packageBookBtnText: {
-    fontFamily: fonts.title,
-    fontSize: sw(11),
-    fontWeight: '700',
-    color: '#FDD77A',
-  },
+  packagesSection: {paddingBottom: sw(4), paddingTop: sw(24)},
 
   /* ── Top section ──────────────────────── */
   topSection: {

@@ -4,10 +4,11 @@ const MAP = {
   active:      'badge-active',
   suspended:   'badge-suspended',
   pending:     'badge-pending',
+  confirmed:   'badge-info',
   completed:   'badge-completed',
   cancelled:   'badge-cancelled',
   inactive:    'badge-inactive',
-  'in-progress': 'badge-in-progress',
+  in_progress: 'badge-in-progress',
   assigned:    'badge-assigned',
   online:      'badge-online',
   offline:     'badge-offline',
@@ -24,7 +25,7 @@ const MAP = {
 
 export function Badge({ status, label }) {
   const cls = MAP[status] || 'badge-offline';
-  const text = label || (status ? status.charAt(0).toUpperCase() + status.slice(1).replace('-', ' ') : '');
+  const text = label || (status ? status.charAt(0).toUpperCase() + status.slice(1).replace(/[-_]/g, ' ') : '');
   return <span className={`badge ${cls}`}>{text}</span>;
 }
 

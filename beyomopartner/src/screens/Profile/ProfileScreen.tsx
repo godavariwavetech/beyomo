@@ -1,4 +1,4 @@
-import React, {useEffect} from 'react';
+import React, {useCallback} from 'react';
 import {
   View,
   Text,
@@ -8,16 +8,18 @@ import {
   StyleSheet,
   Dimensions,
   StatusBar,
-  Alert,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import {useFocusEffect} from '@react-navigation/native';
 import {fonts} from '../../config/theme';
 import {useDispatch, useSelector} from 'react-redux';
-import {fetchPartnerProfile} from '../../redux/reducers/partner';
+import {fetchPartnerProfile, fetchPartnerDashboard} from '../../redux/reducers/partner';
 import {logoutPartner, actionLogout} from '../../redux/reducers/auth';
 import {resolveImageUrl} from '../../utils/utils';
+import {useAppAlert} from '../../hooks/useAppAlert';
+import AppAlertModal from '../../components/AppAlertModal/AppAlertModal';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
@@ -34,13 +36,19 @@ const ProfileScreen = ({navigation}: {navigation: any}) => {
   const dispatch = useDispatch<any>();
   const profile = useSelector((s: any) => s.Partner?.profile);
   const dashboard = useSelector((s: any) => s.Partner?.dashboard);
+  const {alertConfig, showAlert, hideAlert} = useAppAlert();
 
-  useEffect(() => {
-    if (!profile) dispatch(fetchPartnerProfile());
-  }, []);
+  // Refetch every time this screen is focused so a rating/earnings change (e.g. a new
+  // review submitted by a customer) shows up instead of a stale value from the first load.
+  useFocusEffect(
+    useCallback(() => {
+      dispatch(fetchPartnerProfile());
+      dispatch(fetchPartnerDashboard());
+    }, [dispatch]),
+  );
 
   const handleLogout = () => {
-    Alert.alert('Logout', 'Are you sure you want to logout?', [
+    showAlert('Logout', 'Are you sure you want to logout?', [
       {text: 'Cancel', style: 'cancel'},
       {
         text: 'Logout',
@@ -61,9 +69,9 @@ const ProfileScreen = ({navigation}: {navigation: any}) => {
   const displayLocation = profile?.city ? `${profile.city}${profile.state ? ', ' + profile.state : ''}` : (profile?.address?.city ?? profile?.location ?? '');
   const displayExperience = profile?.experience ? `${profile.experience} years experience` : '';
   const displayAvatar = resolveImageUrl(profile?.profilePicture ?? profile?.avatar ?? profile?.photo ?? profile?.profilePic) ?? '';
-  const jobsDone = profile?.totalJobsDone ?? dashboard?.totalJobsDone ?? 0;
+  const jobsDone = dashboard?.bookingStats?.totalCompleted ?? 0;
   const earned = profile?.totalEarnings ?? dashboard?.totalEarnings ?? 0;
-  const rating = profile?.averageRating ?? dashboard?.averageRating;
+  const rating = profile?.ratingsAverage ?? dashboard?.ratings?.average;
 
   return (
     <View style={styles.root}>
@@ -186,6 +194,8 @@ const ProfileScreen = ({navigation}: {navigation: any}) => {
         </TouchableOpacity>
 
       </ScrollView>
+
+      <AppAlertModal config={alertConfig} onRequestClose={hideAlert} />
     </View>
   );
 };

@@ -40,7 +40,7 @@ const networkCall = async (
       const defaultHeaders = {
         'Content-Type':
           body instanceof FormData ? 'multipart/form-data' : 'application/json',
-        ...(token && {Authorization: token}),
+        ...(token && {Authorization: `Bearer ${token}`}),
         ...headers,
       };
 

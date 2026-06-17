@@ -8,7 +8,6 @@ import {
   StyleSheet,
   Dimensions,
   StatusBar,
-  Alert,
   Linking,
   Modal,
   TextInput,
@@ -25,6 +24,8 @@ import {endpoints} from '../../config/config';
 import {useSelector, useDispatch} from 'react-redux';
 import type {RootState} from '../../redux/store';
 import {updateBookingStatus} from '../../redux/reducers/partner';
+import {useAppAlert} from '../../hooks/useAppAlert';
+import AppAlertModal from '../../components/AppAlertModal/AppAlertModal';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
@@ -61,6 +62,7 @@ const ActiveJobScreen = ({navigation, route}: any) => {
   const myPartnerId = useSelector(
     (s: RootState) => s.Auth?.partnerId ?? (s.Auth?.partner as any)?.id,
   );
+  const {alertConfig, showAlert, hideAlert} = useAppAlert();
 
   const [status, setStatus] = useState<ServiceStatus>('started');
   const [services, setServices] = useState<BookingService[]>(() =>
@@ -145,34 +147,51 @@ const ActiveJobScreen = ({navigation, route}: any) => {
         const n = svcCart.length;
         setSvcCart([]);
         setShowAddModal(false);
-        Alert.alert(
+        showAlert(
           'Services Added',
           `${n} service(s) added to this booking. New total: ₹${parseFloat(updated.totalAmount).toLocaleString('en-IN')}`,
         );
       } else {
-        Alert.alert('Error', result.response?.message ?? 'Failed to add service. Please try again.');
+        showAlert('Error', result.response?.message ?? 'Failed to add service. Please try again.');
       }
     } catch {
-      Alert.alert('Error', 'Failed to add service. Please try again.');
+      showAlert('Error', 'Failed to add service. Please try again.');
     }
     setAdding(false);
   };
 
   const handleMarkComplete = () => {
-    Alert.alert(
-      'Mark as Completed?',
-      'Confirm that you have completed all services for this booking.',
+    // Payment may not be settled yet — either it's a COD job, or it was booked online but
+    // the payment never went through. Either way, don't block completion: ask whether the
+    // partner collected cash on the spot instead, rather than refusing to close the job.
+    const needsPaymentConfirmation = job?.paymentStatus !== 'paid';
+    const title = needsPaymentConfirmation ? 'Confirm Payment Collected' : 'Mark as Completed?';
+    const message = needsPaymentConfirmation
+      ? `Have you collected ₹${totalAmount.toLocaleString('en-IN')} from the customer (cash or otherwise)?`
+      : 'Confirm that you have completed all services for this booking.';
+
+    showAlert(
+      title,
+      message,
       [
         {text: 'Not Yet', style: 'cancel'},
         {
-          text: 'Confirm',
+          text: needsPaymentConfirmation ? 'Yes, Collected' : 'Confirm',
           onPress: async () => {
             setCompleting(true);
             if (job?.id) {
-              await dispatch(updateBookingStatus({bookingId: job.id, status: 'completed'}));
+              const result = await dispatch(updateBookingStatus({
+                bookingId: job.id,
+                status: 'completed',
+                ...(needsPaymentConfirmation ? {cashCollected: true} : {}),
+              }));
+              if (result.meta.requestStatus === 'fulfilled') {
+                setStatus('completed');
+              } else {
+                showAlert('Could not complete job', result.payload ?? 'Please try again.');
+              }
             }
             setCompleting(false);
-            setStatus('completed');
           },
         },
       ],
@@ -180,25 +199,7 @@ const ActiveJobScreen = ({navigation, route}: any) => {
   };
 
   const handleDone = () => {
-    const partnerEarning = myServices.length < services.length ? myEarnings : totalAmount;
-    navigation.navigate('Earnings', {
-      job: {...job, totalAmount, services, partnerEarning},
-    });
-  };
-
-  const handleCancelService = () => {
-    Alert.alert(
-      'Cancel Service',
-      'Cancelling mid-service may impact your rating. Are you sure?',
-      [
-        {text: 'Continue Job', style: 'cancel'},
-        {
-          text: 'Cancel Anyway',
-          style: 'destructive',
-          onPress: () => navigation.navigate('Jobs'),
-        },
-      ],
-    );
+    navigation.navigate('Main');
   };
 
   const filteredServices = availableServices.filter(s =>
@@ -305,7 +306,7 @@ const ActiveJobScreen = ({navigation, route}: any) => {
 
           {myServices.length > 0 ? (
             myServices.map((svc, idx) => {
-              const imgUri = resolveImageUrl((svc as any).image ?? job?.service?.image) ?? 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=200&q=80';
+              const imgUri = resolveImageUrl((svc as any).image ?? job?.service?.image) ?? 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=800&q=90&fit=crop';
               const isFree = (svc as any).addedByOffer || svc.price === 0;
               const isRemoved = !!(svc as any).removed;
               const tagCfg = isRemoved
@@ -375,46 +376,32 @@ const ActiveJobScreen = ({navigation, route}: any) => {
       {/* Footer actions */}
       <View style={[styles.footer, {paddingBottom: insets.bottom + sw(12)}]}>
         {status === 'started' ? (
-          <View style={styles.footerRow}>
-            <TouchableOpacity
-              style={styles.cancelBtn}
-              activeOpacity={0.85}
-              onPress={handleCancelService}>
-              <Ionicons
-                name="close-circle-outline"
-                size={sw(18)}
-                color="#DB1919"
-              />
-              <Text style={styles.cancelText}>Cancel</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.completeBtn}
-              activeOpacity={0.85}
-              onPress={handleMarkComplete}
-              disabled={completing}>
-              <LinearGradient
-                colors={['#0E5843', '#022723']}
-                style={styles.completeBtnGradient}
-                start={{x: 0, y: 0}}
-                end={{x: 1, y: 0}}>
-                {completing ? (
-                  <ActivityIndicator color="#FFFFFF" size="small" />
-                ) : (
-                  <>
-                    <Ionicons
-                      name="checkmark-done-outline"
-                      size={sw(20)}
-                      color="#FFFFFF"
-                    />
-                    <Text style={styles.completeBtnText}>
-                      Mark as Completed
-                    </Text>
-                  </>
-                )}
-              </LinearGradient>
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity
+            style={styles.completeBtn}
+            activeOpacity={0.85}
+            onPress={handleMarkComplete}
+            disabled={completing}>
+            <LinearGradient
+              colors={['#0E5843', '#022723']}
+              style={styles.completeBtnGradient}
+              start={{x: 0, y: 0}}
+              end={{x: 1, y: 0}}>
+              {completing ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <>
+                  <Ionicons
+                    name="checkmark-done-outline"
+                    size={sw(20)}
+                    color="#FFFFFF"
+                  />
+                  <Text style={styles.completeBtnText}>
+                    Mark as Completed
+                  </Text>
+                </>
+              )}
+            </LinearGradient>
+          </TouchableOpacity>
         ) : (
           <TouchableOpacity activeOpacity={0.85} onPress={handleDone}>
             <LinearGradient
@@ -427,7 +414,7 @@ const ActiveJobScreen = ({navigation, route}: any) => {
                 size={sw(22)}
                 color="#FDD77A"
               />
-              <Text style={styles.doneBtnText}>Done — View Earnings</Text>
+              <Text style={styles.doneBtnText}>Done</Text>
             </LinearGradient>
           </TouchableOpacity>
         )}
@@ -550,6 +537,8 @@ const ActiveJobScreen = ({navigation, route}: any) => {
           </View>
         </View>
       </Modal>
+
+      <AppAlertModal config={alertConfig} onRequestClose={hideAlert} />
     </View>
   );
 };
@@ -736,25 +725,7 @@ const styles = StyleSheet.create({
     paddingTop: sw(12),
     gap: sw(8),
   },
-  footerRow: {flexDirection: 'row', gap: sw(12)},
-  cancelBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: sw(6),
-    borderWidth: 1.5,
-    borderColor: '#DB1919',
-    borderRadius: sw(12),
-    paddingHorizontal: sw(16),
-    paddingVertical: sw(14),
-    backgroundColor: '#FFFFFF',
-  },
-  cancelText: {
-    fontFamily: fonts.textFont,
-    fontSize: sw(13),
-    color: '#DB1919',
-    fontWeight: '600',
-  },
-  completeBtn: {flex: 1, borderRadius: sw(12), overflow: 'hidden'},
+  completeBtn: {borderRadius: sw(12), overflow: 'hidden'},
   completeBtnGradient: {
     height: sw(52),
     flexDirection: 'row',

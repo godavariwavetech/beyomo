@@ -1,7 +1,7 @@
 import React, {useState, useCallback} from 'react';
 import {
   View, Text, Image, ScrollView, TouchableOpacity, StyleSheet,
-  Dimensions, StatusBar, Alert, Modal, TextInput, FlatList,
+  Dimensions, StatusBar, Modal, TextInput, FlatList,
   ActivityIndicator, Linking,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
@@ -12,10 +12,12 @@ import networkCall from '../../utils/networkCall';
 import api from '../../utils/api';
 import {endpoints} from '../../config/config';
 import {resolveImageUrl} from '../../utils/utils';
+import {useAppAlert} from '../../hooks/useAppAlert';
+import AppAlertModal from '../../components/AppAlertModal/AppAlertModal';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
-const FALLBACK_IMG = 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=200&q=80';
+const FALLBACK_IMG = 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=800&q=90&fit=crop';
 
 const parseServices = (s: any): any[] => {
   if (Array.isArray(s)) return s;
@@ -29,12 +31,29 @@ const JobChecklistScreen = ({navigation, route}: any) => {
   const [services, setServices] = useState<any[]>(() => parseServices(route?.params?.job?.services));
   const [totalAmount, setTotalAmount] = useState<number>(Number(route?.params?.job?.totalAmount ?? 0));
   const [submitting, setSubmitting] = useState(false);
+  const [starting, setStarting] = useState(false);
 
-  // Approval flow state
+  // Approval flow state — restore from the booking's own fields on mount so a pending
+  // request you sent before closing the app still shows as pending when you reopen it,
+  // instead of resetting to idle and only showing on the customer's side.
   type ApprovalStatus = 'idle' | 'pending' | 'approved' | 'rejected';
-  const [approvalStatus, setApprovalStatus] = useState<ApprovalStatus>('idle');
-  const [pendingProposedServices, setPendingProposedServices] = useState<any[]>([]);
-  const [pendingTotal, setPendingTotal] = useState<number>(0);
+  const parsePendingUpdate = (j: any) => {
+    const p = j?.pendingServicesUpdate;
+    if (!p) return null;
+    if (typeof p === 'string') { try { return JSON.parse(p); } catch { return null; } }
+    return p;
+  };
+  const initialJob = route?.params?.job;
+  const initialPendingUpdate = parsePendingUpdate(initialJob);
+  const [approvalStatus, setApprovalStatus] = useState<ApprovalStatus>(
+    initialJob?.serviceUpdatePending ? 'pending' : 'idle',
+  );
+  const [pendingProposedServices, setPendingProposedServices] = useState<any[]>(
+    initialJob?.serviceUpdatePending ? (initialPendingUpdate?.services ?? []) : [],
+  );
+  const [pendingTotal, setPendingTotal] = useState<number>(
+    initialJob?.serviceUpdatePending ? Number(initialPendingUpdate?.totalAmount ?? 0) : 0,
+  );
   const [checkingStatus, setCheckingStatus] = useState(false);
 
   // Add service modal
@@ -45,6 +64,7 @@ const JobChecklistScreen = ({navigation, route}: any) => {
   const [selectedSvc, setSelectedSvc] = useState<any>(null);
   const [addQty, setAddQty] = useState(1);
   const [adding, setAdding] = useState(false);
+  const {alertConfig, showAlert, hideAlert} = useAppAlert();
 
   const fetchAllServices = useCallback(async () => {
     setLoadingSvcs(true);
@@ -91,7 +111,7 @@ const JobChecklistScreen = ({navigation, route}: any) => {
 
   // Delete a service
   const deleteService = (idx: number) => {
-    Alert.alert('Remove Service', `Remove "${services[idx]?.name}" from this booking?`, [
+    showAlert('Remove Service', `Remove "${services[idx]?.name}" from this booking?`, [
       {text: 'Cancel', style: 'cancel'},
       {text: 'Remove', style: 'destructive', onPress: () =>
         setServices(prev => prev.filter((_, i) => i !== idx))},
@@ -103,7 +123,7 @@ const JobChecklistScreen = ({navigation, route}: any) => {
     const base = svcs.reduce((s, i) => s + (parseFloat(i.price) || 0) * (i.qty || 1), 0);
     const coupon = parseFloat(job?.couponDiscountAmount || 0);
     const taxable = base - coupon;
-    const tax = taxable * 0.18;
+    const tax = taxable * 0.05; // GST — backend recomputes the authoritative weighted rate on submit
     return parseFloat((taxable + tax).toFixed(2));
   };
 
@@ -121,40 +141,62 @@ const JobChecklistScreen = ({navigation, route}: any) => {
         setApprovalStatus('pending');
       }
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.message ?? 'Failed to send changes.');
+      showAlert('Error', e.response?.data?.message ?? 'Failed to send changes.');
     }
     setSubmitting(false);
   };
 
-  const checkApprovalStatus = async () => {
-    if (!job?.id) return;
-    setCheckingStatus(true);
+  // The booking only actually moves to "in_progress" here — once the partner has
+  // reviewed/confirmed the checklist and is ready to start, not at "Arrived at Location".
+  const handleStartService = async () => {
+    if (!job?.id) {
+      navigation.navigate('ActiveJob', {job: {...job, services, totalAmount: displayTotal}});
+      return;
+    }
+    setStarting(true);
     try {
-      const res = await api.get(endpoints.PARTNER_BOOKINGS, {params: {limit: 50}});
-      const list: any[] = res.data?.data ?? [];
-      const updated = list.find((b: any) => String(b.id ?? b._id) === String(job.id));
-      if (updated && updated.serviceUpdatePending === false) {
+      await api.patch(endpoints.PARTNER_BOOKING_STATUS(String(job.id)), {status: 'in_progress'});
+      navigation.navigate('ActiveJob', {job: {...job, services, totalAmount: displayTotal, status: 'in_progress'}});
+    } catch (e: any) {
+      showAlert('Error', e.response?.data?.message ?? 'Failed to start service. Please try again.');
+    }
+    setStarting(false);
+  };
+
+  // Polls the single-booking endpoint (not the full list) and reads the explicit
+  // lastServiceUpdateDecision field set by the backend — no more guessing approve vs
+  // reject from comparing totals. `silent` suppresses alerts for background auto-checks.
+  const checkApprovalStatus = async (silent = false) => {
+    if (!job?.id) return;
+    if (!silent) setCheckingStatus(true);
+    try {
+      const res = await api.get(endpoints.PARTNER_BOOKING_DETAIL(String(job.id)));
+      const updated = res.data?.data;
+      if (updated && updated.serviceUpdatePending === false && updated.lastServiceUpdateDecision === 'approved') {
+        const approvedSvcs = parseServices(updated.services);
         const updatedTotal = parseFloat(updated.totalAmount ?? 0);
-        const wasApproved = Math.abs(updatedTotal - pendingTotal) < 1;
-        if (wasApproved) {
-          const approvedSvcs = parseServices(updated.services);
-          setApprovalStatus('approved');
-          setServices(approvedSvcs);
-          setTotalAmount(updatedTotal);
-          setJob((prev: any) => ({...prev, services: updated.services, totalAmount: updated.totalAmount}));
-        } else {
-          setApprovalStatus('rejected');
-        }
-      } else if (!updated) {
-        Alert.alert('Not found', 'Could not find this booking. It may have been updated.');
-      } else {
-        Alert.alert('Still Pending', 'The customer has not responded yet.');
+        setApprovalStatus('approved');
+        setServices(approvedSvcs);
+        setTotalAmount(updatedTotal);
+        setJob((prev: any) => ({...prev, services: updated.services, totalAmount: updated.totalAmount}));
+      } else if (updated && updated.serviceUpdatePending === false && updated.lastServiceUpdateDecision === 'rejected') {
+        setApprovalStatus('rejected');
+      } else if (!silent) {
+        showAlert('Still Pending', 'The customer has not responded yet.');
       }
     } catch {
-      Alert.alert('Error', 'Could not check status. Please try again.');
+      if (!silent) showAlert('Error', 'Could not check status. Please try again.');
     }
-    setCheckingStatus(false);
+    if (!silent) setCheckingStatus(false);
   };
+
+  // Auto-poll while waiting on the customer, so the partner doesn't have to keep
+  // tapping "Check Status" manually for the screen to update.
+  React.useEffect(() => {
+    if (approvalStatus !== 'pending') return;
+    const interval = setInterval(() => checkApprovalStatus(true), 6000);
+    return () => clearInterval(interval);
+  }, [approvalStatus, job?.id]);
 
   // Derived
   const orderId      = job?.bookingCode ?? `#${String(job?.id ?? '').slice(-8).toUpperCase()}`;
@@ -169,6 +211,11 @@ const JobChecklistScreen = ({navigation, route}: any) => {
   const earnings     = Number(job?.partnerEarning ?? totalAmount);
   const notes        = job?.notes ?? '';
   const displayTotal = recalcTotal(services);
+  const jobTaxAmount = Number(job?.taxAmount ?? 0);
+  // What's left after the partner's share and GST (a pass-through, not part of the
+  // admin/partner split) is the admin's commission — only meaningful against the
+  // booking's last-saved figures, not an unsent local edit (no live recalculation here).
+  const adminCommission = Math.max(0, totalAmount - jobTaxAmount - earnings);
 
   const filteredSvcs = allServices.filter(s =>
     !search || s.name?.toLowerCase().includes(search.toLowerCase()));
@@ -307,11 +354,31 @@ const JobChecklistScreen = ({navigation, route}: any) => {
         {/* Earnings */}
         <LinearGradient colors={['#0E5843', '#022723']} style={styles.earningsCard}
           start={{x: 0, y: 0}} end={{x: 1, y: 0}}>
-          <View>
-            <Text style={styles.earningsLabel}>Your Earnings</Text>
-            <Text style={styles.earningsValue}>₹{(hasChanges ? displayTotal : earnings).toLocaleString('en-IN')}</Text>
+          <View style={styles.earningsTopRow}>
+            <View>
+              <Text style={styles.earningsLabel}>Your Earnings</Text>
+              <Text style={styles.earningsValue}>₹{(hasChanges ? displayTotal : earnings).toLocaleString('en-IN')}</Text>
+            </View>
+            <Ionicons name="cash-outline" size={sw(40)} color="rgba(255,255,255,0.2)" />
           </View>
-          <Ionicons name="cash-outline" size={sw(40)} color="rgba(255,255,255,0.2)" />
+          {!hasChanges && (
+            <View style={styles.earningsBreakdown}>
+              <View style={styles.earningsBreakdownRow}>
+                <Text style={styles.earningsBreakdownLabel}>Total Booking Amount</Text>
+                <Text style={styles.earningsBreakdownVal}>₹{totalAmount.toLocaleString('en-IN')}</Text>
+              </View>
+              {jobTaxAmount > 0 && (
+                <View style={styles.earningsBreakdownRow}>
+                  <Text style={styles.earningsBreakdownLabel}>GST (pass-through)</Text>
+                  <Text style={styles.earningsBreakdownVal}>–₹{jobTaxAmount.toLocaleString('en-IN')}</Text>
+                </View>
+              )}
+              <View style={styles.earningsBreakdownRow}>
+                <Text style={styles.earningsBreakdownLabel}>Admin Commission</Text>
+                <Text style={styles.earningsBreakdownVal}>–₹{adminCommission.toLocaleString('en-IN')}</Text>
+              </View>
+            </View>
+          )}
         </LinearGradient>
 
         {/* Approval status card */}
@@ -337,7 +404,7 @@ const JobChecklistScreen = ({navigation, route}: any) => {
             </View>
             <TouchableOpacity
               style={[styles.refreshBtn, checkingStatus && {opacity: 0.6}]}
-              onPress={checkApprovalStatus}
+              onPress={() => checkApprovalStatus()}
               disabled={checkingStatus}
               activeOpacity={0.8}>
               {checkingStatus
@@ -401,7 +468,7 @@ const JobChecklistScreen = ({navigation, route}: any) => {
       <View style={[styles.footer, {paddingBottom: insets.bottom + sw(8)}]}>
         {approvalStatus === 'pending' ? (
           <TouchableOpacity style={[styles.btn, styles.btnWarning, {opacity: 0.65}]}
-            onPress={checkApprovalStatus} disabled={checkingStatus} activeOpacity={0.88}>
+            onPress={() => checkApprovalStatus()} disabled={checkingStatus} activeOpacity={0.88}>
             {checkingStatus ? <ActivityIndicator color="#FFFFFF" /> : (
               <><Ionicons name="time-outline" size={sw(18)} color="#FFFFFF" />
               <Text style={styles.btnText}>Waiting for Customer · Tap to Refresh</Text></>
@@ -419,12 +486,17 @@ const JobChecklistScreen = ({navigation, route}: any) => {
           </TouchableOpacity>
         ) : (
           <TouchableOpacity style={styles.btn}
-            onPress={() => navigation.navigate('StartService', {job: {...job, services, totalAmount: displayTotal}})}
+            onPress={handleStartService}
+            disabled={starting}
             activeOpacity={0.88}>
             <LinearGradient colors={['#0E5843', '#022723']} style={styles.btnGradient}
               start={{x: 0, y: 0}} end={{x: 1, y: 0}}>
-              <Ionicons name="play-circle-outline" size={sw(22)} color="#FDD77A" />
-              <Text style={styles.btnText}>Proceed to Start Service</Text>
+              {starting ? <ActivityIndicator color="#FFFFFF" /> : (
+                <>
+                  <Ionicons name="play-circle-outline" size={sw(22)} color="#FDD77A" />
+                  <Text style={styles.btnText}>Start Service</Text>
+                </>
+              )}
             </LinearGradient>
           </TouchableOpacity>
         )}
@@ -495,6 +567,8 @@ const JobChecklistScreen = ({navigation, route}: any) => {
           </TouchableOpacity>
         </View>
       </Modal>
+
+      <AppAlertModal config={alertConfig} onRequestClose={hideAlert} />
     </View>
   );
 };
@@ -542,9 +616,16 @@ const styles = StyleSheet.create({
   totalValue: {fontFamily: fonts.title, fontSize: sw(16), fontWeight: '800', color: '#012823'},
   changesNote: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#C87B1A', textAlign: 'right'},
 
-  earningsCard: {borderRadius: sw(16), padding: sw(16), flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'},
+  earningsCard: {borderRadius: sw(16), padding: sw(16), gap: sw(12)},
+  earningsTopRow: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'},
   earningsLabel: {fontFamily: fonts.textFont, fontSize: sw(12), color: 'rgba(255,255,255,0.7)', marginBottom: sw(4)},
   earningsValue: {fontFamily: fonts.title, fontSize: sw(28), fontWeight: '800', color: '#FFFFFF'},
+  earningsBreakdown: {
+    borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.15)', paddingTop: sw(10), gap: sw(6),
+  },
+  earningsBreakdownRow: {flexDirection: 'row', justifyContent: 'space-between'},
+  earningsBreakdownLabel: {fontFamily: fonts.textFont, fontSize: sw(11), color: 'rgba(255,255,255,0.65)'},
+  earningsBreakdownVal: {fontFamily: fonts.textFont, fontSize: sw(11), color: 'rgba(255,255,255,0.9)', fontWeight: '600'},
 
   approvalCard: {
     borderRadius: sw(14), padding: sw(14), gap: sw(8),

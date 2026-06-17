@@ -46,7 +46,7 @@ const ProfileScreen = ({navigation}: Props) => {
   }, []);
 
   const upcomingCount = bookings.filter(
-    (b: any) => b.status === 'confirmed' || b.status === 'pending' || b.status === 'assigned' || b.status === 'in_progress',
+    (b: any) => b.status === 'confirmed' || b.status === 'pending' || b.status === 'in_progress',
   ).length;
   const completedCount = bookings.filter((b: any) => b.status === 'completed').length;
 

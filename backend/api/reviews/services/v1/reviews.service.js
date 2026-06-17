@@ -1,7 +1,8 @@
-const { fn, col } = require("sequelize");
+const { fn, col, literal } = require("sequelize");
 const Review = require("../../models/review.model");
 const User = require("../../../users/models/user.model");
 const Service = require("../../../services/models/service.model");
+const Booking = require("../../../bookings/models/booking.model");
 const AppError = require("../../../../utils/errorHandlers/appError");
 
 const getPartnerReviews = async (partnerId, page = 1, limit = 10) => {
@@ -16,6 +17,7 @@ const getPartnerReviews = async (partnerId, page = 1, limit = 10) => {
     include: [
       { model: User, as: "user", attributes: ["name", "profilePicture"] },
       { model: Service, as: "service", attributes: ["name"] },
+      { model: Booking, as: "booking", attributes: ["bookingCode"] },
     ],
   });
 
@@ -24,11 +26,11 @@ const getPartnerReviews = async (partnerId, page = 1, limit = 10) => {
     attributes: [
       [fn("AVG", col("rating")), "avgRating"],
       [fn("COUNT", col("id")), "count"],
-      [fn("SUM", col("rating = 5")), "rating5"],
-      [fn("SUM", col("rating = 4")), "rating4"],
-      [fn("SUM", col("rating = 3")), "rating3"],
-      [fn("SUM", col("rating = 2")), "rating2"],
-      [fn("SUM", col("rating = 1")), "rating1"],
+      [literal("SUM(rating = 5)"), "rating5"],
+      [literal("SUM(rating = 4)"), "rating4"],
+      [literal("SUM(rating = 3)"), "rating3"],
+      [literal("SUM(rating = 2)"), "rating2"],
+      [literal("SUM(rating = 1)"), "rating1"],
     ],
     raw: true,
   });

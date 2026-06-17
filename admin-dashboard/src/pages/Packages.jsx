@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Plus, Edit2, Trash2, Package, Search, ChevronDown, ChevronRight, MapPin } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useCityFilter } from '../context/CityContext';
 import { Badge } from '../components/common/Badge';
 import Modal from '../components/common/Modal';
+import RevenueSplitFields from '../components/common/RevenueSplitFields';
 import api from '../services/api';
 
 const fmt = (n) => Number(n || 0).toLocaleString('en-IN');
@@ -19,6 +21,9 @@ const emptyForm = () => ({
   isActive: true,
   validFrom: '',
   validTill: '',
+  adminPercent: 20,
+  partnerPercent: 80,
+  gstPercent: 5,
 });
 
 // ── City multi-select pill component ─────────────────────────────────────────
@@ -227,6 +232,7 @@ function AmountsSummary({ selectedIds, allServices, packagePrice }) {
 // ── Main component ────────────────────────────────────────────────────────────
 export default function Packages() {
   const { showToast } = useAuth();
+  const { cityParam } = useCityFilter();
   const [packages, setPackages]     = useState([]);
   const [allServices, setAllServices] = useState([]);   // full list, unfiltered
   const [categories, setCategories] = useState([]);
@@ -243,7 +249,6 @@ export default function Packages() {
   const [deleteTarget, setDeleteTarget] = useState(null);
 
   useEffect(() => {
-    fetchPackages();
     api.get('/api/v1/admin/services', { params: { limit: 500 } })
       .then(r => setAllServices(r.data?.data?.data ?? r.data?.data ?? []))
       .catch(() => {});
@@ -257,11 +262,14 @@ export default function Packages() {
 
   const fetchPackages = () => {
     setLoading(true);
-    api.get('/api/v1/admin/packages')
+    const params = cityParam ? { cityIds: cityParam } : {};
+    api.get('/api/v1/admin/packages', { params })
       .then(r => setPackages(r.data?.data ?? []))
       .catch(() => showToast('Failed to load packages', 'danger'))
       .finally(() => setLoading(false));
   };
+
+  useEffect(() => { fetchPackages(); }, [cityParam]);
 
   // serviceAvailableInAllCities: returns true if the service is usable across ALL the given cityIds.
   // Global service (cityIds=[]) is available everywhere. City-specific service must have
@@ -321,6 +329,9 @@ export default function Packages() {
       isActive:       pkg.isActive ?? true,
       validFrom:      pkg.validFrom ? pkg.validFrom.slice(0, 10) : '',
       validTill:      pkg.validTill ? pkg.validTill.slice(0, 10) : '',
+      adminPercent:   parseFloat(pkg.adminPercent ?? 20),
+      partnerPercent: parseFloat(pkg.partnerPercent ?? 80),
+      gstPercent:     parseFloat(pkg.gstPercent ?? 5),
     });
     setModal(true);
   };
@@ -361,6 +372,9 @@ export default function Packages() {
         : [],
       serviceCount: form.packageType === 'flexible' ? Number(form.serviceCount) : null,
       categoryId:   form.packageType === 'flexible' && form.filterCategoryId ? Number(form.filterCategoryId) : null,
+      adminPercent:   parseFloat(form.adminPercent ?? 20),
+      partnerPercent: parseFloat(form.partnerPercent ?? 80),
+      gstPercent:     parseFloat(form.gstPercent ?? 5),
     };
 
     setSaving(true);
@@ -604,6 +618,8 @@ export default function Packages() {
               <span style={{ fontSize: 13 }}>Active</span>
             </label>
           </div>
+
+          <RevenueSplitFields form={form} setForm={setForm} />
 
           {/* ── Fixed: category tree service picker ── */}
           {form.packageType === 'fixed' && (

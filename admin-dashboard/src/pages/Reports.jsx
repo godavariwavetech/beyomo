@@ -39,7 +39,7 @@ const CustomTooltip = ({ active, payload, label }) => {
 
 export default function Reports() {
   const { action } = useReports();
-  const { cityId } = useCityFilter();
+  const { cityParam } = useCityFilter();
   const [activeTab, setTab] = useState('Revenue');
   const [dateRange, setDR] = useState('12m');
   const [revenueData, setRevenueData] = useState([]);
@@ -48,19 +48,20 @@ export default function Reports() {
   const [serviceRevData, setServiceRevData] = useState([]);
 
   useEffect(() => {
-    action('get', '/api/v1/admin/reports/revenue').then(res => {
+    const params = cityParam ? { cityIds: cityParam } : {};
+    action('get', '/api/v1/admin/reports/revenue', null, params).then(res => {
       const arr = res.data?.data?.data;
       if (res.ok && Array.isArray(arr) && arr.length) setRevenueData(arr);
     });
-    action('get', '/api/v1/admin/reports/users').then(res => {
+    action('get', '/api/v1/admin/reports/users', null, params).then(res => {
       const arr = res.data?.data?.users;
       if (res.ok && Array.isArray(arr) && arr.length) setUserGrowthData(arr);
     });
-    action('get', '/api/v1/admin/reports/bookings').then(res => {
+    action('get', '/api/v1/admin/reports/bookings', null, params).then(res => {
       const arr = res.data?.data?.topServices;
       if (res.ok && Array.isArray(arr) && arr.length) setServiceRevData(arr);
     });
-  }, [dateRange, cityId]);
+  }, [dateRange, cityParam]);
 
   const bookingsByMonth = revenueData.map(r => ({
     month: r.month,

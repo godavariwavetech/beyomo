@@ -11,7 +11,6 @@ import {
   Platform,
   ScrollView,
   ActivityIndicator,
-  Alert,
   Modal,
   FlatList,
   Image,
@@ -26,6 +25,8 @@ import api from '../../utils/api';
 import {endpoints} from '../../config/config';
 import {refreshPartnerStatus} from '../../redux/reducers/auth';
 import type {AppDispatch} from '../../redux/store';
+import {useAppAlert} from '../../hooks/useAppAlert';
+import AppAlertModal from '../../components/AppAlertModal/AppAlertModal';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
@@ -86,6 +87,7 @@ const RegisterScreen = ({navigation}: any) => {
   // Step 4 – Documents
   const [aadharImage, setAadharImage] = useState<{uri: string; base64?: string} | null>(null);
   const [agreementImage, setAgreementImage] = useState<{uri: string; base64?: string} | null>(null);
+  const {alertConfig, showAlert, hideAlert} = useAppAlert();
 
   useEffect(() => {
     fetchData();
@@ -103,7 +105,7 @@ const RegisterScreen = ({navigation}: any) => {
       setSkillCategories(skillsRes.data?.data || []);
       setServiceCategories(serviceCatsRes.data?.data || []);
     } catch {
-      Alert.alert('Error', 'Failed to load data. Please try again.');
+      showAlert('Error', 'Failed to load data. Please try again.');
     } finally {
       setFetchingData(false);
     }
@@ -112,29 +114,29 @@ const RegisterScreen = ({navigation}: any) => {
   const nextStep = () => {
     if (step === 0) {
       if (!name.trim()) {
-        Alert.alert('Required', 'Please enter your full name.');
+        showAlert('Required', 'Please enter your full name.');
         return;
       }
     }
     if (step === 1) {
       if (!selectedCity) {
-        Alert.alert('Required', 'Please select your city.');
+        showAlert('Required', 'Please select your city.');
         return;
       }
       if (!address.trim()) {
-        Alert.alert('Required', 'Please enter your area/locality.');
+        showAlert('Required', 'Please enter your area/locality.');
         return;
       }
     }
     if (step === 2) {
       if (selectedServiceCategoryIds.size === 0) {
-        Alert.alert('Required', 'Please select at least one service category.');
+        showAlert('Required', 'Please select at least one service category.');
         return;
       }
     }
     if (step === 3) {
       if (selectedCategoryIds.size === 0) {
-        Alert.alert('Required', 'Please select at least one skill.');
+        showAlert('Required', 'Please select at least one skill.');
         return;
       }
     }
@@ -163,17 +165,17 @@ const RegisterScreen = ({navigation}: any) => {
   const downloadAgreement = () => {
     const url = `${api.defaults.baseURL}/api/v1/partners/agreement.pdf`;
     Linking.openURL(url).catch(() =>
-      Alert.alert('Error', 'Could not open agreement. Please try again.'),
+      showAlert('Error', 'Could not open agreement. Please try again.'),
     );
   };
 
   const submit = async () => {
     if (!aadharImage) {
-      Alert.alert('Required', 'Please upload your Aadhar card image.');
+      showAlert('Required', 'Please upload your Aadhar card image.');
       return;
     }
     if (!agreementImage) {
-      Alert.alert('Required', 'Please upload the signed agreement image.');
+      showAlert('Required', 'Please upload the signed agreement image.');
       return;
     }
 
@@ -212,7 +214,7 @@ const RegisterScreen = ({navigation}: any) => {
       await dispatch(refreshPartnerStatus());
       navigation.replace('AccountStatus');
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.message ?? 'Something went wrong. Please try again.');
+      showAlert('Error', e.response?.data?.message ?? 'Something went wrong. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -655,6 +657,8 @@ const RegisterScreen = ({navigation}: any) => {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <AppAlertModal config={alertConfig} onRequestClose={hideAlert} />
     </LinearGradient>
   );
 };

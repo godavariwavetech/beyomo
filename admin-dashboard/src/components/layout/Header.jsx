@@ -12,6 +12,7 @@ const PAGE_TITLES = {
   '/bookings':      { title: 'Bookings',       subtitle: 'Track and manage all service bookings.' },
   '/services':      { title: 'Services',       subtitle: 'Manage beauty and wellness service catalog.' },
   '/earnings':      { title: 'Earnings & Payments', subtitle: 'Revenue overview and partner payouts.' },
+  '/settlements':   { title: 'Settlements',     subtitle: 'Track and settle partner wallet balances for COD and online jobs.' },
   '/coupons':       { title: 'Coupons & Promos', subtitle: 'Manage discount codes and referral program.' },
   '/reviews':       { title: 'Reviews & Ratings', subtitle: 'Moderate customer and partner reviews.' },
   '/notifications': { title: 'Notifications',  subtitle: 'Send and manage push notifications.' },

@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Search, Download, Eye, XCircle, MapPin, CreditCard, Clock, UserCheck, Package, FileText, Tag, PlusCircle } from 'lucide-react';
+import { Search, Download, Eye, XCircle, MapPin, CreditCard, Clock, UserCheck, Package, FileText, Tag, PlusCircle, CalendarClock, Check, Gift } from 'lucide-react';
 import { useBookings } from '../hooks/useBookings';
 import { useAuth } from '../context/AuthContext';
 import { useCityFilter } from '../context/CityContext';
@@ -19,6 +19,25 @@ const ITEMS_PER_PAGE = 8;
 const STATUSES = ['all','pending','confirmed','in_progress','completed','cancelled'];
 
 const fmt = (n) => Number(n || 0).toLocaleString('en-IN');
+
+const ONE_HOUR_MS = 60 * 60 * 1000;
+const ONE_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
+
+// Format a Date as a local "YYYY-MM-DDTHH:mm" string for <input type="datetime-local"> min/max/value
+const toLocalInputValue = (d) => {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
+const validateRescheduleDate = (value) => {
+  if (!value) return '';
+  const time = new Date(value).getTime();
+  if (Number.isNaN(time)) return 'Please select a valid date & time.';
+  const now = Date.now();
+  if (time < now + ONE_HOUR_MS) return 'New time must be at least 1 hour from now.';
+  if (time > now + ONE_MONTH_MS) return 'New time cannot be more than 1 month in advance.';
+  return '';
+};
 
 const parseServices = (s) => {
   if (Array.isArray(s)) return s;
@@ -42,11 +61,18 @@ export default function Bookings() {
   const [reassignId, setReassignId] = useState('');
   const [reassigning, setReassigning] = useState(false);
 
+  const [rescheduleDate, setRescheduleDate]     = useState('');
+  const [rescheduleReason, setRescheduleReason] = useState('');
+  const [rescheduleError, setRescheduleError]   = useState('');
+  const [rescheduling, setRescheduling]         = useState(false);
+
   // Add-services panel state
   const [allServices, setAllServices]       = useState([]);
   const [svcCart, setSvcCart]               = useState([]); // [{svc, qty}]
   const [svcSearch, setSvcSearch]           = useState('');
   const [addingSvc, setAddingSvc]           = useState(false);
+  const [updatingQtyIdx, setUpdatingQtyIdx] = useState(null);
+  const [qtyDrafts, setQtyDrafts]           = useState({}); // {[serviceIndex]: pendingQty}
 
   useEffect(() => {
     const params = cityParam ? { cityIds: cityParam, limit: 1000 } : { limit: 1000 };
@@ -101,7 +127,12 @@ export default function Bookings() {
     setReassignId('');
     setSvcCart([]);
     setSvcSearch('');
+    setUpdatingQtyIdx(null);
+    setQtyDrafts({});
     setPartners([]);
+    setRescheduleDate('');
+    setRescheduleReason('');
+    setRescheduleError('');
     setDetailLoading(true);
     if (allServices.length === 0) {
       api.get('/api/v1/admin/services', { params: { limit: 500 } })
@@ -185,6 +216,37 @@ export default function Bookings() {
     setAddingSvc(false);
   };
 
+  // Adjusts the local draft qty for a row — does NOT call the API. Saved via handleSaveQty.
+  const adjustQtyDraft = (index, baseQty, delta) => {
+    setQtyDrafts(prev => {
+      const current = prev[index] ?? baseQty;
+      const next = Math.max(1, current + delta);
+      return { ...prev, [index]: next };
+    });
+  };
+
+  const handleSaveQty = async (bookingId, index, qty) => {
+    if (qty < 1) return;
+    setUpdatingQtyIdx(index);
+    try {
+      const res = await api.patch(`/api/v1/admin/bookings/${bookingId}/services`, { updateQty: [{ index, qty }] });
+      const updated = res.data?.data;
+      if (updated) {
+        const parsedSvcs = parseServices(updated.services ?? selected?.services);
+        const newTotal = parseFloat(updated.totalAmount ?? selected?.amount ?? 0);
+        setSelected(prev => ({ ...prev, services: parsedSvcs, amount: newTotal, totalAmount: newTotal }));
+        setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, amount: newTotal } : b));
+      }
+      setQtyDrafts(prev => { const next = { ...prev }; delete next[index]; return next; });
+      showToast(`Quantity updated. New total: ₹${fmt(updated?.totalAmount ?? 0)}`, 'success');
+    } catch (err) {
+      const msg = err.response?.data?.message ?? 'Failed to update quantity.';
+      console.error('[updateQty]', err.response?.data ?? err.message);
+      showToast(msg, 'danger');
+    }
+    setUpdatingQtyIdx(null);
+  };
+
   const handleRemoveService = async (bookingId, serviceIndex) => {
     try {
       const res = await api.patch(`/api/v1/admin/bookings/${bookingId}/services`, { removeIndices: [serviceIndex] });
@@ -220,6 +282,33 @@ export default function Bookings() {
     setReassigning(false);
   };
 
+  const handleReschedule = async (bookingId) => {
+    if (!rescheduleDate) { showToast('Please select a new date & time.', 'warning'); return; }
+    const validationError = validateRescheduleDate(rescheduleDate);
+    if (validationError) { setRescheduleError(validationError); showToast(validationError, 'warning'); return; }
+    setRescheduling(true);
+    try {
+      const res = await api.patch(`/api/v1/admin/bookings/${bookingId}/reschedule`, {
+        scheduledAt: new Date(rescheduleDate).toISOString(),
+        reason: rescheduleReason || undefined,
+      });
+      const updated = res.data?.data;
+      const newScheduledAt = updated?.scheduledAt ?? rescheduleDate;
+      const dateStr = new Date(newScheduledAt).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' });
+      const slotStr = new Date(newScheduledAt).toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' });
+      setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, date: dateStr, slot: slotStr } : b));
+      setSelected(prev => ({ ...prev, date: dateStr, slot: slotStr }));
+      setRescheduleDate('');
+      setRescheduleReason('');
+      setRescheduleError('');
+      showToast('Booking rescheduled successfully.', 'success');
+    } catch (err) {
+      const msg = err.response?.data?.message ?? 'Failed to reschedule booking.';
+      showToast(msg, 'danger');
+    }
+    setRescheduling(false);
+  };
+
   const stats = {
     total:      bookings.length,
     pending:    bookings.filter(b => b.status==='pending').length,
@@ -243,16 +332,27 @@ export default function Bookings() {
   const couponDiscount  = parseFloat(selected?.couponDiscountAmount ?? 0);
   const tax             = parseFloat(selected?.taxAmount ?? 0);
   const totalAmt        = parseFloat(selected?.totalAmount ?? selected?.amount ?? 0);
-  const commission      = Math.round(totalAmt * 0.2);
+  const taxableAmount   = Math.max(0, baseAmount - couponDiscount);
+  // Admin's cut is whatever's left after the partner's actual (category-weighted) share —
+  // GST is a pass-through to the government, not part of the admin/partner split.
+  const commission      = selected?.partnerEarning != null
+    ? Math.max(0, Math.round(taxableAmount - parseFloat(selected.partnerEarning)))
+    : Math.round(taxableAmount * 0.2);
+  const gstPercentLabel = taxableAmount > 0 ? Math.round((tax / taxableAmount) * 100) : 5;
 
   // Edge case 8: for multi-partner bookings, compute per-partner payout from services JSON
   const partnerPayouts = (() => {
-    const svcs = Array.isArray(selected?.services) ? selected.services : [];
-    const hasTracking = svcs.length > 0 && svcs[0]?.serviceStatus !== undefined;
-    if (!hasTracking) {
-      // Old single-partner format
-      return [{ name: selected?.partnerName || 'Partner', amount: parseFloat(selected?.partnerEarning ?? (totalAmt - commission)) }];
+    // Once the booking is completed, the settlement ledger has the authoritative, actually-settled amount.
+    const ledgerEntries = Array.isArray(selected?.ledgerEntries) ? selected.ledgerEntries : [];
+    if (ledgerEntries.length > 0) {
+      return ledgerEntries.map(e => ({
+        name: e.partnerName || 'Partner',
+        amount: e.partnerNetAmount,
+        status: e.status,
+      }));
     }
+
+    const svcs = Array.isArray(selected?.services) ? selected.services : [];
     const byPartner = {};
     svcs.forEach(s => {
       if (!s.assignedPartnerId) return;
@@ -260,7 +360,13 @@ export default function Bookings() {
       if (!byPartner[key]) byPartner[key] = { name: s.assignedPartnerName || 'Partner', amount: 0 };
       byPartner[key].amount += s.price * (s.qty || 1);
     });
-    return Object.values(byPartner);
+    if (Object.keys(byPartner).length > 0) return Object.values(byPartner);
+    // Fallback: partner assigned at booking level (e.g. via "Assign / Change Partner")
+    // but no service has been individually claimed/stamped with assignedPartnerId yet.
+    if (selected?.partnerId) {
+      return [{ name: selected?.partnerName || 'Partner', amount: parseFloat(selected?.partnerEarning ?? (totalAmt - commission)) }];
+    }
+    return [];
   })();
 
   return (
@@ -524,10 +630,44 @@ export default function Bookings() {
                               </div>
                             </div>
                             <div style={{ display:'flex', alignItems:'center', gap:8, flexShrink:0 }}>
-                              <div style={{ fontSize:13, fontWeight:700, textAlign:'right', textDecoration: svc.removed ? 'line-through' : 'none', color: svc.removed ? 'var(--c-text-muted)' : undefined }}>
-                                ₹{fmt(svc.price * (svc.qty || 1))}
-                                {svc.qty && svc.qty > 1 ? <div style={{ fontWeight:400, fontSize:11 }}>×{svc.qty}</div> : null}
+                              {(() => {
+                                const baseQty = svc.qty || 1;
+                                const draftQty = qtyDrafts[idx] ?? baseQty;
+                                const isDirty = draftQty !== baseQty;
+                                return (
+                              <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:4 }}>
+                                <div style={{ fontSize:13, fontWeight:700, textAlign:'right', textDecoration: svc.removed ? 'line-through' : 'none', color: svc.removed ? 'var(--c-text-muted)' : isDirty ? '#d97706' : undefined }}>
+                                  ₹{fmt(svc.price * draftQty)}
+                                </div>
+                                {!svc.removed && !['completed','cancelled'].includes(selected.status) ? (
+                                  <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+                                    <button
+                                      title="Decrease quantity"
+                                      disabled={updatingQtyIdx === idx || draftQty <= 1}
+                                      onClick={() => adjustQtyDraft(idx, baseQty, -1)}
+                                      style={{ width:18, height:18, border:'1px solid var(--c-border)', borderRadius:4, background:'var(--c-bg-card)', cursor: (updatingQtyIdx === idx || draftQty <= 1) ? 'not-allowed' : 'pointer', fontSize:11, fontWeight:700, lineHeight:1, display:'flex', alignItems:'center', justifyContent:'center' }}>–</button>
+                                    <span style={{ fontSize:11, fontWeight:700, minWidth:16, textAlign:'center', color: isDirty ? '#d97706' : undefined }}>{updatingQtyIdx === idx ? '…' : draftQty}</span>
+                                    <button
+                                      title="Increase quantity"
+                                      disabled={updatingQtyIdx === idx}
+                                      onClick={() => adjustQtyDraft(idx, baseQty, 1)}
+                                      style={{ width:18, height:18, border:'1px solid var(--c-border)', borderRadius:4, background:'var(--c-bg-card)', cursor: updatingQtyIdx === idx ? 'not-allowed' : 'pointer', fontSize:11, fontWeight:700, lineHeight:1, display:'flex', alignItems:'center', justifyContent:'center' }}>+</button>
+                                    {isDirty && (
+                                      <button
+                                        title="Save quantity"
+                                        disabled={updatingQtyIdx === idx}
+                                        onClick={() => handleSaveQty(selected.id, idx, draftQty)}
+                                        style={{ width:18, height:18, border:'1px solid #86efac', borderRadius:4, background:'#dcfce7', color:'#166534', cursor: updatingQtyIdx === idx ? 'not-allowed' : 'pointer', display:'flex', alignItems:'center', justifyContent:'center', marginLeft:2 }}>
+                                        <Check size={11} />
+                                      </button>
+                                    )}
+                                  </div>
+                                ) : (
+                                  svc.qty && svc.qty > 1 ? <div style={{ fontWeight:400, fontSize:11, color:'var(--c-text-muted)' }}>×{svc.qty}</div> : null
+                                )}
                               </div>
+                                );
+                              })()}
                               {!svc.removed && !['completed','cancelled'].includes(selected.status) && (
                                 <button
                                   title="Remove service"
@@ -557,6 +697,16 @@ export default function Bookings() {
               </div>
             )}
 
+            {/* ── Offer ── */}
+            {selected.offerId && (
+              <div style={{ display:'flex', alignItems:'center', gap:8, background:'#fef3c7', borderRadius:'var(--r-md)', padding:'10px 14px' }}>
+                <Gift size={14} style={{ color:'#b45309' }} />
+                <span style={{ fontSize:13, color:'#92400e', fontWeight:600 }}>
+                  Offer: {selected.offer?.title ?? `#${selected.offerId}`}
+                </span>
+              </div>
+            )}
+
             {/* ── Notes ── */}
             {selected.notes && (
               <InfoBlock label="Notes">
@@ -573,7 +723,7 @@ export default function Bookings() {
               <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
                 <AmtRow label="Base Amount" value={`₹${fmt(baseAmount)}`} />
                 {couponDiscount > 0 && <AmtRow label={`Coupon Discount${selected.couponCode ? ` (${selected.couponCode})` : ''}`} value={`–₹${fmt(couponDiscount)}`} dimValue />}
-                <AmtRow label="Tax (18% GST)" value={`₹${fmt(tax)}`} dimValue />
+                <AmtRow label={`Tax (${gstPercentLabel}% GST)`} value={`₹${fmt(tax)}`} dimValue />
                 <div style={{ borderTop:'1px solid rgba(255,255,255,0.25)', marginTop:4, paddingTop:10, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
                   <span style={{ fontSize:14, fontWeight:700 }}>Total</span>
                   <span style={{ fontSize:22, fontWeight:800 }}>₹{fmt(totalAmt)}</span>
@@ -582,9 +732,14 @@ export default function Bookings() {
                   <span style={{ fontSize:12, opacity:0.75 }}>Platform Commission (20%)</span>
                   <span style={{ fontSize:13, fontWeight:600 }}>₹{fmt(commission)}</span>
                 </div>
-                {partnerPayouts.length === 1 ? (
+                {partnerPayouts.length === 0 ? (
                   <div style={{ display:'flex', justifyContent:'space-between' }}>
                     <span style={{ fontSize:12, opacity:0.75 }}>Partner Payout</span>
+                    <span style={{ fontSize:12, opacity:0.6, fontStyle:'italic' }}>Unassigned</span>
+                  </div>
+                ) : partnerPayouts.length === 1 ? (
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                    <span style={{ fontSize:12, opacity:0.75 }}>Partner Payout{partnerPayouts[0].status ? ` (${partnerPayouts[0].status})` : ''}</span>
                     <span style={{ fontSize:13, fontWeight:600 }}>₹{fmt(partnerPayouts[0].amount)}</span>
                   </div>
                 ) : (
@@ -592,7 +747,7 @@ export default function Bookings() {
                     <div style={{ fontSize:12, opacity:0.75, marginBottom:4 }}>Partner Payouts</div>
                     {partnerPayouts.map((pp, i) => (
                       <div key={i} style={{ display:'flex', justifyContent:'space-between', paddingLeft:8, marginBottom:2 }}>
-                        <span style={{ fontSize:12, opacity:0.85 }}>↳ {pp.name}</span>
+                        <span style={{ fontSize:12, opacity:0.85 }}>↳ {pp.name}{pp.status ? ` (${pp.status})` : ''}</span>
                         <span style={{ fontSize:12, fontWeight:600 }}>₹{fmt(pp.amount)}</span>
                       </div>
                     ))}
@@ -686,6 +841,45 @@ export default function Bookings() {
                   style={{ display:'flex', alignItems:'center', gap:6 }}>
                   {addingSvc ? '…' : <><PlusCircle size={13}/> Add {svcCart.length || ''} Service{svcCart.length !== 1 ? 's' : ''}</>}
                 </button>
+              </div>
+            )}
+
+            {/* ── Reschedule Booking ── */}
+            {!['completed','cancelled'].includes(selected.status) && (
+              <div style={{ background:'var(--c-border-light)', borderRadius:'var(--r-md)', padding:16 }}>
+                <div style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.5px', color:'var(--c-text-secondary)', marginBottom:10, display:'flex', alignItems:'center', gap:6 }}>
+                  <CalendarClock size={14} /> Reschedule Booking
+                </div>
+                <div style={{ display:'flex', gap:8, marginBottom:6 }}>
+                  <input
+                    type="datetime-local"
+                    value={rescheduleDate}
+                    min={toLocalInputValue(new Date(Date.now() + ONE_HOUR_MS))}
+                    max={toLocalInputValue(new Date(Date.now() + ONE_MONTH_MS))}
+                    onChange={e => { setRescheduleDate(e.target.value); setRescheduleError(validateRescheduleDate(e.target.value)); }}
+                    style={{ flex:1, border:`1px solid ${rescheduleError ? 'var(--c-danger)' : 'var(--c-border)'}`, borderRadius:'var(--r-sm)', padding:'6px 10px', fontSize:13, background:'var(--c-bg-card)', color:'var(--c-text-primary)' }}
+                  />
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={() => handleReschedule(selected.id)}
+                    disabled={rescheduling || !rescheduleDate || !!rescheduleError}
+                    style={{ display:'flex', alignItems:'center', gap:6 }}>
+                    {rescheduling ? '…' : <><CalendarClock size={13}/> Reschedule</>}
+                  </button>
+                </div>
+                {rescheduleError && (
+                  <div style={{ fontSize:11, color:'var(--c-danger)', marginBottom:8 }}>{rescheduleError}</div>
+                )}
+                <div style={{ fontSize:11, color:'var(--c-text-muted)', marginBottom:8 }}>
+                  Must be at least 1 hour from now and no more than 1 month in advance.
+                </div>
+                <input
+                  type="text"
+                  placeholder="Reason (optional)…"
+                  value={rescheduleReason}
+                  onChange={e => setRescheduleReason(e.target.value)}
+                  style={{ width:'100%', border:'1px solid var(--c-border)', borderRadius:'var(--r-sm)', padding:'6px 10px', fontSize:13, background:'var(--c-bg-card)', color:'var(--c-text-primary)', boxSizing:'border-box' }}
+                />
               </div>
             )}
 

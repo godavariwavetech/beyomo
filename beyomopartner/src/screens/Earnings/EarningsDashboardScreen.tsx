@@ -9,13 +9,15 @@ import {
   StatusBar,
   ActivityIndicator,
   RefreshControl,
+  AppState,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import {useFocusEffect} from '@react-navigation/native';
 import {useDispatch, useSelector} from 'react-redux';
 import {fonts} from '../../config/theme';
-import {fetchPartnerEarnings} from '../../redux/reducers/partner';
+import {fetchPartnerEarnings, fetchPartnerWallet} from '../../redux/reducers/partner';
 import type {AppDispatch, RootState} from '../../redux/store';
 
 const {width} = Dimensions.get('window');
@@ -32,23 +34,56 @@ const PERIOD_LABELS: Record<Period, string> = {
 const EarningsDashboardScreen = ({navigation}: any) => {
   const insets = useSafeAreaInsets();
   const dispatch = useDispatch<AppDispatch>();
-  const {earnings, loading} = useSelector((state: RootState) => state.Partner);
+  const {earnings, wallet, loading} = useSelector((state: RootState) => state.Partner as any);
   const [period, setPeriod] = useState<Period>('month');
   const [refreshing, setRefreshing] = useState(false);
 
   const loadEarnings = (p: Period) => {
     dispatch(fetchPartnerEarnings(p));
+    dispatch(fetchPartnerWallet({}));
   };
 
   useEffect(() => {
     loadEarnings(period);
   }, [period]);
 
+  // Keep earnings/wallet live while this screen is focused and the app is foregrounded.
+  useFocusEffect(
+    React.useCallback(() => {
+      let interval: ReturnType<typeof setInterval> | null = setInterval(() => loadEarnings(period), 10000);
+
+      const sub = AppState.addEventListener('change', state => {
+        if (state === 'active') {
+          if (!interval) {
+            loadEarnings(period);
+            interval = setInterval(() => loadEarnings(period), 10000);
+          }
+        } else if (interval) {
+          clearInterval(interval);
+          interval = null;
+        }
+      });
+
+      return () => {
+        if (interval) clearInterval(interval);
+        sub.remove();
+      };
+    }, [period]),
+  );
+
   const onRefresh = async () => {
     setRefreshing(true);
-    await dispatch(fetchPartnerEarnings(period));
+    await Promise.all([dispatch(fetchPartnerEarnings(period)), dispatch(fetchPartnerWallet({}))]);
     setRefreshing(false);
   };
+
+  const balance = wallet?.partner?.walletBalance ?? 0;
+  const settlementLabel = balance > 0
+    ? `You'll receive ₹${Number(balance).toLocaleString('en-IN')}`
+    : balance < 0
+      ? `You owe admin ₹${Number(-balance).toLocaleString('en-IN')}`
+      : 'All settled — no pending dues';
+  const settlementColor = balance > 0 ? '#22C55E' : balance < 0 ? '#EF4444' : '#105641';
 
   const stats = earnings?.period === period ? earnings.stats : null;
   const recentEarnings: any[] = earnings?.period === period ? (earnings.recentEarnings ?? []) : [];
@@ -176,7 +211,7 @@ const EarningsDashboardScreen = ({navigation}: any) => {
             </TouchableOpacity>
           </View>
 
-          {loading ? (
+          {loading && !earnings ? (
             <ActivityIndicator color="#012823" style={{marginVertical: sw(16)}} />
           ) : recentEarnings.length === 0 ? (
             <View style={styles.emptyCard}>
@@ -202,11 +237,13 @@ const EarningsDashboardScreen = ({navigation}: any) => {
           )}
         </View>
 
-        {/* Payout info */}
-        <View style={[styles.payoutCard, styles.mx16, styles.mt16]}>
-          <Ionicons name="information-circle-outline" size={sw(18)} color="#105641" />
-          <Text style={styles.payoutText}>
-            Earnings are transferred to your linked bank account within 2–3 business days after job completion.
+        {/* Settlement summary */}
+        <View style={[styles.settlementCard, styles.mx16, styles.mt16]}>
+          <Text style={styles.settlementTitle}>Settlement</Text>
+          <Text style={[styles.settlementAmount, {color: settlementColor}]}>{settlementLabel}</Text>
+          <Text style={styles.settlementHint}>
+            Cash-on-delivery jobs: you collect payment and owe admin their commission share.
+            Online jobs: admin holds payment and owes you your earning share.
           </Text>
         </View>
 
@@ -427,20 +464,35 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
-  /* Payout */
-  payoutCard: {
-    flexDirection: 'row',
-    gap: sw(10),
-    backgroundColor: 'rgba(16,86,65,0.06)',
-    borderRadius: sw(10),
-    padding: sw(14),
+  /* Settlement */
+  settlementCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: sw(12),
+    padding: sw(16),
+    gap: sw(6),
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.07,
+    shadowRadius: 6,
   },
-  payoutText: {
+  settlementTitle: {
+    fontFamily: fonts.title,
+    fontSize: sw(13),
+    fontWeight: '700',
+    color: '#171816',
+  },
+  settlementAmount: {
+    fontFamily: fonts.title,
+    fontSize: sw(18),
+    fontWeight: '800',
+  },
+  settlementHint: {
     fontFamily: fonts.textFont,
-    fontSize: sw(12),
-    color: '#105641',
-    flex: 1,
-    lineHeight: sw(18),
+    fontSize: sw(11),
+    color: '#9CA3AF',
+    lineHeight: sw(16),
+    marginTop: sw(2),
   },
 });
 

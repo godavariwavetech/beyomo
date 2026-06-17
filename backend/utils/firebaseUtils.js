@@ -37,9 +37,14 @@ initializeFirebase();
  * @param {String} title - notification title
  * @param {String} body - notification body
  * @param {Object} data - additional data payload
+ * @param {String|null} channelId - Android notification channel id created client-side
+ *   (e.g. via notifee). On Android 8+, the channel's own sound/vibration/lights always
+ *   take precedence over anything set here, so this is what actually makes a custom
+ *   sound play — omitting it (the previous behavior everywhere) falls back to Android's
+ *   auto-created default channel with the system default sound.
  * @returns {Promise<Object>} FCM response
  */
-const sendPushNotification = async (tokens, title, body, data = {}) => {
+const sendPushNotification = async (tokens, title, body, data = {}, channelId = null) => {
   if (!firebaseInitialized) {
     logger.warn("Firebase not initialized. Skipping push notification.");
     return { success: false, reason: "Firebase not initialized" };
@@ -69,8 +74,8 @@ const sendPushNotification = async (tokens, title, body, data = {}) => {
       tokens: validTokens,
       android: {
         notification: {
-          sound: "default",
           clickAction: "FLUTTER_NOTIFICATION_CLICK",
+          ...(channelId ? { channelId } : { sound: "default" }),
         },
         priority: "high",
       },
@@ -118,8 +123,8 @@ const sendPushNotification = async (tokens, title, body, data = {}) => {
  * @param {String} body
  * @param {Object} data
  */
-const sendSinglePushNotification = async (token, title, body, data = {}) => {
-  return sendPushNotification([token], title, body, data);
+const sendSinglePushNotification = async (token, title, body, data = {}, channelId = null) => {
+  return sendPushNotification([token], title, body, data, channelId);
 };
 
 module.exports = { sendPushNotification, sendSinglePushNotification };

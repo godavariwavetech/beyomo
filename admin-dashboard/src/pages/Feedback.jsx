@@ -4,6 +4,7 @@ import { Badge, StarRating } from '../components/common/Badge';
 import Modal from '../components/common/Modal';
 import { useAuth } from '../context/AuthContext';
 import { useFeedback } from '../hooks/useFeedback';
+import { useCityFilter } from '../context/CityContext';
 
 const ITEMS_PER_PAGE = 10;
 
@@ -23,6 +24,7 @@ const STATUS_CONFIG = {
 export default function Feedback() {
   const { showToast } = useAuth();
   const { fetchList, action } = useFeedback();
+  const { cityParam } = useCityFilter();
   const [feedback, setFeedback]   = useState([]);
   const [search, setSearch]       = useState('');
   const [typeFilter, setType]     = useState('all');
@@ -32,8 +34,9 @@ export default function Feedback() {
   const [selected, setSelected]   = useState(null);
 
   useEffect(() => {
-    fetchList().then(res => { if (res.ok) setFeedback(res.data?.data ?? []); });
-  }, []);
+    const params = cityParam ? { cityIds: cityParam } : {};
+    fetchList(params).then(res => { if (res.ok) setFeedback(res.data?.data ?? []); });
+  }, [cityParam]);
 
   const filtered = useMemo(() => {
     return feedback.filter(f => {

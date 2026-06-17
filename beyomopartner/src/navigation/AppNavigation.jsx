@@ -18,11 +18,8 @@ import ProfileScreen from '../screens/Profile/ProfileScreen';
 import IncomingRequestScreen from '../screens/Jobs/IncomingRequestScreen';
 import AvailableBookingsScreen from '../screens/Jobs/AvailableBookingsScreen';
 import JobDetailsScreen from '../screens/Jobs/JobDetailsScreen';
-import GoToCustomerScreen from '../screens/Jobs/GoToCustomerScreen';
 import JobChecklistScreen from '../screens/Jobs/JobChecklistScreen';
-import StartServiceScreen from '../screens/Jobs/StartServiceScreen';
 import ActiveJobScreen from '../screens/Jobs/ActiveJobScreen';
-import EarningsScreen from '../screens/Jobs/EarningsScreen';
 
 import NotificationsScreen from '../screens/Notifications/NotificationsScreen';
 import EditProfileScreen from '../screens/Profile/EditProfileScreen';
@@ -81,11 +78,8 @@ const AppNavigation = () => {
         <Stack.Screen name="AvailableBookings" component={AvailableBookingsScreen} />
         <Stack.Screen name="IncomingRequest" component={IncomingRequestScreen} />
         <Stack.Screen name="JobDetails" component={JobDetailsScreen} />
-        <Stack.Screen name="GoToCustomer" component={GoToCustomerScreen} />
         <Stack.Screen name="JobChecklist" component={JobChecklistScreen} />
-        <Stack.Screen name="StartService" component={StartServiceScreen} />
         <Stack.Screen name="ActiveJob" component={ActiveJobScreen} />
-        <Stack.Screen name="Earnings" component={EarningsScreen} />
         <Stack.Screen name="Notifications" component={NotificationsScreen} />
         <Stack.Screen name="EditProfile" component={EditProfileScreen} />
         <Stack.Screen name="MyReviews" component={MyReviewsScreen} />

@@ -1,6 +1,7 @@
 const catchAsync = require("../../../../utils/errorHandlers/catchAsync");
 const AppError = require("../../../../utils/errorHandlers/appError");
 const adminService = require("../../services/v1/admin.service");
+const settlementsService = require("../../../settlements/services/v1/settlements.service");
 const Joi = require("joi");
 const AdminUser = require("../../models/adminUser.model");
 const User = require("../../../users/models/user.model");
@@ -133,6 +134,7 @@ const broadcastSchema = Joi.object({
   body: Joi.string().required(),
   data: Joi.object().default({}),
   segment: Joi.string().valid("all_users", "all_partners", "all").default("all"),
+  cityIds: Joi.array().items(Joi.number().integer().positive()).default([]),
 });
 
 // ==================== AUTH ====================
@@ -349,6 +351,28 @@ const cancelBooking = catchAsync(async (req, res, next) => {
   res.status(200).json({ status: true, message: "Booking cancelled", data: booking });
 });
 
+const rescheduleBookingSchema = Joi.object({
+  scheduledAt: Joi.date().required(),
+  reason: Joi.string().trim().max(500).allow("", null),
+});
+
+const rescheduleBooking = catchAsync(async (req, res, next) => {
+  const { error, value } = rescheduleBookingSchema.validate(req.body);
+  if (error) return next(new AppError(error.details[0].message, 400));
+
+  const now = Date.now();
+  const scheduledMs = new Date(value.scheduledAt).getTime();
+  if (scheduledMs < now + 60 * 60 * 1000) {
+    return next(new AppError("Booking must be rescheduled at least 1 hour from now", 400));
+  }
+  if (scheduledMs > now + 30 * 24 * 60 * 60 * 1000) {
+    return next(new AppError("Booking cannot be rescheduled more than 1 month in advance", 400));
+  }
+
+  const booking = await adminService.rescheduleBooking(req.params.id, value.scheduledAt, value.reason);
+  res.status(200).json({ status: true, message: "Booking rescheduled", data: booking });
+});
+
 const editBookingServicesSchema = Joi.object({
   services: Joi.array().items(
     Joi.object({
@@ -357,15 +381,65 @@ const editBookingServicesSchema = Joi.object({
     })
   ).optional().default([]),
   removeIndices: Joi.array().items(Joi.number().integer().min(0)).optional().default([]),
+  updateQty: Joi.array().items(
+    Joi.object({
+      index: Joi.number().integer().min(0).required(),
+      qty: Joi.number().integer().min(1).required(),
+    })
+  ).optional().default([]),
 });
 
 const editBookingServices = catchAsync(async (req, res, next) => {
   const { error, value } = editBookingServicesSchema.validate(req.body);
   if (error) return next(new AppError(error.details[0].message, 400));
-  if (!value.services.length && !value.removeIndices.length)
-    return next(new AppError("Provide services to add or indices to remove", 400));
-  const booking = await adminService.editBookingServices(req.params.id, value.services, value.removeIndices);
+  if (!value.services.length && !value.removeIndices.length && !value.updateQty.length)
+    return next(new AppError("Provide services to add, indices to remove, or quantities to update", 400));
+  const booking = await adminService.editBookingServices(req.params.id, value.services, value.removeIndices, value.updateQty);
   res.status(200).json({ status: true, message: "Booking services updated", data: booking });
+});
+
+// ==================== SETTLEMENTS ====================
+
+const listPartnerBalances = catchAsync(async (req, res, next) => {
+  let cityIds = parseCityIds(req.query.cityIds) ?? (req.query.cityId ? [parseInt(req.query.cityId)] : null);
+  if (req.admin.allowedZones?.length && req.admin.role !== "super_admin") {
+    const zoneCityIds = await adminService.resolveZoneCityIds(req.admin.allowedZones);
+    if (zoneCityIds) cityIds = cityIds ? cityIds.filter(id => zoneCityIds.includes(id)) : zoneCityIds;
+  }
+  const result = await settlementsService.listPartnerBalances({
+    page: parseInt(req.query.page) || 1,
+    limit: parseInt(req.query.limit) || 20,
+    search: req.query.search,
+    cityIds,
+  });
+  res.status(200).json({ status: true, data: result.data, pagination: result.pagination });
+});
+
+const getPartnerLedger = catchAsync(async (req, res, next) => {
+  const result = await settlementsService.getPartnerLedger(req.params.partnerId, {
+    page: parseInt(req.query.page) || 1,
+    limit: parseInt(req.query.limit) || 20,
+  });
+  res.status(200).json({ status: true, data: result });
+});
+
+const recordSettlementSchema = Joi.object({
+  type: Joi.string().valid("payout", "collection").required(),
+  amount: Joi.number().positive().required(),
+  method: Joi.string().trim().max(30).allow("", null),
+  note: Joi.string().trim().max(500).allow("", null),
+});
+
+const recordSettlement = catchAsync(async (req, res, next) => {
+  const { error, value } = recordSettlementSchema.validate(req.body);
+  if (error) return next(new AppError(error.details[0].message, 400));
+  const settlement = await settlementsService.recordSettlement(req.admin.userId, req.params.partnerId, value);
+  res.status(201).json({ status: true, message: "Settlement recorded", data: settlement });
+});
+
+const voidLedgerEntry = catchAsync(async (req, res, next) => {
+  const reversal = await settlementsService.voidLedgerEntry(req.admin.userId, req.params.id, req.body?.reason);
+  res.status(200).json({ status: true, message: "Ledger entry voided", data: reversal });
 });
 
 const patchService = catchAsync(async (req, res, next) => {
@@ -462,7 +536,17 @@ const listNotifications = catchAsync(async (req, res, next) => {
 const broadcastNotification = catchAsync(async (req, res, next) => {
   const { error, value } = broadcastSchema.validate(req.body);
   if (error) return next(new AppError(error.details[0].message, 400));
-  const result = await adminService.broadcastNotification(value);
+
+  let cityIds = value.cityIds?.length ? value.cityIds : null;
+  if (req.admin.allowedZones?.length && req.admin.role !== "super_admin") {
+    const zoneCityIds = await adminService.resolveZoneCityIds(req.admin.allowedZones);
+    if (zoneCityIds) {
+      cityIds = cityIds ? cityIds.filter(id => zoneCityIds.includes(id)) : zoneCityIds;
+      if (!cityIds.length) return next(new AppError("None of the selected cities are within your allowed zones", 400));
+    }
+  }
+
+  const result = await adminService.broadcastNotification({ ...value, cityIds });
   res.status(200).json({ status: true, message: result.message, data: { ...result.pushResult, id: result.logEntry.id, sentAt: result.logEntry.sentAt } });
 });
 
@@ -498,11 +582,17 @@ const deleteAdminUser = catchAsync(async (req, res, next) => {
 // ==================== FEEDBACK ====================
 
 const listFeedback = catchAsync(async (req, res, next) => {
+  let cityIds = parseCityIds(req.query.cityIds) ?? (req.query.cityId ? [parseInt(req.query.cityId)] : null);
+  if (req.admin.allowedZones?.length && req.admin.role !== "super_admin") {
+    const zoneCityIds = await adminService.resolveZoneCityIds(req.admin.allowedZones);
+    if (zoneCityIds) cityIds = cityIds ? cityIds.filter(id => zoneCityIds.includes(id)) : zoneCityIds;
+  }
   const result = await adminService.listFeedback({
     status: req.query.status,
     type: req.query.type,
     page: parseInt(req.query.page) || 1,
     limit: parseInt(req.query.limit) || 20,
+    cityIds,
   });
   res.status(200).json({ status: true, data: result.data, pagination: result.pagination });
 });
@@ -687,6 +777,7 @@ const testPushNotification = catchAsync(async (req, res, next) => {
 const offerSchema = Joi.object({
   title:        Joi.string().trim().required(),
   description:  Joi.string().trim().allow("", null),
+  image:        Joi.string().trim().allow("", null),
   triggerType:  Joi.string().valid("min_spend", "specific_services", "min_count", "category").required(),
   triggerValue: Joi.object().required(),
   freeServiceId: Joi.number().integer().required(),
@@ -696,12 +787,20 @@ const offerSchema = Joi.object({
   cityId:       Joi.number().integer().allow(null),
   maxUses:      Joi.number().integer().allow(null),
   createdBy:    Joi.number().integer().allow(null),
+  adminPercent:   Joi.number().min(0).max(100),
+  partnerPercent: Joi.number().min(0).max(100),
+  gstPercent:     Joi.number().min(0).max(100),
 });
 
 const listOffersHandler = catchAsync(async (req, res) => {
   const page  = parseInt(req.query.page)  || 1;
   const limit = parseInt(req.query.limit) || 20;
-  const result = await adminService.listOffers({ page, limit });
+  let cityIds = parseCityIds(req.query.cityIds) ?? (req.query.cityId ? [parseInt(req.query.cityId)] : null);
+  if (req.admin.allowedZones?.length && req.admin.role !== "super_admin") {
+    const zoneCityIds = await adminService.resolveZoneCityIds(req.admin.allowedZones);
+    if (zoneCityIds) cityIds = cityIds ? cityIds.filter(id => zoneCityIds.includes(id)) : zoneCityIds;
+  }
+  const result = await adminService.listOffers({ page, limit, cityIds });
   res.json({ status: true, data: result });
 });
 
@@ -729,7 +828,12 @@ const packagesService = require("../../../packages/services/v1/packages.service"
 const listPackagesHandler = catchAsync(async (req, res) => {
   const page  = parseInt(req.query.page)  || 1;
   const limit = parseInt(req.query.limit) || 20;
-  const result = await packagesService.listAll({ page, limit });
+  let cityIds = parseCityIds(req.query.cityIds) ?? (req.query.cityId ? [parseInt(req.query.cityId)] : null);
+  if (req.admin.allowedZones?.length && req.admin.role !== "super_admin") {
+    const zoneCityIds = await adminService.resolveZoneCityIds(req.admin.allowedZones);
+    if (zoneCityIds) cityIds = cityIds ? cityIds.filter(id => zoneCityIds.includes(id)) : zoneCityIds;
+  }
+  const result = await packagesService.listAll({ page, limit, cityIds });
   res.json({
     status: true,
     data: result.data,
@@ -758,7 +862,8 @@ module.exports = {
   listPartners, getPartnerById, updatePartnerStatus, createPartner,
   listCategories, createCategory, updateCategory, deleteCategory,
   listServices, createService, updateService, deleteService, patchService, patchServiceCity,
-  listBookings, getBookingDetail, assignPartner, cancelBooking, editBookingServices,
+  listBookings, getBookingDetail, assignPartner, cancelBooking, rescheduleBooking, editBookingServices,
+  listPartnerBalances, getPartnerLedger, recordSettlement, voidLedgerEntry,
   listCoupons, createCoupon, updateCoupon, deleteCoupon, getReferral, updateReferral,
   listReviews, updateReviewStatus,
   listNotifications, broadcastNotification,

@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useState, useCallback} from 'react';
 import {
   View,
   Text,
@@ -8,22 +8,26 @@ import {
   StyleSheet,
   Dimensions,
   StatusBar,
-  Alert,
   Linking,
   ActivityIndicator,
+  RefreshControl,
+  AppState,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import {useFocusEffect} from '@react-navigation/native';
 import {useSelector, useDispatch} from 'react-redux';
 import {fonts} from '../../config/theme';
 import {resolveImageUrl} from '../../utils/utils';
-import {updateBookingStatus} from '../../redux/reducers/partner';
+import {markPartnerArrived, fetchPartnerBookings} from '../../redux/reducers/partner';
+import {useAppAlert} from '../../hooks/useAppAlert';
+import AppAlertModal from '../../components/AppAlertModal/AppAlertModal';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
 
-const FALLBACK_IMG = 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=200&q=80';
+const FALLBACK_IMG = 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=800&q=90&fit=crop';
 
 const parseServices = (s: any): any[] => {
   if (Array.isArray(s)) return s;
@@ -50,6 +54,39 @@ const JobDetailsScreen = ({navigation, route}: any) => {
     : null;
   const job = liveJob ?? routeJob;
   const [arriving, setArriving] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const {alertConfig, showAlert, hideAlert} = useAppAlert();
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await dispatch(fetchPartnerBookings());
+    setRefreshing(false);
+  };
+
+  // Keep this job's details live while the screen is focused.
+  useFocusEffect(
+    useCallback(() => {
+      dispatch(fetchPartnerBookings());
+      let interval: ReturnType<typeof setInterval> | null = setInterval(() => dispatch(fetchPartnerBookings()), 10000);
+
+      const sub = AppState.addEventListener('change', state => {
+        if (state === 'active') {
+          if (!interval) {
+            dispatch(fetchPartnerBookings());
+            interval = setInterval(() => dispatch(fetchPartnerBookings()), 10000);
+          }
+        } else if (interval) {
+          clearInterval(interval);
+          interval = null;
+        }
+      });
+
+      return () => {
+        if (interval) clearInterval(interval);
+        sub.remove();
+      };
+    }, [dispatch]),
+  );
 
   const _parsedServices = parseServices(job?.services);
 
@@ -69,6 +106,10 @@ const JobDetailsScreen = ({navigation, route}: any) => {
     : '—';
   const earnings     = Number(job?.partnerEarning ?? job?.totalAmount ?? 0);
   const totalAmount  = Number(job?.totalAmount ?? 0);
+  const taxAmount    = Number(job?.taxAmount ?? 0);
+  // What's left after the partner's share and GST (a pass-through, not part of the
+  // admin/partner split) is the admin's commission on this job.
+  const adminCommission = Math.max(0, totalAmount - taxAmount - earnings);
   const notes        = job?.notes ?? '';
 
   const servicesList: any[] = _parsedServices.length > 0
@@ -78,31 +119,46 @@ const JobDetailsScreen = ({navigation, route}: any) => {
         duration: job.service?.duration, price: job.service?.basePrice ?? totalAmount}]
     : [];
 
+  // A service-change request the partner sent stays pending until the customer
+  // responds — show it here too, not just inside the Checklist screen, so it's
+  // visible the moment you open this job (e.g. after reopening the app).
+  const pendingUpdate = job?.serviceUpdatePending
+    ? (() => {
+        const p = job?.pendingServicesUpdate;
+        if (!p) return null;
+        if (typeof p === 'string') { try { return JSON.parse(p); } catch { return null; } }
+        return p;
+      })()
+    : null;
+
   const handleCall = () => {
-    if (!customerPhone) { Alert.alert('Not Available', 'Customer phone number is not available.'); return; }
+    if (!customerPhone) { showAlert('Not Available', 'Customer phone number is not available.'); return; }
     Linking.openURL(`tel:${customerPhone}`);
   };
 
-  const handleNavigate = () => navigation.navigate('GoToCustomer', {job});
+  const handleNavigate = () => {
+    const lat = job?.addressLat ?? job?.address?.lat;
+    const lng = job?.addressLng ?? job?.address?.lng;
+    const url = (lat && lng)
+      ? `https://maps.google.com/?daddr=${lat},${lng}`
+      : `https://maps.google.com/?q=${encodeURIComponent(fullAddress)}`;
+    Linking.openURL(url);
+  };
 
+  // Marking arrival only records arrivedAt + notifies the customer — the booking stays
+  // "confirmed" until the partner actually taps "Start Service" on the checklist screen.
   const handleArrived = () =>
-    Alert.alert('Arrived at Location', "Confirm you have arrived at the customer's location.", [
+    showAlert('Arrived at Location', "Confirm you have arrived at the customer's location.", [
       {text: 'Not Yet', style: 'cancel'},
       {
         text: 'Confirm Arrival',
         onPress: async () => {
           setArriving(true);
-          await dispatch(updateBookingStatus({bookingId: job.id, status: 'in_progress'}));
+          await dispatch(markPartnerArrived(job.id));
           setArriving(false);
           navigation.navigate('JobChecklist', {job});
         },
       },
-    ]);
-
-  const handleCancel = () =>
-    Alert.alert('Cancel Service', 'Are you sure you want to cancel this service? This may affect your rating.', [
-      {text: 'No, Keep Job', style: 'cancel'},
-      {text: 'Cancel', style: 'destructive', onPress: () => navigation.navigate('Jobs')},
     ]);
 
   return (
@@ -125,6 +181,7 @@ const JobDetailsScreen = ({navigation, route}: any) => {
       </LinearGradient>
 
       <ScrollView showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#FDD77A" />}
         contentContainerStyle={{padding: sw(16), gap: sw(14), paddingBottom: sw(32)}}>
 
         {/* ── Schedule card ── */}
@@ -207,14 +264,64 @@ const JobDetailsScreen = ({navigation, route}: any) => {
           </View>
         </View>
 
+        {/* ── Pending service-change request card ── */}
+        {pendingUpdate && (
+          <View style={[styles.card, styles.pendingCard]}>
+            <View style={styles.cardRow}>
+              <View style={[styles.iconBox, {backgroundColor: '#FEF9EC'}]}>
+                <Ionicons name="time-outline" size={sw(18)} color="#C87B1A" />
+              </View>
+              <Text style={[styles.sectionTitle, {color: '#92400E'}]}>Awaiting Customer Approval</Text>
+            </View>
+            <Text style={styles.pendingSub}>The following changes have been sent to the customer:</Text>
+            {(pendingUpdate.services ?? []).map((svc: any, idx: number) => (
+              <View key={idx} style={[styles.svcRow, idx > 0 && styles.svcRowBorder]}>
+                <Text style={styles.svcName} numberOfLines={1}>
+                  {svc.name}{svc.qty > 1 ? ` ×${svc.qty}` : ''}{svc.addedByPartner ? '  (Added)' : ''}
+                </Text>
+                <Text style={styles.svcPrice}>₹{Number((svc.price || 0) * (svc.qty || 1)).toLocaleString('en-IN')}</Text>
+              </View>
+            ))}
+            <View style={styles.totalRow}>
+              <Text style={styles.totalLabel}>Proposed Total</Text>
+              <Text style={[styles.totalValue, {color: '#C87B1A'}]}>₹{Number(pendingUpdate.totalAmount ?? 0).toLocaleString('en-IN')}</Text>
+            </View>
+            <TouchableOpacity
+              style={styles.pendingLinkBtn}
+              activeOpacity={0.8}
+              onPress={() => navigation.navigate('JobChecklist', {job})}>
+              <Text style={styles.pendingLinkText}>View in Checklist</Text>
+              <Ionicons name="arrow-forward" size={sw(13)} color="#92400E" />
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* ── Earnings card ── */}
         <LinearGradient colors={['#0E5843', '#022723']} style={styles.earningsCard}
           start={{x: 0, y: 0}} end={{x: 1, y: 0}}>
-          <View>
-            <Text style={styles.earningsLabel}>Your Earnings</Text>
-            <Text style={styles.earningsValue}>₹{earnings.toLocaleString('en-IN')}</Text>
+          <View style={styles.earningsTopRow}>
+            <View>
+              <Text style={styles.earningsLabel}>Your Earnings</Text>
+              <Text style={styles.earningsValue}>₹{earnings.toLocaleString('en-IN')}</Text>
+            </View>
+            <Ionicons name="cash-outline" size={sw(40)} color="rgba(255,255,255,0.2)" />
           </View>
-          <Ionicons name="cash-outline" size={sw(40)} color="rgba(255,255,255,0.2)" />
+          <View style={styles.earningsBreakdown}>
+            <View style={styles.earningsBreakdownRow}>
+              <Text style={styles.earningsBreakdownLabel}>Total Booking Amount</Text>
+              <Text style={styles.earningsBreakdownVal}>₹{totalAmount.toLocaleString('en-IN')}</Text>
+            </View>
+            {taxAmount > 0 && (
+              <View style={styles.earningsBreakdownRow}>
+                <Text style={styles.earningsBreakdownLabel}>GST (pass-through)</Text>
+                <Text style={styles.earningsBreakdownVal}>–₹{taxAmount.toLocaleString('en-IN')}</Text>
+              </View>
+            )}
+            <View style={styles.earningsBreakdownRow}>
+              <Text style={styles.earningsBreakdownLabel}>Admin Commission</Text>
+              <Text style={styles.earningsBreakdownVal}>–₹{adminCommission.toLocaleString('en-IN')}</Text>
+            </View>
+          </View>
         </LinearGradient>
 
         {/* ── Address card ── */}
@@ -276,38 +383,37 @@ const JobDetailsScreen = ({navigation, route}: any) => {
               </View>
               <Ionicons name="chevron-forward" size={sw(18)} color="#CCCCCC" />
             </TouchableOpacity>
-
-            <View style={styles.actionDivider} />
-
-            <TouchableOpacity style={styles.actionRow} onPress={handleCancel} activeOpacity={0.85}>
-              <View style={[styles.actionIcon, {backgroundColor: 'rgba(219,25,25,0.08)'}]}>
-                <Ionicons name="close-circle-outline" size={sw(20)} color="#DB1919" />
-              </View>
-              <View style={{flex: 1}}>
-                <Text style={[styles.actionTitle, {color: '#DB1919'}]}>Cancel Service</Text>
-                <Text style={styles.actionSub}>This may affect your rating</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={sw(18)} color="#CCCCCC" />
-            </TouchableOpacity>
           </View>
         )}
 
         {/* ── Primary CTA ── */}
         {rawStatus === 'confirmed' && (
-          <TouchableOpacity onPress={handleArrived} disabled={arriving} activeOpacity={0.88}>
-            <LinearGradient colors={arriving ? ['#888','#888'] : ['#0E5843', '#022723']} style={styles.primaryBtn}
-              start={{x: 0, y: 0}} end={{x: 1, y: 0}}>
-              {arriving ? <ActivityIndicator color="#FFFFFF" /> : (
-                <>
-                  <Ionicons name="location" size={sw(20)} color="#FDD77A" />
-                  <Text style={styles.primaryBtnText}>Arrived at Location</Text>
-                </>
-              )}
-            </LinearGradient>
-          </TouchableOpacity>
+          job?.arrivedAt ? (
+            <TouchableOpacity onPress={() => navigation.navigate('JobChecklist', {job})} activeOpacity={0.88}>
+              <LinearGradient colors={['#0E5843', '#022723']} style={styles.primaryBtn}
+                start={{x: 0, y: 0}} end={{x: 1, y: 0}}>
+                <Ionicons name="list" size={sw(20)} color="#FDD77A" />
+                <Text style={styles.primaryBtnText}>Continue to Checklist</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity onPress={handleArrived} disabled={arriving} activeOpacity={0.88}>
+              <LinearGradient colors={arriving ? ['#888','#888'] : ['#0E5843', '#022723']} style={styles.primaryBtn}
+                start={{x: 0, y: 0}} end={{x: 1, y: 0}}>
+                {arriving ? <ActivityIndicator color="#FFFFFF" /> : (
+                  <>
+                    <Ionicons name="location" size={sw(20)} color="#FDD77A" />
+                    <Text style={styles.primaryBtnText}>Arrived at Location</Text>
+                  </>
+                )}
+              </LinearGradient>
+            </TouchableOpacity>
+          )
         )}
 
       </ScrollView>
+
+      <AppAlertModal config={alertConfig} onRequestClose={hideAlert} />
     </View>
   );
 };
@@ -389,13 +495,29 @@ const styles = StyleSheet.create({
   totalLabel: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#5C5C5C', fontWeight: '600'},
   totalValue: {fontFamily: fonts.title, fontSize: sw(16), fontWeight: '800', color: '#012823'},
 
+  /* Pending change request */
+  pendingCard: {borderWidth: 1, borderColor: '#FDE9BF', backgroundColor: '#FFFBEB'},
+  pendingSub: {fontFamily: fonts.textFont, fontSize: sw(12), color: '#92400E', marginBottom: sw(4)},
+  pendingLinkBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: sw(6),
+    marginTop: sw(10), paddingVertical: sw(8), borderRadius: sw(8),
+    borderWidth: 1, borderColor: '#FDE9BF',
+  },
+  pendingLinkText: {fontFamily: fonts.title, fontSize: sw(12), fontWeight: '700', color: '#92400E'},
+
   /* Earnings */
   earningsCard: {
-    borderRadius: sw(16), padding: sw(16),
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    borderRadius: sw(16), padding: sw(16), gap: sw(12),
   },
+  earningsTopRow: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'},
   earningsLabel: {fontFamily: fonts.textFont, fontSize: sw(12), color: 'rgba(255,255,255,0.7)', marginBottom: sw(4)},
   earningsValue: {fontFamily: fonts.title, fontSize: sw(28), fontWeight: '800', color: '#FFFFFF'},
+  earningsBreakdown: {
+    borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.15)', paddingTop: sw(10), gap: sw(6),
+  },
+  earningsBreakdownRow: {flexDirection: 'row', justifyContent: 'space-between'},
+  earningsBreakdownLabel: {fontFamily: fonts.textFont, fontSize: sw(11), color: 'rgba(255,255,255,0.65)'},
+  earningsBreakdownVal: {fontFamily: fonts.textFont, fontSize: sw(11), color: 'rgba(255,255,255,0.9)', fontWeight: '600'},
 
   /* Navigate button */
   navigateBtn: {

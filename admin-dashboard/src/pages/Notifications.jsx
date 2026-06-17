@@ -4,6 +4,7 @@ import { Badge } from '../components/common/Badge';
 import Modal from '../components/common/Modal';
 import { useAuth } from '../context/AuthContext';
 import { useNotificationsAdmin } from '../hooks/useNotificationsAdmin';
+import { useCityFilter } from '../context/CityContext';
 import { messaging, getToken, VAPID_KEY } from '../firebase';
 
 const TEST_TARGETS = [
@@ -209,6 +210,7 @@ const TEMPLATES = [
 export default function Notifications() {
   const { showToast } = useAuth();
   const { fetchList, action } = useNotificationsAdmin();
+  const { selectedCities } = useCityFilter();
   const [history, setHistory] = useState([]);
   const [target, setTarget]   = useState('all_users');
 
@@ -240,7 +242,8 @@ export default function Notifications() {
   const handleSend = async () => {
     if (!title || !body) { showToast('Please fill in title and body.', 'danger'); return; }
     setSending(true);
-    const res = await action('post', '/api/v1/admin/notifications/broadcast', {title, body, segment: target, data: {}});
+    const cityIds = selectedCities.map(c => c.id);
+    const res = await action('post', '/api/v1/admin/notifications/broadcast', {title, body, segment: target, data: {}, cityIds});
     if (!res.ok) {
       showToast(res.error ?? 'Failed to send notification.', 'danger');
       setSending(false);
@@ -299,6 +302,11 @@ export default function Notifications() {
                       </div>
                     </div>
                   ))}
+                </div>
+                <div className="form-hint" style={{ marginTop:8 }}>
+                  {selectedCities.length === 0
+                    ? `Targeting: All Cities (use the city selector in the header to scope this to specific cities)`
+                    : `Targeting: ${selectedCities.map(c => c.name).join(', ')}`}
                 </div>
               </div>
 

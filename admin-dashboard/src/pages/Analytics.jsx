@@ -5,6 +5,7 @@ import {
   ShoppingBag, Percent, UserCheck, Crown, Star, Phone, Mail
 } from 'lucide-react';
 import api from '../services/api';
+import { useCityFilter } from '../context/CityContext';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 const fmtRs   = v => `₹${Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
@@ -93,6 +94,7 @@ function Pagination({ page, totalPages, onPage }) {
 
 // ── Coupon Usage Tab ──────────────────────────────────────────────────────────
 function CouponUsageTab() {
+  const { cityParam } = useCityFilter();
   const [rows,       setRows]       = useState([]);
   const [summary,    setSummary]    = useState(null);
   const [pagination, setPagination] = useState({ page: 1, totalPages: 1, total: 0 });
@@ -102,7 +104,7 @@ function CouponUsageTab() {
 
   const load = useCallback((page = 1, q = '') => {
     setLoading(true);
-    const params = { page, limit: 20, ...(q ? { search: q } : {}) };
+    const params = { page, limit: 20, ...(q ? { search: q } : {}), ...(cityParam ? { cityIds: cityParam } : {}) };
     api.get('/api/v1/admin/reports/coupon-usage', { params })
       .then(res => {
         const d = res.data;
@@ -116,7 +118,7 @@ function CouponUsageTab() {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  }, [cityParam]);
 
   useEffect(() => { load(1, ''); }, [load]);
 
@@ -252,6 +254,7 @@ function CouponUsageTab() {
 
 // ── User Engagement Tab ───────────────────────────────────────────────────────
 function UserEngagementTab() {
+  const { cityParam } = useCityFilter();
   const [rows,       setRows]       = useState([]);
   const [summary,    setSummary]    = useState(null);
   const [pagination, setPagination] = useState({ page: 1, totalPages: 1, total: 0 });
@@ -259,7 +262,8 @@ function UserEngagementTab() {
 
   const load = useCallback((page = 1) => {
     setLoading(true);
-    api.get('/api/v1/admin/reports/user-engagement', { params: { page, limit: 20 } })
+    const params = { page, limit: 20, ...(cityParam ? { cityIds: cityParam } : {}) };
+    api.get('/api/v1/admin/reports/user-engagement', { params })
       .then(res => {
         const d = res.data;
         setRows(d.data ?? []);
@@ -272,7 +276,7 @@ function UserEngagementTab() {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  }, [cityParam]);
 
   useEffect(() => { load(1); }, [load]);
 

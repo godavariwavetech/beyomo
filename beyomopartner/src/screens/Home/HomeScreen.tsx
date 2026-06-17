@@ -9,7 +9,10 @@ import {
   Dimensions,
   StatusBar,
   Switch,
+  RefreshControl,
+  AppState,
 } from 'react-native';
+import {useFocusEffect} from '@react-navigation/native';
 import {HomeScreenSkeleton} from '../../components/Skeleton/Skeleton';
 import LinearGradient from 'react-native-linear-gradient';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -81,13 +84,49 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
   const [ready, setReady] = useState(false);
   const [dashboardData, setDashboardData] = useState<any>(null);
   const [availableCount, setAvailableCount] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const refreshAll = async () => {
+    await Promise.all([fetchDashboardData(), fetchAvailableCount()]);
+  };
 
   useEffect(() => {
-    fetchDashboardData();
-    fetchAvailableCount();
+    refreshAll();
     const t = setTimeout(() => setReady(true), 800);
     return () => clearTimeout(t);
   }, []);
+
+  // Re-sync with the backend every time the screen comes into focus, and
+  // periodically while it stays focused so counts/earnings stay live.
+  useFocusEffect(
+    React.useCallback(() => {
+      refreshAll();
+      let interval: ReturnType<typeof setInterval> | null = setInterval(refreshAll, 10000);
+
+      const sub = AppState.addEventListener('change', state => {
+        if (state === 'active') {
+          if (!interval) {
+            refreshAll();
+            interval = setInterval(refreshAll, 10000);
+          }
+        } else if (interval) {
+          clearInterval(interval);
+          interval = null;
+        }
+      });
+
+      return () => {
+        if (interval) clearInterval(interval);
+        sub.remove();
+      };
+    }, []),
+  );
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await refreshAll();
+    setRefreshing(false);
+  };
 
   const fetchDashboardData = async () => {
     try {
@@ -120,6 +159,7 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
 
       <ScrollView
         showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#FDD77A" />}
         contentContainerStyle={{paddingBottom: sw(28)}}>
 
         {/* ── Header ── */}
@@ -130,7 +170,7 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
             <View style={styles.avatarWrap}>
               <Image
                 source={{
-                  uri: resolveImageUrl(partner?.profilePicture) || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&q=80'
+                  uri: resolveImageUrl(partner?.profilePicture) || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&q=90&fit=crop'
                 }}
                 style={styles.avatar}
               />
@@ -179,7 +219,7 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
           {STAT_CONFIG.map((stat, idx) => {
             let value = '0';
             if (stat.dataKey === 'todayJobs') {
-              value = String(dashboardData?.bookingStats?.pending || 0);
+              value = String(dashboardData?.bookingStats?.todayJobs || 0);
             } else if (stat.dataKey === 'totalCompleted') {
               value = String(dashboardData?.bookingStats?.totalCompleted || 0);
             } else if (stat.dataKey === 'todayEarnings') {

@@ -32,6 +32,8 @@ const connectDB = async () => {
     await sequelize.query("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS offerId INT NULL").catch(() => {});
     await sequelize.query("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS serviceUpdatePending TINYINT(1) NOT NULL DEFAULT 0").catch(() => {});
     await sequelize.query("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS pendingServicesUpdate JSON NULL").catch(() => {});
+    await sequelize.query("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS lastServiceUpdateDecision ENUM('approved','rejected') NULL").catch(() => {});
+    await sequelize.query("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS arrivedAt DATETIME NULL").catch(() => {});
     // Migrate legacy services.cityId → service_city_map (idempotent via INSERT IGNORE)
     await sequelize.query(`
       INSERT IGNORE INTO service_city_map (serviceId, cityId, isActive, createdAt, updatedAt)
@@ -51,6 +53,25 @@ const connectDB = async () => {
     await sequelize.query("ALTER TABLE service_packages ADD COLUMN IF NOT EXISTS cityIds JSON NULL").catch(() => {});
     // Add packageId to bookings
     await sequelize.query("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS packageId INT NULL").catch(() => {});
+    // Reschedule tracking on bookings
+    await sequelize.query("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS previousScheduledAt DATETIME NULL").catch(() => {});
+    await sequelize.query("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS rescheduledCount INT NOT NULL DEFAULT 0").catch(() => {});
+    await sequelize.query("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS rescheduledBy ENUM('user','partner','admin') NULL").catch(() => {});
+    await sequelize.query("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS rescheduleReason TEXT NULL").catch(() => {});
+    // Payment mode (online vs cash-on-delivery) + partner settlement wallet
+    await sequelize.query("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS paymentMode ENUM('online','cod') NOT NULL DEFAULT 'online'").catch(() => {});
+    await sequelize.query("ALTER TABLE partners ADD COLUMN IF NOT EXISTS walletBalance DECIMAL(12,2) NOT NULL DEFAULT 0").catch(() => {});
+    // Offer banner image
+    await sequelize.query("ALTER TABLE offers ADD COLUMN IF NOT EXISTS image TEXT NULL").catch(() => {});
+    // GST lowered from 18% to 5% — backfill categories still sitting at the old default
+    await sequelize.query("UPDATE service_categories SET gstPercent = 5.00 WHERE gstPercent = 18.00").catch(() => {});
+    // Revenue split + GST overrides on packages and offers (mirrors service_categories)
+    await sequelize.query("ALTER TABLE service_packages ADD COLUMN IF NOT EXISTS adminPercent DECIMAL(5,2) NOT NULL DEFAULT 20.00").catch(() => {});
+    await sequelize.query("ALTER TABLE service_packages ADD COLUMN IF NOT EXISTS partnerPercent DECIMAL(5,2) NOT NULL DEFAULT 80.00").catch(() => {});
+    await sequelize.query("ALTER TABLE service_packages ADD COLUMN IF NOT EXISTS gstPercent DECIMAL(5,2) NOT NULL DEFAULT 5.00").catch(() => {});
+    await sequelize.query("ALTER TABLE offers ADD COLUMN IF NOT EXISTS adminPercent DECIMAL(5,2) NOT NULL DEFAULT 20.00").catch(() => {});
+    await sequelize.query("ALTER TABLE offers ADD COLUMN IF NOT EXISTS partnerPercent DECIMAL(5,2) NOT NULL DEFAULT 80.00").catch(() => {});
+    await sequelize.query("ALTER TABLE offers ADD COLUMN IF NOT EXISTS gstPercent DECIMAL(5,2) NOT NULL DEFAULT 5.00").catch(() => {});
     // Backfill: wrap existing cityId values into a JSON array (idempotent — only fills NULL rows)
     await sequelize.query(`
       UPDATE service_categories

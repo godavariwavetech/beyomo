@@ -78,19 +78,48 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
   const [activeCategoryId, setActiveCategoryId] = useState<any>(
     offerCategoryId ?? initialCatId,
   );
-  // Pre-populate cart with the free service
-  const [quantities, setQuantities] = useState<Record<string, number>>(() =>
-    freeServiceItem ? {[freeServiceItem.id]: 1} : {},
-  );
-  const [addedServicesMap, setAddedServicesMap] = useState<Record<string, any>>(() =>
-    freeServiceItem ? {[freeServiceItem.id]: freeServiceItem} : {},
-  );
+  // The free service is added/removed automatically as the required items are
+  // added/removed below — never pre-populated, since the cart starts empty and the
+  // offer's condition isn't met yet.
+  const [quantities, setQuantities] = useState<Record<string, number>>({});
+  const [addedServicesMap, setAddedServicesMap] = useState<Record<string, any>>({});
   const [detailItem, setDetailItem] = useState<any>(null);
   const [showSortSheet, setShowSortSheet] = useState(false);
   const [showFilterSheet, setShowFilterSheet] = useState(false);
   const [sortBy, setSortBy] = useState<'default'|'price_asc'|'price_desc'|'popular'>('default');
   const [filterDiscount, setFilterDiscount] = useState(false);
   const [filterDuration, setFilterDuration] = useState<'all'|'short'|'medium'|'long'>('all');
+
+  // Keep the free service in sync with whether its offer's condition is currently met —
+  // add it once the required items are in the cart, remove it the moment they're not.
+  useEffect(() => {
+    if (!freeServiceItem) return;
+    const paidQty = Object.entries(quantities).filter(([id]) => id !== freeServiceItem.id);
+    let conditionMet = false;
+    if (offerType === 'specific_services') {
+      conditionMet = offerRequiredIds.size > 0
+        && Array.from(offerRequiredIds).every(id => (quantities[id] ?? 0) > 0);
+    } else if (offerType === 'min_count') {
+      const totalCount = paidQty.reduce((sum, [, qty]) => sum + qty, 0);
+      conditionMet = totalCount >= Number(offer?.triggerValue?.count ?? 1);
+    } else if (offerType === 'min_spend') {
+      const totalAmount = paidQty.reduce((sum, [id, qty]) => sum + (addedServicesMap[id]?.price ?? 0) * qty, 0);
+      conditionMet = totalAmount >= Number(offer?.triggerValue?.amount ?? 0);
+    } else if (offerType === 'category') {
+      const totalCount = paidQty.reduce((sum, [, qty]) => sum + qty, 0);
+      conditionMet = totalCount >= Number(offer?.triggerValue?.count ?? 1);
+    }
+
+    const hasFree = !!quantities[freeServiceItem.id];
+    if (conditionMet && !hasFree) {
+      setQuantities(prev => ({...prev, [freeServiceItem.id]: 1}));
+      setAddedServicesMap(prev => ({...prev, [freeServiceItem.id]: freeServiceItem}));
+    } else if (!conditionMet && hasFree) {
+      setQuantities(prev => { const next = {...prev}; delete next[freeServiceItem.id]; return next; });
+      setAddedServicesMap(prev => { const next = {...prev}; delete next[freeServiceItem.id]; return next; });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quantities, freeServiceItem, offerType]);
 
   useEffect(() => {
     if (offerType === 'specific_services') {

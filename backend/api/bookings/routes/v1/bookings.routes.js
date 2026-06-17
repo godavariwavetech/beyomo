@@ -5,6 +5,7 @@ const {
   createBooking,
   getBookingById,
   cancelBooking,
+  rescheduleBooking,
   submitReview,
   respondServiceUpdate,
   addUserServices,
@@ -15,6 +16,7 @@ router.use(authenticate);
 router.post("/", createBooking);
 router.get("/:id", getBookingById);
 router.patch("/:id/cancel", cancelBooking);
+router.patch("/:id/reschedule", rescheduleBooking);
 router.post("/:id/review", submitReview);
 router.patch("/:id/respond-service-update", respondServiceUpdate);
 router.patch("/:id/add-services", addUserServices);

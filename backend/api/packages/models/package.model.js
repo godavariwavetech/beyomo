@@ -43,6 +43,11 @@ const ServicePackage = sequelize.define("ServicePackage", {
   },
   validFrom: { type: DataTypes.DATE, allowNull: true },
   validTill: { type: DataTypes.DATE, allowNull: true },
+  // Revenue split — overrides each service's category split for bookings made via this
+  // package, since the package's fixed price isn't tied to individual catalog prices.
+  adminPercent:   { type: DataTypes.DECIMAL(5, 2), allowNull: false, defaultValue: 20.00 },
+  partnerPercent: { type: DataTypes.DECIMAL(5, 2), allowNull: false, defaultValue: 80.00 },
+  gstPercent:     { type: DataTypes.DECIMAL(5, 2), allowNull: false, defaultValue: 5.00 },
 }, {
   timestamps: true,
   tableName: "service_packages",

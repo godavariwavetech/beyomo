@@ -25,6 +25,7 @@ const createBookingSchema = Joi.object({
   couponCode: Joi.string().trim().uppercase().allow("", null),
   offerId:    Joi.number().integer().allow(null),
   packageId:  Joi.number().integer().positive().allow(null),
+  paymentMode: Joi.string().valid("online", "cod").default("online"),
   notes: Joi.string().trim().max(500).allow("", null),
 }).unknown(true);
 
@@ -74,6 +75,31 @@ const cancelBooking = catchAsync(async (req, res, next) => {
   res.status(200).json({ status: true, message: "Booking cancelled", data: booking });
 });
 
+const rescheduleSchema = Joi.object({
+  scheduledAt: Joi.date().required(),
+  reason: Joi.string().trim().max(500).allow("", null),
+});
+
+/**
+ * PATCH /api/v1/bookings/:id/reschedule
+ */
+const rescheduleBooking = catchAsync(async (req, res, next) => {
+  const { error, value } = rescheduleSchema.validate(req.body);
+  if (error) return next(new AppError(error.details[0].message, 400));
+
+  const now = Date.now();
+  const scheduledMs = new Date(value.scheduledAt).getTime();
+  if (scheduledMs < now + 60 * 60 * 1000) {
+    return next(new AppError("Booking must be scheduled at least 1 hour from now", 400));
+  }
+  if (scheduledMs > now + 30 * 24 * 60 * 60 * 1000) {
+    return next(new AppError("Booking cannot be scheduled more than 1 month in advance", 400));
+  }
+
+  const booking = await bookingsService.rescheduleBooking(req.user.userId, req.params.id, value.scheduledAt, value.reason);
+  res.status(200).json({ status: true, message: "Booking rescheduled", data: booking });
+});
+
 /**
  * POST /api/v1/bookings/:id/review
  */
@@ -109,4 +135,4 @@ const addUserServices = catchAsync(async (req, res, next) => {
   res.status(200).json({ status: true, message: 'Services added to booking', data: booking });
 });
 
-module.exports = { createBooking, getBookingById, cancelBooking, submitReview, respondServiceUpdate, addUserServices };
+module.exports = { createBooking, getBookingById, cancelBooking, rescheduleBooking, submitReview, respondServiceUpdate, addUserServices };

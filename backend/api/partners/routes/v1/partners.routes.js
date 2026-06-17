@@ -8,15 +8,18 @@ const {
   uploadDocuments,
   getDashboard,
   getBookings,
+  getBookingById,
   getAvailableBookings,
   acceptBooking,
   claimServices,
   updateBookingStatus,
+  markArrived,
   updateDeviceToken,
   getEarnings,
   addExtraServices,
   proposeServiceChanges,
   sendTestNotification,
+  getWallet,
 } = require("../../controllers/v1/partners.controller");
 
 // Public: agreement PDF download (no auth required)
@@ -34,11 +37,14 @@ router.patch("/profile", updateProfile);
 router.post("/documents", uploadDocuments);
 router.get("/dashboard", getDashboard);
 router.get("/earnings", getEarnings);
+router.get("/wallet", getWallet);
 router.get("/bookings/available", getAvailableBookings);
 router.get("/bookings", getBookings);
+router.get("/bookings/:id", getBookingById);
 router.post("/bookings/:id/accept", acceptBooking);
 router.post("/bookings/:id/claim-services", claimServices);
 router.patch("/bookings/:id/status", updateBookingStatus);
+router.patch("/bookings/:id/arrived", markArrived);
 router.patch("/bookings/:id/extra-services", addExtraServices);
 router.patch("/bookings/:id/propose-changes", proposeServiceChanges);
 router.patch("/device-token", updateDeviceToken);

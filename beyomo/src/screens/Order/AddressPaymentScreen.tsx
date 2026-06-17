@@ -11,7 +11,6 @@ import {
   StatusBar,
   ActivityIndicator,
   Alert,
-  TextInput,
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -22,6 +21,7 @@ import {fonts} from '../../config/theme';
 import api from '../../utils/api';
 import {endpoints} from '../../config/config';
 import {fetchProfile} from '../../redux/reducers/user';
+import {payWithRazorpay} from '../../utils/payments';
 import type {RootState} from '../../redux/store';
 
 const {width} = Dimensions.get('window');
@@ -102,12 +102,15 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
   const [billExpanded, setBillExpanded] = useState(true);
   const [booking, setBooking] = useState(false);
   const [dateError, setDateError] = useState('');
+  // Online payment is temporarily disabled (no live Razorpay key configured yet) —
+  // default and lock to Cash on Delivery. Revert ONLINE_PAYMENTS_ENABLED once a real
+  // key is in place.
+  const ONLINE_PAYMENTS_ENABLED = false;
+  const [paymentMode, setPaymentMode] = useState<'online' | 'cod'>(ONLINE_PAYMENTS_ENABLED ? 'online' : 'cod');
   const [selectedDate, setSelectedDate] = useState<Date>(getDefaultDate);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
 
-  const [couponInput, setCouponInput] = useState('');
-  const [couponLoading, setCouponLoading] = useState(false);
   const [couponError, setCouponError] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState<{
     code: string;
@@ -125,7 +128,19 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
     title: string;
     freeService: {id: string | number; name: string; image?: string; duration?: number; price: 0};
   } | null>(null);
-  const [appliedOffer, setAppliedOffer] = useState<typeof eligibleOffer>(null);
+  // If the cart arrived with a free item already in it (e.g. from the offer's service
+  // listing screen), track it as "applied" so the eligibility re-check below — and the
+  // pre-submit safety check — actually manage it instead of ignoring it.
+  const [appliedOffer, setAppliedOffer] = useState<typeof eligibleOffer>(() => {
+    const raw: any[] = route?.params?.services ?? [];
+    const freeItem = raw.find((s: any) => s.isFree);
+    if (!freeItem || !routeOfferId) return null;
+    return {
+      offerId: routeOfferId,
+      title: '',
+      freeService: {id: freeItem.id, name: freeItem.name, image: freeItem.image, duration: freeItem.duration, price: 0},
+    };
+  });
 
   useEffect(() => {
     if (!profile) dispatch(fetchProfile());
@@ -145,7 +160,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
   const packageSavings = routePackagePrice != null ? Math.max(0, servicesSubtotal - routePackagePrice) : 0;
   const couponDiscount = appliedCoupon?.discountAmount ?? 0;
   const taxableAmount = Math.max(0, subtotal - couponDiscount);
-  const tax = Math.round(taxableAmount * 0.18);
+  const tax = Math.round(taxableAmount * 0.05); // GST — backend recomputes the authoritative weighted rate on submit
   const total = taxableAmount + tax + PLATFORM_FEE;
 
   const increment = (id: string | number) =>
@@ -188,7 +203,9 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
             ? eligible.find(o => o.offerId === routeOfferId) ?? eligible[0]
             : eligible[0];
           setEligibleOffer(preferred ?? null);
-        } else if (eligible.length === 0) {
+        } else if (!eligible.some(o => o.offerId === appliedOffer.offerId)) {
+          // The specific offer that's already applied no longer qualifies (e.g. a required
+          // item was removed) — even if the cart happens to qualify for a different offer now.
           setEligibleOffer(null);
           setAppliedOffer(null);
           setServices(prev => prev.some((s: any) => s.isFree) ? prev.filter((s: any) => !s.isFree) : prev);
@@ -213,27 +230,9 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
     setAppliedOffer(null);
   };
 
-  const applyCoupon = async () => {
-    const code = couponInput.trim().toUpperCase();
-    if (!code) return;
-    setCouponLoading(true);
-    setCouponError('');
-    try {
-      const res = await api.post(endpoints.COUPON_APPLY, {code, orderAmount: subtotal});
-      const d = res.data?.data;
-      setAppliedCoupon({code: d.code, discountAmount: d.discountAmount, description: d.description});
-      setCouponInput('');
-    } catch (err: any) {
-      setCouponError(err?.response?.data?.message ?? 'Invalid coupon code');
-    } finally {
-      setCouponLoading(false);
-    }
-  };
-
   const removeCoupon = () => {
     setAppliedCoupon(null);
     setCouponError('');
-    setCouponInput('');
   };
 
   const handleBooking = async () => {
@@ -253,8 +252,35 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
     }
     setBooking(true);
     try {
+      // Defensive re-check: the background eligibility check (above) is debounced by a
+      // network round-trip, so it can lag behind a just-removed item if the user taps
+      // Confirm Booking quickly. Re-validate right before submitting so we never send an
+      // offerId / free item that no longer qualifies (the backend would reject it anyway,
+      // but this avoids a confusing "Booking failed" and silently fixes the cart instead).
+      let offerIdToSubmit = appliedOffer?.offerId;
+      let servicesToSubmit = services.filter((s: any) => !s.isFree);
+      if (appliedOffer) {
+        const serviceIds = servicesToSubmit.map(s => Number(s.id));
+        const total = servicesToSubmit.reduce((sum, s) => sum + (parseFloat(String(s.price)) || 0) * s.qty, 0);
+        try {
+          const checkRes = await api.post(endpoints.OFFERS_CHECK, {serviceIds, totalAmount: total});
+          const eligible: any[] = checkRes.data?.data ?? [];
+          if (!eligible.some(o => o.offerId === appliedOffer.offerId)) {
+            offerIdToSubmit = undefined;
+            setAppliedOffer(null);
+            setEligibleOffer(null);
+            setServices(prev => prev.filter((s: any) => !s.isFree));
+            Alert.alert('Offer Removed', 'The free item no longer qualifies because a required service was removed.');
+            setBooking(false);
+            return;
+          }
+        } catch {
+          // If the re-check itself fails, fall through and let the backend be the final word.
+        }
+      }
+
       const result = await api.post(endpoints.BOOKINGS, {
-        services: services.filter((s: any) => !s.isFree).map(s => ({id: String(s.id), qty: s.qty})),
+        services: servicesToSubmit.map(s => ({id: String(s.id), qty: s.qty})),
         address: {
           label: addrLabel(selectedAddr),
           line1: addrLine(selectedAddr),
@@ -268,10 +294,28 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
         scheduledAt: selectedDate.toISOString(),
         notes: description || undefined,
         couponCode: appliedCoupon?.code || undefined,
-        offerId: appliedOffer?.offerId || undefined,
+        offerId: offerIdToSubmit || undefined,
         packageId: routePackageId || undefined,
+        paymentMode,
       });
       const bk = result.data?.data;
+
+      if (paymentMode === 'online') {
+        const payResult = await payWithRazorpay({
+          bookingId: bk?.id,
+          bookingCode: bk?.bookingCode,
+          contact: profile?.phone,
+          name: profile?.name,
+          email: profile?.email,
+        });
+        if (!payResult.success) {
+          Alert.alert(
+            'Payment Pending',
+            `Your booking ${bk?.bookingCode} is saved, but payment wasn't completed. You can finish payment anytime from My Bookings.`,
+          );
+        }
+      }
+
       navigation?.navigate('OrderPlaced', {
         bookingCode: bk?.bookingCode,
         bookingId: bk?.id,
@@ -478,6 +522,57 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
           </Text>
         </TouchableOpacity>
 
+        {/* ── Payment Method ── */}
+        <View style={styles.couponCard}>
+          <View style={styles.couponHeader}>
+            <View style={styles.sectionIconBox}>
+              <Ionicons name="card" size={sw(15)} color="#FFFFFF" />
+            </View>
+            <Text style={styles.sectionTitle}>Payment Method</Text>
+          </View>
+          <View style={styles.paymentModeRow}>
+            <TouchableOpacity
+              style={[
+                styles.paymentModeOption,
+                paymentMode === 'online' && styles.paymentModeOptionActive,
+                !ONLINE_PAYMENTS_ENABLED && styles.paymentModeOptionDisabled,
+              ]}
+              activeOpacity={ONLINE_PAYMENTS_ENABLED ? 0.8 : 1}
+              disabled={!ONLINE_PAYMENTS_ENABLED}
+              onPress={() => setPaymentMode('online')}>
+              <Ionicons
+                name={paymentMode === 'online' ? 'radio-button-on' : 'radio-button-off'}
+                size={sw(16)}
+                color={paymentMode === 'online' ? '#105641' : '#AAAAAA'}
+              />
+              <View style={{flex: 1}}>
+                <Text style={[styles.paymentModeLabel, paymentMode === 'online' && styles.paymentModeLabelActive]}>
+                  Pay Online
+                </Text>
+                <Text style={styles.paymentModeSub}>
+                  {ONLINE_PAYMENTS_ENABLED ? 'UPI, Card, Netbanking & more' : 'Currently unavailable'}
+                </Text>
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.paymentModeOption, paymentMode === 'cod' && styles.paymentModeOptionActive]}
+              activeOpacity={0.8}
+              onPress={() => setPaymentMode('cod')}>
+              <Ionicons
+                name={paymentMode === 'cod' ? 'radio-button-on' : 'radio-button-off'}
+                size={sw(16)}
+                color={paymentMode === 'cod' ? '#105641' : '#AAAAAA'}
+              />
+              <View style={{flex: 1}}>
+                <Text style={[styles.paymentModeLabel, paymentMode === 'cod' && styles.paymentModeLabelActive]}>
+                  Cash on Delivery
+                </Text>
+                <Text style={styles.paymentModeSub}>Pay the expert after service</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         {/* ── Offer Banner ── */}
         {eligibleOffer && !appliedOffer && (
           <View style={styles.offerBanner}>
@@ -520,47 +615,22 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
               </TouchableOpacity>
             </View>
           ) : (
-            <>
-              <View style={styles.couponInputRow}>
-                <TextInput
-                  style={styles.couponInput}
-                  placeholder="Enter coupon code"
-                  placeholderTextColor="#AAAAAA"
-                  value={couponInput}
-                  onChangeText={t => { setCouponInput(t.toUpperCase()); setCouponError(''); }}
-                  autoCapitalize="characters"
-                  returnKeyType="done"
-                  onSubmitEditing={applyCoupon}
-                />
-                <TouchableOpacity
-                  style={[styles.couponApplyBtn, (!couponInput.trim() || couponLoading) && {opacity: 0.5}]}
-                  activeOpacity={0.8}
-                  disabled={!couponInput.trim() || couponLoading}
-                  onPress={applyCoupon}>
-                  {couponLoading ? (
-                    <ActivityIndicator color="#105641" size="small" />
-                  ) : (
-                    <Text style={styles.couponApplyText}>Apply</Text>
-                  )}
-                </TouchableOpacity>
-              </View>
-              <TouchableOpacity
-                style={styles.browseCouponsBtn}
-                activeOpacity={0.7}
-                onPress={() =>
-                  navigation?.navigate('Coupons', {
-                    orderAmount: subtotal,
-                    onSelect: (c: {code: string; discountAmount: number; description?: string}) => {
-                      setAppliedCoupon(c);
-                      setCouponError('');
-                    },
-                  })
-                }>
-                <Ionicons name="pricetag-outline" size={sw(13)} color="#105641" />
-                <Text style={styles.browseCouponsText}>Browse all coupons & offers</Text>
-                <Ionicons name="chevron-forward" size={sw(13)} color="#105641" />
-              </TouchableOpacity>
-            </>
+            <TouchableOpacity
+              style={styles.browseCouponsBtn}
+              activeOpacity={0.7}
+              onPress={() =>
+                navigation?.navigate('Coupons', {
+                  orderAmount: subtotal,
+                  onSelect: (c: {code: string; discountAmount: number; description?: string}) => {
+                    setAppliedCoupon(c);
+                    setCouponError('');
+                  },
+                })
+              }>
+              <Ionicons name="pricetag-outline" size={sw(13)} color="#105641" />
+              <Text style={styles.browseCouponsText}>Browse all coupons & offers</Text>
+              <Ionicons name="chevron-forward" size={sw(13)} color="#105641" />
+            </TouchableOpacity>
           )}
           {!!couponError && <Text style={styles.couponErrorText}>{couponError}</Text>}
         </View>
@@ -631,7 +701,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
                 <Text style={styles.billValue}>₹{PLATFORM_FEE}</Text>
               </View>
               <View style={styles.billRow}>
-                <Text style={styles.billLabel}>Taxes & GST (18%)</Text>
+                <Text style={styles.billLabel}>Taxes & GST (5%)</Text>
                 <Text style={styles.billValue}>₹{tax}</Text>
               </View>
               <View style={styles.divider} />
@@ -1067,6 +1137,23 @@ const styles = StyleSheet.create({
   },
   freeBadgeText: {fontFamily: fonts.title, fontSize: sw(12), fontWeight: '800', color: '#FDD77A'},
 
+  /* ── Payment Method ── */
+  paymentModeRow: {gap: sw(8)},
+  paymentModeOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: sw(10),
+    borderWidth: 1.5,
+    borderColor: '#EEEDED',
+    borderRadius: sw(10),
+    padding: sw(12),
+  },
+  paymentModeOptionActive: {borderColor: '#105641', backgroundColor: 'rgba(16,86,65,0.05)'},
+  paymentModeOptionDisabled: {opacity: 0.45},
+  paymentModeLabel: {fontFamily: fonts.textFont, fontSize: sw(13), fontWeight: '600', color: '#171816'},
+  paymentModeLabelActive: {color: '#105641'},
+  paymentModeSub: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#888', marginTop: sw(2)},
+
   /* ── Coupon ── */
   couponCard: {
     backgroundColor: '#FFFFFF',
@@ -1075,29 +1162,6 @@ const styles = StyleSheet.create({
     gap: sw(10),
   },
   couponHeader: {flexDirection: 'row', alignItems: 'center', gap: sw(8)},
-  couponInputRow: {flexDirection: 'row', alignItems: 'center', gap: sw(8)},
-  couponInput: {
-    flex: 1,
-    height: sw(40),
-    borderWidth: 1,
-    borderColor: '#CBCBCB',
-    borderRadius: sw(8),
-    paddingHorizontal: sw(12),
-    fontFamily: fonts.textFont,
-    fontSize: sw(13),
-    color: '#171816',
-    letterSpacing: 1,
-  },
-  couponApplyBtn: {
-    height: sw(40),
-    paddingHorizontal: sw(16),
-    borderWidth: 1.5,
-    borderColor: '#105641',
-    borderRadius: sw(8),
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  couponApplyText: {fontFamily: fonts.title, fontSize: sw(13), fontWeight: '700', color: '#105641'},
   couponApplied: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -60,7 +60,7 @@ export function useAdminResource(basePath) {
   );
 
   const action = useCallback(
-    (method, path, body = null) => request(method, path, body),
+    (method, path, body = null, params = null) => request(method, path, body, params),
     [request],
   );
 

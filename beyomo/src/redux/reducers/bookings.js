@@ -58,6 +58,18 @@ export const cancelBooking = createAsyncThunk(
   },
 );
 
+export const rescheduleBooking = createAsyncThunk(
+  'bookings/rescheduleBooking',
+  async ({bookingId, scheduledAt, reason}, {rejectWithValue}) => {
+    try {
+      const response = await api.patch(`${endpoints.BOOKINGS}/${bookingId}/reschedule`, {scheduledAt, reason});
+      return response.data.data;
+    } catch (error) {
+      return rejectWithValue(error.response?.data?.message ?? 'Failed to reschedule booking.');
+    }
+  },
+);
+
 export const respondServiceUpdate = createAsyncThunk(
   'bookings/respondServiceUpdate',
   async ({bookingId, action}, {rejectWithValue}) => {
@@ -174,6 +186,27 @@ const bookingsSlice = createSlice({
         }
       })
       .addCase(cancelBooking.rejected, (state, action) => {
+        state.actionLoading = false;
+        state.error = action.payload;
+      })
+
+      .addCase(rescheduleBooking.pending, state => {
+        state.actionLoading = true;
+      })
+      .addCase(rescheduleBooking.fulfilled, (state, action) => {
+        state.actionLoading = false;
+        const rescheduledId = action.payload?.id ?? action.payload?._id;
+        if (rescheduledId) {
+          const normalized = normalizeBooking(action.payload);
+          state.list = state.list.map(b =>
+            (b.id ?? b._id) === rescheduledId ? normalized : b,
+          );
+          if ((state.selected?.id ?? state.selected?._id) === rescheduledId) {
+            state.selected = normalized;
+          }
+        }
+      })
+      .addCase(rescheduleBooking.rejected, (state, action) => {
         state.actionLoading = false;
         state.error = action.payload;
       })

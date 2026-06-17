@@ -1,4 +1,4 @@
-import React from 'react';
+import React, {useState, useCallback} from 'react';
 import {
   View,
   Text,
@@ -7,67 +7,72 @@ import {
   StyleSheet,
   Dimensions,
   StatusBar,
+  ActivityIndicator,
+  RefreshControl,
+  AppState,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import {useFocusEffect} from '@react-navigation/native';
+import {useSelector} from 'react-redux';
 import {fonts} from '../../config/theme';
+import api from '../../utils/api';
+import {endpoints} from '../../config/config';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
 
-type Review = {
-  id: string;
-  customerName: string;
-  service: string;
-  orderId: string;
-  rating: number;
-  date: string;
-  comment: string;
-};
-
-const REVIEWS: Review[] = [
-  {
-    id: '1',
-    customerName: 'Priya Nair',
-    service: 'Gold Facial',
-    orderId: 'BYM102548',
-    rating: 5,
-    date: '20 May 2026',
-    comment: 'Absolutely loved the service! Riya was very professional and gentle. My skin feels amazing!',
-  },
-  {
-    id: '2',
-    customerName: 'Ananya Mehta',
-    service: 'Hair Spa & Treatment',
-    orderId: 'BYM100123',
-    rating: 4,
-    date: '18 May 2026',
-    comment: 'Great experience overall. Very thorough and punctual. Will definitely book again.',
-  },
-  {
-    id: '3',
-    customerName: 'Deepika S.',
-    service: 'Bridal Makeup',
-    orderId: 'BYM100098',
-    rating: 5,
-    date: '15 May 2026',
-    comment: 'The bridal makeup was stunning! Exactly what I wanted. Highly recommend Riya for bridal services.',
-  },
-  {
-    id: '4',
-    customerName: 'Kavitha R.',
-    service: 'Full Waxing',
-    orderId: 'BYM100054',
-    rating: 4,
-    date: '10 May 2026',
-    comment: 'Good service, clean and hygienic. Quick and efficient.',
-  },
-];
-
-const AVG_RATING = REVIEWS.reduce((s, r) => s + r.rating, 0) / REVIEWS.length;
-
 const MyReviewsScreen = ({navigation}: any) => {
   const insets = useSafeAreaInsets();
+  const partnerId = useSelector((s: any) => s.Auth?.partnerId ?? s.Auth?.partner?.id);
+
+  const [reviews, setReviews] = useState<any[]>([]);
+  const [stats, setStats] = useState<{average: number; total: number; distribution: Record<number, number>} | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const fetchReviews = async (isRefresh = false) => {
+    if (!partnerId) return;
+    if (isRefresh) setRefreshing(true); else setLoading(true);
+    try {
+      const res = await api.get(endpoints.PARTNER_REVIEWS(String(partnerId)), {params: {limit: 50}});
+      setReviews(res.data?.data ?? []);
+      setStats(res.data?.stats ?? null);
+    } catch {
+      // silently fail — user can pull to refresh
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchReviews();
+      let interval: ReturnType<typeof setInterval> | null = setInterval(() => fetchReviews(), 10000);
+
+      const sub = AppState.addEventListener('change', state => {
+        if (state === 'active') {
+          if (!interval) {
+            fetchReviews();
+            interval = setInterval(() => fetchReviews(), 10000);
+          }
+        } else if (interval) {
+          clearInterval(interval);
+          interval = null;
+        }
+      });
+
+      return () => {
+        if (interval) clearInterval(interval);
+        sub.remove();
+      };
+    }, [partnerId]),
+  );
+
+  const avgRating = stats?.average ?? 0;
+  const totalReviews = stats?.total ?? 0;
+  const distribution = stats?.distribution ?? {};
 
   return (
     <View style={styles.root}>
@@ -85,82 +90,107 @@ const MyReviewsScreen = ({navigation}: any) => {
         <View style={{width: sw(22)}} />
       </View>
 
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.scroll, {paddingBottom: insets.bottom + sw(32)}]}>
+      {loading && reviews.length === 0 ? (
+        <View style={{flex: 1, alignItems: 'center', justifyContent: 'center'}}>
+          <ActivityIndicator size="large" color="#105641" />
+        </View>
+      ) : (
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => fetchReviews(true)} tintColor="#105641" />}
+          contentContainerStyle={[styles.scroll, {paddingBottom: insets.bottom + sw(32)}]}>
 
-        {/* Summary card */}
-        <View style={styles.summaryCard}>
-          <View style={styles.summaryLeft}>
-            <Text style={styles.avgRating}>{AVG_RATING.toFixed(1)}</Text>
-            <View style={styles.starsRow}>
-              {[1, 2, 3, 4, 5].map(s => (
-                <Ionicons
-                  key={s}
-                  name={s <= Math.round(AVG_RATING) ? 'star' : 'star-outline'}
-                  size={sw(16)}
-                  color="#F5A623"
-                />
-              ))}
+          {/* Summary card */}
+          <View style={styles.summaryCard}>
+            <View style={styles.summaryLeft}>
+              <Text style={styles.avgRating}>{avgRating.toFixed(1)}</Text>
+              <View style={styles.starsRow}>
+                {[1, 2, 3, 4, 5].map(s => (
+                  <Ionicons
+                    key={s}
+                    name={s <= Math.round(avgRating) ? 'star' : 'star-outline'}
+                    size={sw(16)}
+                    color="#F5A623"
+                  />
+                ))}
+              </View>
+              <Text style={styles.reviewCount}>{totalReviews} review{totalReviews !== 1 ? 's' : ''}</Text>
             </View>
-            <Text style={styles.reviewCount}>{REVIEWS.length} reviews</Text>
-          </View>
-          <View style={styles.summaryDivider} />
-          <View style={styles.summaryRight}>
-            {[5, 4, 3, 2, 1].map(star => {
-              const count = REVIEWS.filter(r => r.rating === star).length;
-              const pct = (count / REVIEWS.length) * 100;
-              return (
-                <View key={star} style={styles.barRow}>
-                  <Text style={styles.barLabel}>{star}</Text>
-                  <Ionicons name="star" size={sw(10)} color="#F5A623" />
-                  <View style={styles.barBg}>
-                    <View style={[styles.barFill, {width: `${pct}%`}]} />
+            <View style={styles.summaryDivider} />
+            <View style={styles.summaryRight}>
+              {[5, 4, 3, 2, 1].map(star => {
+                const count = distribution[star] ?? 0;
+                const pct = totalReviews > 0 ? (count / totalReviews) * 100 : 0;
+                return (
+                  <View key={star} style={styles.barRow}>
+                    <Text style={styles.barLabel}>{star}</Text>
+                    <Ionicons name="star" size={sw(10)} color="#F5A623" />
+                    <View style={styles.barBg}>
+                      <View style={[styles.barFill, {width: `${pct}%`}]} />
+                    </View>
+                    <Text style={styles.barCount}>{count}</Text>
                   </View>
-                  <Text style={styles.barCount}>{count}</Text>
+                );
+              })}
+            </View>
+          </View>
+
+          {/* Review list */}
+          {reviews.length === 0 ? (
+            <View style={styles.emptyCard}>
+              <Ionicons name="star-outline" size={sw(32)} color="#CCCCCC" />
+              <Text style={styles.emptyText}>No reviews yet</Text>
+            </View>
+          ) : (
+            reviews.map((review: any) => {
+              const customerName = review.user?.name ?? 'Customer';
+              const orderId = review.booking?.bookingCode ?? `#${String(review.bookingId ?? '').slice(-8).toUpperCase()}`;
+              const date = review.createdAt
+                ? new Date(review.createdAt).toLocaleDateString('en-IN', {day: '2-digit', month: 'short', year: 'numeric'})
+                : '';
+              return (
+                <View key={review.id} style={styles.reviewCard}>
+                  <View style={styles.reviewTop}>
+                    <View style={styles.customerInitial}>
+                      <Text style={styles.initialText}>
+                        {customerName.charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                    <View style={styles.reviewMeta}>
+                      <Text style={styles.customerName}>{customerName}</Text>
+                      <Text style={styles.reviewDate}>{date}  •  {orderId}</Text>
+                    </View>
+                    <View style={styles.ratingBadge}>
+                      <Ionicons name="star" size={sw(12)} color="#F5A623" />
+                      <Text style={styles.ratingBadgeText}>{review.rating}.0</Text>
+                    </View>
+                  </View>
+
+                  {!!review.service?.name && (
+                    <Text style={styles.serviceTag}>{review.service.name}</Text>
+                  )}
+
+                  <View style={styles.starsSmall}>
+                    {[1, 2, 3, 4, 5].map(s => (
+                      <Ionicons
+                        key={s}
+                        name={s <= review.rating ? 'star' : 'star-outline'}
+                        size={sw(13)}
+                        color="#F5A623"
+                      />
+                    ))}
+                  </View>
+
+                  {!!review.comment && (
+                    <Text style={styles.comment}>{review.comment}</Text>
+                  )}
                 </View>
               );
-            })}
-          </View>
-        </View>
+            })
+          )}
 
-        {/* Review list */}
-        {REVIEWS.map(review => (
-          <View key={review.id} style={styles.reviewCard}>
-            <View style={styles.reviewTop}>
-              <View style={styles.customerInitial}>
-                <Text style={styles.initialText}>
-                  {review.customerName.charAt(0).toUpperCase()}
-                </Text>
-              </View>
-              <View style={styles.reviewMeta}>
-                <Text style={styles.customerName}>{review.customerName}</Text>
-                <Text style={styles.reviewDate}>{review.date}  •  {review.orderId}</Text>
-              </View>
-              <View style={styles.ratingBadge}>
-                <Ionicons name="star" size={sw(12)} color="#F5A623" />
-                <Text style={styles.ratingBadgeText}>{review.rating}.0</Text>
-              </View>
-            </View>
-
-            <Text style={styles.serviceTag}>{review.service}</Text>
-
-            <View style={styles.starsSmall}>
-              {[1, 2, 3, 4, 5].map(s => (
-                <Ionicons
-                  key={s}
-                  name={s <= review.rating ? 'star' : 'star-outline'}
-                  size={sw(13)}
-                  color="#F5A623"
-                />
-              ))}
-            </View>
-
-            <Text style={styles.comment}>{review.comment}</Text>
-          </View>
-        ))}
-
-      </ScrollView>
+        </ScrollView>
+      )}
     </View>
   );
 };
@@ -260,6 +290,19 @@ const styles = StyleSheet.create({
     fontSize: sw(11),
     color: '#5C5C5C',
     width: sw(12),
+  },
+
+  emptyCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: sw(14),
+    paddingVertical: sw(40),
+    alignItems: 'center',
+    gap: sw(10),
+  },
+  emptyText: {
+    fontFamily: fonts.textFont,
+    fontSize: sw(13),
+    color: '#888888',
   },
 
   /* Review card */

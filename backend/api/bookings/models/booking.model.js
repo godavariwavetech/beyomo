@@ -32,16 +32,29 @@ const Booking = sequelize.define("Booking", {
   offerId:    { type: DataTypes.INTEGER, allowNull: true },
   packageId:  { type: DataTypes.INTEGER, allowNull: true },
   paymentStatus: { type: DataTypes.ENUM("pending", "paid", "refunded"), defaultValue: "pending" },
+  paymentMode: { type: DataTypes.ENUM("online", "cod"), allowNull: false, defaultValue: "online" },
   paymentId: { type: DataTypes.INTEGER, allowNull: true }, // no FK â€” circular dep with payments
   notes: { type: DataTypes.TEXT, allowNull: true },
   cancelledBy: { type: DataTypes.ENUM("user", "partner", "admin"), allowNull: true },
   cancellationReason: { type: DataTypes.TEXT, allowNull: true },
+  previousScheduledAt: { type: DataTypes.DATE, allowNull: true },
+  rescheduledCount: { type: DataTypes.INTEGER, defaultValue: 0 },
+  rescheduledBy: { type: DataTypes.ENUM("user", "partner", "admin"), allowNull: true },
+  rescheduleReason: { type: DataTypes.TEXT, allowNull: true },
   completedAt: { type: DataTypes.DATE, allowNull: true },
+  // When the partner confirmed arrival at the customer's location — separate from
+  // `status` moving to "in_progress", which now only happens once the partner actually
+  // taps "Start Service" after reviewing/confirming the checklist.
+  arrivedAt: { type: DataTypes.DATE, allowNull: true },
   cityId: { type: DataTypes.INTEGER, allowNull: true },
   ratingUser: { type: DataTypes.INTEGER, allowNull: true },
   ratingPartner: { type: DataTypes.INTEGER, allowNull: true },
   serviceUpdatePending: { type: DataTypes.BOOLEAN, defaultValue: false },
   pendingServicesUpdate: { type: DataTypes.JSON, allowNull: true },
+  // Outcome of the most recent service-update request — lets the partner app tell
+  // approved apart from rejected without guessing from totals. Reset to null whenever
+  // a new proposal is sent.
+  lastServiceUpdateDecision: { type: DataTypes.ENUM("approved", "rejected"), allowNull: true },
 }, {
   timestamps: true,
   tableName: "bookings",

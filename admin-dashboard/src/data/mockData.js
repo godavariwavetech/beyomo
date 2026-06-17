@@ -1,6 +1,6 @@
 export const ROLE_PERMISSIONS = {
-  super_admin: ['dashboard','users','partners','bookings','services','skills','earnings','coupons','offers','packages','reviews','notifications','reports','analytics','settings','permissions','feedback','zones','cities','contacts'],
-  admin:       ['dashboard','users','partners','bookings','services','skills','earnings','coupons','offers','packages','reviews','notifications','reports','analytics','feedback','zones','cities','contacts'],
+  super_admin: ['dashboard','users','partners','bookings','services','skills','earnings','settlements','coupons','offers','packages','reviews','notifications','reports','analytics','settings','permissions','feedback','zones','cities','contacts'],
+  admin:       ['dashboard','users','partners','bookings','services','skills','earnings','settlements','coupons','offers','packages','reviews','notifications','reports','analytics','feedback','zones','cities','contacts'],
   manager:     ['dashboard','users','partners','bookings','skills','reviews','notifications','feedback','contacts'],
   analyst:     ['dashboard','reports','analytics'],
   support:     ['dashboard','users','bookings','reviews','contacts'],
@@ -200,7 +200,7 @@ export const DASHBOARD_STATS = {
   avgRating:       { value: 4.4,   change: 0.1,  changeType: 'up',   label: 'platform rating',  extra: 'Based on 2,847 reviews' },
 };
 
-export const ALL_MODULES = ['dashboard','users','partners','bookings','services','skills','earnings','coupons','offers','packages','reviews','notifications','reports','analytics','settings','permissions','feedback','banners','zones','cities'];
+export const ALL_MODULES = ['dashboard','users','partners','bookings','services','skills','earnings','settlements','coupons','offers','packages','reviews','notifications','reports','analytics','settings','permissions','feedback','banners','zones','cities'];
 
 export const APP_FEEDBACK = [
   { id:'FBK001', userId:'USR0005', userName:'Meera Gupta',    type:'service',    rating:5, message:'Absolutely love the app! The booking process is seamless and the service quality is excellent. The beautician arrived on time and did a fantastic job.', submittedAt:'2026-05-23T10:30:00', status:'reviewed',  version:'2.1.0', serviceBooked:'Facial', category:'Service Quality' },

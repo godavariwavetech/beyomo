@@ -49,7 +49,8 @@ const {
   listPartners, getPartnerById, updatePartnerStatus, createPartner,
   listCategories, createCategory, updateCategory, deleteCategory,
   listServices, createService, updateService, deleteService, patchService, patchServiceCity,
-  listBookings, getBookingDetail, assignPartner, cancelBooking, editBookingServices,
+  listBookings, getBookingDetail, assignPartner, cancelBooking, rescheduleBooking, editBookingServices,
+  listPartnerBalances, getPartnerLedger, recordSettlement, voidLedgerEntry,
   listCoupons, createCoupon, updateCoupon, deleteCoupon, getReferral, updateReferral,
   listReviews, updateReviewStatus,
   listNotifications, broadcastNotification,
@@ -115,7 +116,14 @@ router.get("/bookings", adminAuthenticate(), listBookings);
 router.get("/bookings/:id", adminAuthenticate(), getBookingDetail);
 router.patch("/bookings/:id/assign", adminAuthenticate(["super_admin", "admin", "manager"]), assignPartner);
 router.patch("/bookings/:id/cancel", adminAuthenticate(["super_admin", "admin", "manager"]), cancelBooking);
+router.patch("/bookings/:id/reschedule", adminAuthenticate(["super_admin", "admin", "manager"]), rescheduleBooking);
 router.patch("/bookings/:id/services", adminAuthenticate(["super_admin", "admin", "manager"]), editBookingServices);
+
+// Settlements
+router.get("/settlements/partners", adminAuthenticate(["super_admin", "admin"]), listPartnerBalances);
+router.get("/settlements/partners/:partnerId", adminAuthenticate(["super_admin", "admin"]), getPartnerLedger);
+router.post("/settlements/partners/:partnerId/settle", adminAuthenticate(["super_admin", "admin"]), recordSettlement);
+router.patch("/settlements/entries/:id/void", adminAuthenticate(["super_admin", "admin"]), voidLedgerEntry);
 
 // Coupons
 router.get("/coupons", adminAuthenticate(), listCoupons);

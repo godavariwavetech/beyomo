@@ -40,11 +40,11 @@ export default function Earnings() {
         setAllTransactions(res.data?.data);
       }
     });
-    reportAction('get', '/api/v1/admin/reports/revenue').then(res => {
+    reportAction('get', '/api/v1/admin/reports/revenue', null, params).then(res => {
       const arr = res.data?.data?.data;
       if (res.ok && Array.isArray(arr) && arr.length) setRevenueData(arr);
     });
-    reportAction('get', '/api/v1/admin/reports/bookings').then(res => {
+    reportAction('get', '/api/v1/admin/reports/bookings', null, params).then(res => {
       const arr = res.data?.data?.topServices;
       if (res.ok && Array.isArray(arr) && arr.length) setServiceRevenue(arr);
     });

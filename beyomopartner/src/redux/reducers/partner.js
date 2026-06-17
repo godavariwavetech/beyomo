@@ -52,15 +52,27 @@ export const fetchPartnerBookings = createAsyncThunk(
 
 export const updateBookingStatus = createAsyncThunk(
   'partner/updateBookingStatus',
-  async ({bookingId, status}, {rejectWithValue}) => {
+  async ({bookingId, status, cashCollected}, {rejectWithValue}) => {
     try {
       const response = await api.patch(
         `${endpoints.PARTNER_BOOKINGS}/${bookingId}/status`,
-        {status},
+        cashCollected !== undefined ? {status, cashCollected} : {status},
       );
       return response.data.data;
     } catch (error) {
       return rejectWithValue(error.response?.data?.message ?? 'Failed to update booking status.');
+    }
+  },
+);
+
+export const markPartnerArrived = createAsyncThunk(
+  'partner/markArrived',
+  async (bookingId, {rejectWithValue}) => {
+    try {
+      const response = await api.patch(endpoints.PARTNER_BOOKING_ARRIVED(String(bookingId)));
+      return response.data.data;
+    } catch (error) {
+      return rejectWithValue(error.response?.data?.message ?? 'Failed to record arrival.');
     }
   },
 );
@@ -73,6 +85,18 @@ export const fetchPartnerEarnings = createAsyncThunk(
       return response.data.data;
     } catch (error) {
       return rejectWithValue(error.response?.data?.message ?? 'Failed to load earnings.');
+    }
+  },
+);
+
+export const fetchPartnerWallet = createAsyncThunk(
+  'partner/fetchWallet',
+  async ({page = 1, limit = 20} = {}, {rejectWithValue}) => {
+    try {
+      const response = await api.get(endpoints.PARTNER_WALLET, {params: {page, limit}});
+      return response.data.data;
+    } catch (error) {
+      return rejectWithValue(error.response?.data?.message ?? 'Failed to load wallet.');
     }
   },
 );
@@ -110,6 +134,7 @@ const partnerSlice = createSlice({
     profile: null,
     dashboard: null,
     earnings: null,
+    wallet: null,
     bookings: [],
     availableBookings: [],
     selectedBooking: null,
@@ -192,6 +217,24 @@ const partnerSlice = createSlice({
         state.error = action.payload;
       })
 
+      .addCase(markPartnerArrived.pending, state => {
+        state.actionLoading = true;
+      })
+      .addCase(markPartnerArrived.fulfilled, (state, action) => {
+        state.actionLoading = false;
+        const updated = action.payload;
+        const updatedId = updated?.id ?? updated?._id;
+        if (updatedId) {
+          state.bookings = state.bookings.map(b =>
+            (b.id ?? b._id) === updatedId ? updated : b,
+          );
+        }
+      })
+      .addCase(markPartnerArrived.rejected, (state, action) => {
+        state.actionLoading = false;
+        state.error = action.payload;
+      })
+
       .addCase(fetchPartnerEarnings.pending, state => {
         state.loading = true;
         state.error = null;
@@ -201,6 +244,19 @@ const partnerSlice = createSlice({
         state.earnings = action.payload;
       })
       .addCase(fetchPartnerEarnings.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload;
+      })
+
+      .addCase(fetchPartnerWallet.pending, state => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(fetchPartnerWallet.fulfilled, (state, action) => {
+        state.loading = false;
+        state.wallet = action.payload;
+      })
+      .addCase(fetchPartnerWallet.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload;
       })

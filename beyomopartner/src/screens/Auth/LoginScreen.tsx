@@ -10,7 +10,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  Alert,
   ActivityIndicator,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
@@ -19,6 +18,8 @@ import {useDispatch, useSelector} from 'react-redux';
 import {fonts} from '../../config/theme';
 import {requestLoginOtp, clearMessage} from '../../redux/reducers/auth';
 import type {AppDispatch, RootState} from '../../redux/store';
+import {useAppAlert} from '../../hooks/useAppAlert';
+import AppAlertModal from '../../components/AppAlertModal/AppAlertModal';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
@@ -27,6 +28,7 @@ const LoginScreen = ({navigation}: any) => {
   const dispatch = useDispatch<AppDispatch>();
   const {loading, message} = useSelector((state: RootState) => state.Auth);
   const [phone, setPhone] = useState('');
+  const {alertConfig, showAlert, hideAlert} = useAppAlert();
 
   const isValid = phone.length === 10;
 
@@ -123,7 +125,7 @@ const LoginScreen = ({navigation}: any) => {
               By continuing you agree to our{' '}
               <Text
                 style={styles.termsLink}
-                onPress={() => Alert.alert('Terms & Conditions', 'By using Beyomo, you agree to our terms of service, privacy policy, and refund policy. All bookings are subject to availability.')}>
+                onPress={() => showAlert('Terms & Conditions', 'By using Beyomo, you agree to our terms of service, privacy policy, and refund policy. All bookings are subject to availability.')}>
                 Terms & Conditions
               </Text>
             </Text>
@@ -138,6 +140,8 @@ const LoginScreen = ({navigation}: any) => {
 
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <AppAlertModal config={alertConfig} onRequestClose={hideAlert} />
     </LinearGradient>
   );
 };

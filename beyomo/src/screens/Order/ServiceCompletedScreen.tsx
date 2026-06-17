@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useState, useEffect, useRef} from 'react';
 import {
   View,
   Text,
@@ -10,13 +10,16 @@ import {
   StatusBar,
   TextInput,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import LinearGradient from 'react-native-linear-gradient';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {fonts} from '../../config/theme';
 import {useDispatch, useSelector} from 'react-redux';
-import {submitReview} from '../../redux/reducers/bookings';
+import {submitReview, fetchBookingById} from '../../redux/reducers/bookings';
+import {resolveImageUrl} from '../../utils/utils';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
@@ -26,13 +29,24 @@ const RATING_LABELS = ['', 'Poor', 'Fair', 'Good', 'Very Good', 'Excellent'];
 const ServiceCompletedScreen = ({navigation, route}: any) => {
   const insets = useSafeAreaInsets();
   const dispatch = useDispatch<any>();
-  const {actionLoading} = useSelector((s: any) => s.Bookings);
+  const {selected, actionLoading} = useSelector((s: any) => s.Bookings);
   const [rating, setRating] = useState(0);
   const [review, setReview] = useState('');
   const [submitted, setSubmitted] = useState(false);
 
-  const booking = route?.params?.booking ?? {};
-  const bookingId = booking._id ?? booking.id ?? route?.params?.bookingId;
+  const routeBooking = route?.params?.booking ?? {};
+  const bookingId = routeBooking._id ?? routeBooking.id ?? route?.params?.bookingId;
+  const scrollRef = useRef<ScrollView>(null);
+
+  // Re-fetch so we always know whether a review already exists for this booking,
+  // rather than trusting a possibly-stale snapshot passed in via route params.
+  useEffect(() => {
+    if (bookingId) dispatch(fetchBookingById(bookingId));
+  }, [bookingId]);
+
+  const booking = (selected && (selected.id ?? selected._id) === bookingId) ? selected : routeBooking;
+  const existingReview = booking.review ?? null;
+
   const services: any[] = booking.services ?? [];
   const subtotal = services.reduce((s: number, i: any) => s + (i.price ?? 0), 0);
   const platformFee = booking.platformFee ?? 0;
@@ -40,9 +54,9 @@ const ServiceCompletedScreen = ({navigation, route}: any) => {
 
   const partner = booking.partner ?? {};
   const partnerName = partner.name ?? booking.partnerName ?? '';
-  const partnerAvatar = partner.avatar ?? partner.photo ?? '';
+  const partnerAvatar = resolveImageUrl(partner.profilePicture ?? partner.avatar ?? partner.photo) ?? '';
   const partnerRole = partner.specialty ?? partner.role ?? 'Beauty Expert';
-  const partnerRating = partner.averageRating ?? partner.rating ?? '';
+  const partnerRating = partner.ratingsAverage ?? partner.averageRating ?? partner.rating ?? '';
 
   const scheduledAt = booking.scheduledAt;
   const dateStr = scheduledAt
@@ -53,9 +67,17 @@ const ServiceCompletedScreen = ({navigation, route}: any) => {
 
   const handleSubmit = async () => {
     if (rating === 0 || !bookingId) return;
-    await dispatch(submitReview({bookingId, rating, comment: review}));
-    setSubmitted(true);
+    const result = await dispatch(submitReview({bookingId, rating, comment: review}));
+    if (result.meta.requestStatus === 'fulfilled') {
+      setSubmitted(true);
+    }
   };
+
+  // Once submitted, or if a review already existed for this booking, show what
+  // was actually given instead of the input form.
+  const displayRating = existingReview ? existingReview.rating : rating;
+  const displayComment = existingReview ? existingReview.comment : review;
+  const hasReview = submitted || !!existingReview;
 
   return (
     <View style={styles.root}>
@@ -69,8 +91,14 @@ const ServiceCompletedScreen = ({navigation, route}: any) => {
         <View style={{width: sw(22)}} />
       </View>
 
+      <KeyboardAvoidingView
+        style={{flex: 1}}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top : 0}>
       <ScrollView
+        ref={scrollRef}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={[styles.scroll, {paddingBottom: insets.bottom + sw(40)}]}>
 
         <LinearGradient
@@ -135,7 +163,7 @@ const ServiceCompletedScreen = ({navigation, route}: any) => {
           </View>
         )}
 
-        {!submitted ? (
+        {!hasReview ? (
           <View style={styles.card}>
             <Text style={styles.cardLabel}>How was your experience?</Text>
             {!!partnerName && (
@@ -166,6 +194,7 @@ const ServiceCompletedScreen = ({navigation, route}: any) => {
               numberOfLines={3}
               value={review}
               onChangeText={setReview}
+              onFocus={() => setTimeout(() => scrollRef.current?.scrollToEnd({animated: true}), 300)}
               textAlignVertical="top"
             />
 
@@ -184,10 +213,23 @@ const ServiceCompletedScreen = ({navigation, route}: any) => {
         ) : (
           <View style={styles.thankYouCard}>
             <Ionicons name="heart" size={sw(28)} color="#FB1616" />
-            <Text style={styles.thankYouTitle}>Thank you for your feedback!</Text>
-            <Text style={styles.thankYouSub}>
-              Your review helps us maintain the highest standards.
+            <Text style={styles.thankYouTitle}>
+              {submitted ? 'Thank you for your feedback!' : 'You already reviewed this booking'}
             </Text>
+            <Text style={styles.thankYouSub}>Your Review</Text>
+            <View style={styles.starsRow}>
+              {[1, 2, 3, 4, 5].map(star => (
+                <Ionicons
+                  key={star}
+                  name={star <= displayRating ? 'star' : 'star-outline'}
+                  size={sw(24)}
+                  color={star <= displayRating ? '#F5A623' : '#D0D0D0'}
+                />
+              ))}
+            </View>
+            {!!displayComment && (
+              <Text style={styles.givenComment}>"{displayComment}"</Text>
+            )}
           </View>
         )}
 
@@ -213,6 +255,7 @@ const ServiceCompletedScreen = ({navigation, route}: any) => {
           </TouchableOpacity>
         </View>
       </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 };
@@ -349,6 +392,10 @@ const styles = StyleSheet.create({
   },
   thankYouTitle: {fontFamily: fonts.title, fontSize: sw(15), fontWeight: '700', color: '#171816'},
   thankYouSub: {fontFamily: fonts.textFont, fontSize: sw(12), color: '#656565', textAlign: 'center', lineHeight: sw(18)},
+  givenComment: {
+    fontFamily: fonts.textFont, fontSize: sw(13), color: '#171816', fontStyle: 'italic',
+    textAlign: 'center', lineHeight: sw(19), marginTop: sw(4),
+  },
 
   ctaRow: {flexDirection: 'row', gap: sw(12), marginTop: sw(4)},
   bookAgainBtn: {flex: 1, borderRadius: sw(10), overflow: 'hidden'},

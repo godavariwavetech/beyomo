@@ -115,7 +115,7 @@ const getRevenueData = async (period = "daily", cityIds = null) => {
   return { period, data: rows.map((r) => ({ date: r.date, revenue: parseFloat(r.revenue || 0), transactions: parseInt(r.transactions, 10) })) };
 };
 
-const getBookingAnalytics = async (period = "daily") => {
+const getBookingAnalytics = async (period = "daily", cityIds = null) => {
   let startDate, groupExpr;
   switch (period) {
     case "daily": startDate = moment().subtract(30, "days").toDate(); groupExpr = "DATE(createdAt)"; break;
@@ -124,19 +124,22 @@ const getBookingAnalytics = async (period = "daily") => {
     default: throw new AppError("Invalid period", 400);
   }
 
+  const cityWhere = cityIds?.length ? `AND cityId IN (${cityIds.join(',')})` : "";
+  const cityWhereB = cityIds?.length ? `AND b.cityId IN (${cityIds.join(',')})` : "";
+
   const [trend, statusDist, topServices] = await Promise.all([
     sequelize.query(
-      `SELECT ${groupExpr} as period, status, COUNT(*) as count FROM bookings WHERE createdAt >= :startDate GROUP BY ${groupExpr}, status ORDER BY ${groupExpr} ASC`,
+      `SELECT ${groupExpr} as period, status, COUNT(*) as count FROM bookings WHERE createdAt >= :startDate ${cityWhere} GROUP BY ${groupExpr}, status ORDER BY ${groupExpr} ASC`,
       { replacements: { startDate }, type: sequelize.QueryTypes.SELECT }
     ),
     sequelize.query(
-      `SELECT status, COUNT(*) as count FROM bookings GROUP BY status`,
+      `SELECT status, COUNT(*) as count FROM bookings WHERE 1=1 ${cityWhere} GROUP BY status`,
       { type: sequelize.QueryTypes.SELECT }
     ),
     sequelize.query(
       `SELECT b.serviceId, s.name as serviceName, COUNT(*) as count, SUM(b.totalAmount) as revenue
        FROM bookings b LEFT JOIN services s ON b.serviceId = s.id
-       WHERE b.status = 'completed'
+       WHERE b.status = 'completed' ${cityWhereB}
        GROUP BY b.serviceId, s.name ORDER BY count DESC LIMIT 10`,
       { type: sequelize.QueryTypes.SELECT }
     ),
@@ -149,7 +152,7 @@ const getBookingAnalytics = async (period = "daily") => {
   };
 };
 
-const getUserGrowth = async (period = "monthly") => {
+const getUserGrowth = async (period = "monthly", cityIds = null) => {
   let startDate, groupExpr, dateFormat;
   switch (period) {
     case "daily": startDate = moment().subtract(30, "days").toDate(); groupExpr = "DATE(createdAt)"; dateFormat = "%Y-%m-%d"; break;
@@ -158,7 +161,8 @@ const getUserGrowth = async (period = "monthly") => {
     default: startDate = moment().subtract(12, "months").toDate(); groupExpr = "DATE_FORMAT(createdAt, '%Y-%m')"; dateFormat = "%Y-%m"; break;
   }
 
-  const sql = `SELECT ${groupExpr} as period, DATE_FORMAT(MIN(createdAt), '${dateFormat}') as date, COUNT(*) as count FROM {TABLE} WHERE createdAt >= :startDate GROUP BY ${groupExpr} ORDER BY ${groupExpr} ASC`;
+  const cityWhere = cityIds?.length ? `AND cityId IN (${cityIds.join(',')})` : "";
+  const sql = `SELECT ${groupExpr} as period, DATE_FORMAT(MIN(createdAt), '${dateFormat}') as date, COUNT(*) as count FROM {TABLE} WHERE createdAt >= :startDate ${cityWhere} GROUP BY ${groupExpr} ORDER BY ${groupExpr} ASC`;
 
   const [userGrowth, partnerGrowth] = await Promise.all([
     sequelize.query(sql.replace("{TABLE}", "users"), { replacements: { startDate }, type: sequelize.QueryTypes.SELECT }),
@@ -173,7 +177,7 @@ const getUserGrowth = async (period = "monthly") => {
 };
 
 // ── Coupon usage list ─────────────────────────────────────────────────────────
-const getCouponUsage = async ({ page = 1, limit = 20, search = null }) => {
+const getCouponUsage = async ({ page = 1, limit = 20, search = null, cityIds = null }) => {
   const offset = (page - 1) * limit;
 
   const where = {
@@ -181,6 +185,7 @@ const getCouponUsage = async ({ page = 1, limit = 20, search = null }) => {
       { couponCode: { [Op.not]: null } },
       { couponCode: { [Op.ne]: "" } },
     ],
+    ...cityIdsFilter(cityIds),
   };
   if (search) where.couponCode = { [Op.like]: `%${search.toUpperCase()}%` };
 
@@ -193,17 +198,19 @@ const getCouponUsage = async ({ page = 1, limit = 20, search = null }) => {
     attributes: ["id", "bookingCode", "couponCode", "couponDiscountAmount", "baseAmount", "totalAmount", "createdAt", "userId", "status"],
   });
 
+  const cityWhere = cityIds?.length ? `AND cityId IN (${cityIds.join(',')})` : "";
+
   const [stats] = await sequelize.query(
     `SELECT COUNT(*) as totalOrders,
             COALESCE(SUM(couponDiscountAmount), 0) as totalDiscount,
             COUNT(DISTINCT userId) as uniqueUsers
-     FROM bookings WHERE couponCode IS NOT NULL AND couponCode != ''`,
+     FROM bookings WHERE couponCode IS NOT NULL AND couponCode != '' ${cityWhere}`,
     { type: sequelize.QueryTypes.SELECT }
   );
 
   const [mostUsed] = await sequelize.query(
     `SELECT couponCode, COUNT(*) as useCount
-     FROM bookings WHERE couponCode IS NOT NULL AND couponCode != ''
+     FROM bookings WHERE couponCode IS NOT NULL AND couponCode != '' ${cityWhere}
      GROUP BY couponCode ORDER BY useCount DESC LIMIT 1`,
     { type: sequelize.QueryTypes.SELECT }
   );
@@ -235,8 +242,9 @@ const getCouponUsage = async ({ page = 1, limit = 20, search = null }) => {
 };
 
 // ── User engagement ───────────────────────────────────────────────────────────
-const getUserEngagement = async ({ page = 1, limit = 20 }) => {
+const getUserEngagement = async ({ page = 1, limit = 20, cityIds = null }) => {
   const offset = (page - 1) * limit;
+  const cityWhere = cityIds?.length ? `AND u.cityId IN (${cityIds.join(',')})` : "";
 
   const rows = await sequelize.query(
     `SELECT
@@ -250,7 +258,7 @@ const getUserEngagement = async ({ page = 1, limit = 20 }) => {
        MIN(b.createdAt)  AS firstBookingAt
      FROM users u
      LEFT JOIN bookings b ON u.id = b.userId
-     WHERE u.status != 'deleted'
+     WHERE u.status != 'deleted' ${cityWhere}
      GROUP BY u.id, u.name, u.phone, u.email, u.status, u.createdAt
      ORDER BY totalBookings DESC, totalSpent DESC
      LIMIT :limit OFFSET :offset`,
@@ -258,7 +266,7 @@ const getUserEngagement = async ({ page = 1, limit = 20 }) => {
   );
 
   const [countRow] = await sequelize.query(
-    `SELECT COUNT(*) AS total FROM users WHERE status != 'deleted'`,
+    `SELECT COUNT(*) AS total FROM users u WHERE u.status != 'deleted' ${cityWhere}`,
     { type: sequelize.QueryTypes.SELECT }
   );
 
@@ -270,7 +278,7 @@ const getUserEngagement = async ({ page = 1, limit = 20 }) => {
        ROUND(COALESCE(AVG(bc.cnt), 0), 1)                                               AS avgBookings
      FROM users u
      LEFT JOIN (SELECT userId, COUNT(*) AS cnt FROM bookings GROUP BY userId) bc ON u.id = bc.userId
-     WHERE u.status != 'deleted'`,
+     WHERE u.status != 'deleted' ${cityWhere}`,
     { type: sequelize.QueryTypes.SELECT }
   );
 

@@ -9,6 +9,7 @@ import {
   StatusBar,
   ActivityIndicator,
   RefreshControl,
+  AppState,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -52,8 +53,28 @@ const AvailableBookingsScreen = ({navigation}: any) => {
     }
   };
 
-  // Reload every time screen comes into focus
-  useFocusEffect(useCallback(() => { fetchBookings(); }, []));
+  // Reload every time screen comes into focus, then keep polling while focused and foregrounded
+  useFocusEffect(useCallback(() => {
+    fetchBookings();
+    let interval: ReturnType<typeof setInterval> | null = setInterval(() => fetchBookings(), 10000);
+
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'active') {
+        if (!interval) {
+          fetchBookings();
+          interval = setInterval(() => fetchBookings(), 10000);
+        }
+      } else if (interval) {
+        clearInterval(interval);
+        interval = null;
+      }
+    });
+
+    return () => {
+      if (interval) clearInterval(interval);
+      sub.remove();
+    };
+  }, []));
 
   const renderItem = ({item}: {item: any}) => {
     const services = parseServices(item.services);

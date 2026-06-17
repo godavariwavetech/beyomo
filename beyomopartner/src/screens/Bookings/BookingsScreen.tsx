@@ -10,6 +10,7 @@ import {
   StatusBar,
   RefreshControl,
   ActivityIndicator,
+  AppState,
 } from 'react-native';
 import {BookingsScreenSkeleton} from '../../components/Skeleton/Skeleton';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -44,7 +45,7 @@ const STATUS_CONFIG: Record<string, {bg: string; text: string; dot: string}> = {
   available:   {bg: '#FFF8E7', text: '#C87B1A', dot: '#F5A623'},
 };
 
-const FALLBACK_IMG = 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=200&q=80';
+const FALLBACK_IMG = 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=800&q=90&fit=crop';
 
 const JobCard = ({
   job,
@@ -144,6 +145,14 @@ const JobCard = ({
           )}
         </View>
 
+        {/* ── Pending service-change request ── */}
+        {!!job.serviceUpdatePending && (
+          <View style={styles.pendingChip}>
+            <Ionicons name="time-outline" size={sw(12)} color="#92400E" />
+            <Text style={styles.pendingChipText}>Service changes awaiting customer approval</Text>
+          </View>
+        )}
+
         {/* ── Rating (completed) ── */}
         {isCompleted && rating != null && (
           <View style={styles.ratingRow}>
@@ -190,11 +199,26 @@ const BookingsScreen = ({navigation}: {navigation: any}) => {
     fetchAvailableOrders();
   }, [dispatch]);
 
-  // Refresh when screen is focused
+  // Refresh when screen is focused, then keep polling every few seconds while it stays focused
   useFocusEffect(
     React.useCallback(() => {
-      dispatch(fetchPartnerBookings());
-      fetchAvailableOrders();
+      const refresh = () => { dispatch(fetchPartnerBookings()); fetchAvailableOrders(); };
+      refresh();
+      let interval: ReturnType<typeof setInterval> | null = setInterval(refresh, 10000);
+
+      const sub = AppState.addEventListener('change', state => {
+        if (state === 'active') {
+          if (!interval) { refresh(); interval = setInterval(refresh, 10000); }
+        } else if (interval) {
+          clearInterval(interval);
+          interval = null;
+        }
+      });
+
+      return () => {
+        if (interval) clearInterval(interval);
+        sub.remove();
+      };
     }, [dispatch]),
   );
 
@@ -232,7 +256,7 @@ const BookingsScreen = ({navigation}: {navigation: any}) => {
     }
     return bookings.filter((b: any) => {
       const s = b.status?.toLowerCase();
-      if (activeTab === 'upcoming') return s === 'confirmed' || s === 'pending' || s === 'assigned' || s === 'in_progress';
+      if (activeTab === 'upcoming') return s === 'confirmed' || s === 'pending' || s === 'in_progress';
       return s === 'completed' || s === 'cancelled';
     });
   };
@@ -431,6 +455,12 @@ const styles = StyleSheet.create({
   },
   ratingLabel: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#5C5C5C'},
   starsRow: {flexDirection: 'row', gap: sw(2)},
+  pendingChip: {
+    flexDirection: 'row', alignItems: 'center', gap: sw(6),
+    backgroundColor: '#FFFBEB', borderRadius: sw(8), borderWidth: 1, borderColor: '#FDE9BF',
+    paddingHorizontal: sw(10), paddingVertical: sw(7),
+  },
+  pendingChipText: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#92400E', fontWeight: '600'},
 
   /* Footer */
   cardFooter: {

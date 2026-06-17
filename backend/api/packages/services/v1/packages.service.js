@@ -59,14 +59,23 @@ const getById = async (id) => {
   return enrichFixed(pkg);
 };
 
-const listAll = async ({ page = 1, limit = 20 } = {}) => {
+const listAll = async ({ page = 1, limit = 20, cityIds } = {}) => {
+  // cityIds is a JSON array column (empty/null = available in all cities), so filtering
+  // can't be a SQL where-clause — fetch all, filter, then paginate in application code.
+  const rows = await ServicePackage.findAll({ order: [["createdAt", "DESC"]] });
+  let data = rows.map((r) => r.get({ plain: true }));
+
+  if (cityIds?.length) {
+    const wanted = cityIds.map(Number);
+    data = data.filter(p => {
+      const ids = (p.cityIds ?? []).map(Number);
+      return ids.length === 0 || ids.some(id => wanted.includes(id));
+    });
+  }
+
+  const total = data.length;
   const offset = (page - 1) * limit;
-  const { count, rows } = await ServicePackage.findAndCountAll({
-    order: [["createdAt", "DESC"]],
-    limit,
-    offset,
-  });
-  return { total: count, data: rows.map((r) => r.get({ plain: true })) };
+  return { total, data: data.slice(offset, offset + limit) };
 };
 
 const createPackage = async (data) => ServicePackage.create(data);

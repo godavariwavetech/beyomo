@@ -4,14 +4,14 @@ import { useRevealAll } from '../hooks/useReveal';
 
 /* ── Data ── */
 const SERVICES = [
-  { title: 'Facial', meta: '⭐ 4.5 · 245 bookings', price: 'From ₹500', img: 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=400&q=80' },
-  { title: 'Hair Spa', meta: '⭐ 4.3 · 189 bookings', price: 'From ₹800', img: 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=400&q=80' },
-  { title: 'Makeup', meta: '⭐ 4.7 · 156 bookings', price: 'From ₹1,200', img: 'https://images.unsplash.com/photo-1487412947147-5cebf100ffc2?w=400&q=80' },
-  { title: 'Waxing', meta: '⭐ 4.2 · 312 bookings', price: 'From ₹300', img: 'https://images.unsplash.com/photo-1562322140-8baeececf3df?w=400&q=80' },
-  { title: 'Pedicure', meta: '⭐ 4.4 · 278 bookings', price: 'From ₹400', img: 'https://images.unsplash.com/photo-1604654894610-df63bc536371?w=400&q=80' },
-  { title: 'Bridal Makeup', meta: '⭐ 4.9 · 42 bookings', price: 'From ₹5,000', img: 'https://images.unsplash.com/photo-1519014816548-bf5fe059798b?w=400&q=80' },
-  { title: 'Massage', meta: '⭐ 4.6 · 134 bookings', price: 'From ₹900', img: 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?w=400&q=80' },
-  { title: 'Haircut', meta: '⭐ 4.1 · 398 bookings', price: 'From ₹250', img: 'https://images.unsplash.com/photo-1605497788044-5a32c7078486?w=400&q=80' },
+  { title: 'Facial', meta: '⭐ 4.5 · 245 bookings', price: 'From ₹500', img: 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=800&q=90&fit=crop' },
+  { title: 'Hair Spa', meta: '⭐ 4.3 · 189 bookings', price: 'From ₹800', img: 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=800&q=90&fit=crop' },
+  { title: 'Makeup', meta: '⭐ 4.7 · 156 bookings', price: 'From ₹1,200', img: 'https://images.unsplash.com/photo-1487412947147-5cebf100ffc2?w=800&q=90&fit=crop' },
+  { title: 'Waxing', meta: '⭐ 4.2 · 312 bookings', price: 'From ₹300', img: 'https://images.unsplash.com/photo-1560750588-73207b1ef5b8?w=800&q=90&fit=crop' },
+  { title: 'Pedicure', meta: '⭐ 4.4 · 278 bookings', price: 'From ₹400', img: 'https://images.unsplash.com/photo-1604654894610-df63bc536371?w=800&q=90&fit=crop' },
+  { title: 'Bridal Makeup', meta: '⭐ 4.9 · 42 bookings', price: 'From ₹5,000', img: 'https://images.unsplash.com/photo-1595476108010-b4d1f102b1b1?w=800&q=90&fit=crop' },
+  { title: 'Massage', meta: '⭐ 4.6 · 134 bookings', price: 'From ₹900', img: 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?w=800&q=90&fit=crop' },
+  { title: 'Haircut', meta: '⭐ 4.1 · 398 bookings', price: 'From ₹250', img: 'https://images.unsplash.com/photo-1560869713-7d0a29430803?w=800&q=90&fit=crop' },
 ];
 
 const STEPS = [
