@@ -5,6 +5,7 @@ import { useCityFilter } from '../context/CityContext';
 import { Badge } from '../components/common/Badge';
 import Modal from '../components/common/Modal';
 import RevenueSplitFields from '../components/common/RevenueSplitFields';
+import ImageUploader from '../components/common/ImageUploader';
 import api from '../services/api';
 
 const TRIGGER_LABELS = {
@@ -24,7 +25,7 @@ const TRIGGER_DESCRIPTIONS = {
 const fmt = (n) => Number(n || 0).toLocaleString('en-IN');
 
 const emptyForm = () => ({
-  title: '', description: '',
+  title: '', description: '', image: '',
   triggerType: 'min_spend',
   triggerValue: { amount: '' },
   freeServiceId: '',
@@ -94,6 +95,7 @@ export default function Offers() {
     setForm({
       title: offer.title ?? '',
       description: offer.description ?? '',
+      image: offer.image ?? '',
       triggerType: offer.triggerType,
       triggerValue: tv,   // already parsed above
       freeServiceId: String(offer.freeServiceId ?? ''),
@@ -127,6 +129,7 @@ export default function Offers() {
       const payload = {
         title: form.title.trim(),
         description: form.description.trim() || null,
+        image: form.image?.trim() || null,
         triggerType: form.triggerType,
         triggerValue: buildTriggerValue(),
         freeServiceId: Number(form.freeServiceId),
@@ -251,9 +254,14 @@ export default function Offers() {
                 {filtered.map(offer => (
                   <tr key={offer.id}>
                     <td>
-                      <div className="table-cell-main">{offer.title}</div>
-                      <div className="table-cell-sub">{cityName(offer)}</div>
-                      {offer.description && <div className="table-cell-sub" style={{ maxWidth: 180 }}>{offer.description}</div>}
+                      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                        {offer.image && <img src={offer.image} alt="" style={{ width: 40, height: 40, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }} />}
+                        <div>
+                          <div className="table-cell-main">{offer.title}</div>
+                          <div className="table-cell-sub">{cityName(offer)}</div>
+                          {offer.description && <div className="table-cell-sub" style={{ maxWidth: 180 }}>{offer.description}</div>}
+                        </div>
+                      </div>
                     </td>
                     <td>
                       <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--c-brand-primary)' }}>{TRIGGER_LABELS[offer.triggerType]}</div>
@@ -310,7 +318,7 @@ export default function Offers() {
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {/* Title & Description */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div className="form-grid form-grid-2" style={{ gap: 12 }}>
             <div>
               <label className="form-label">Title *</label>
               <input className="form-input" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="e.g. Summer Glow Deal" />
@@ -319,6 +327,12 @@ export default function Offers() {
               <label className="form-label">Description</label>
               <input className="form-input" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Short description shown to users" />
             </div>
+          </div>
+
+          {/* Banner Image */}
+          <div>
+            <label className="form-label">Banner Image</label>
+            <ImageUploader value={form.image} onChange={url => setForm(f => ({ ...f, image: url }))} width={140} height={74} />
           </div>
 
           {/* Trigger Type */}
@@ -393,7 +407,7 @@ export default function Offers() {
               </div>
             )}
             {form.triggerType === 'category' && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div className="form-grid form-grid-2" style={{ gap: 12 }}>
                 <div>
                   <label className="form-label">Category *</label>
                   <select className="form-input" value={form.triggerValue.categoryId ?? ''} onChange={e => setTv('categoryId', Number(e.target.value))}>
@@ -419,7 +433,7 @@ export default function Offers() {
           </div>
 
           {/* Validity */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div className="form-grid form-grid-2" style={{ gap: 12 }}>
             <div>
               <label className="form-label">Valid From *</label>
               <input className="form-input" type="date" value={form.validFrom} onChange={e => setForm(f => ({ ...f, validFrom: e.target.value }))} />
@@ -431,7 +445,7 @@ export default function Offers() {
           </div>
 
           {/* Optional */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div className="form-grid form-grid-2" style={{ gap: 12 }}>
             <div>
               <label className="form-label">Max Uses (leave blank for unlimited)</label>
               <input className="form-input" type="number" min="1" value={form.maxUses} onChange={e => setForm(f => ({ ...f, maxUses: e.target.value }))} placeholder="e.g. 100" />

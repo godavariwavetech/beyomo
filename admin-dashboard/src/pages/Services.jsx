@@ -459,7 +459,7 @@ export default function Services() {
 
   return (
     <div>
-      <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(4,1fr)', marginBottom: 24 }}>
+      <div className="stats-grid" style={{ marginBottom: 24 }}>
         {[
           { icon: <ShoppingBag size={20}/>, label: 'Total Services', value: stats.total,   color: '#064081' },
           { icon: <Power size={20}/>,       label: 'Active',         value: stats.active,  color: '#22C55E' },
@@ -499,7 +499,7 @@ export default function Services() {
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 16, padding: 20 }}>
+        <div className="form-grid form-grid-3" style={{ padding: 20 }}>
           {filtered.map(svc => (
             <div key={svc.id} style={{
               border: '1px solid var(--c-border)', borderRadius: 'var(--r-lg)', overflow: 'hidden',
@@ -544,7 +544,7 @@ export default function Services() {
               </div>
 
               {/* Stats */}
-              <div style={{ padding: '14px 20px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div className="form-grid form-grid-2" style={{ padding: '14px 20px', gap: 12 }}>
                 <div>
                   <div style={{ fontSize: 11, color: 'var(--c-text-secondary)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Price</div>
                   <div style={{ fontWeight: 700, fontSize: 14 }}>₹{svc.basePrice.toLocaleString()}</div>

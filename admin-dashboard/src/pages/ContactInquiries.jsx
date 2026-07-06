@@ -111,7 +111,7 @@ export default function ContactInquiries() {
   return (
     <div>
       {/* Summary cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16, marginBottom: 24 }}>
+      <div className="stats-grid">
         {[
           { label: 'Total Inquiries', value: counts.total,       icon: <Mail size={20} />,         color: '#6366F1', bg: '#EEF2FF' },
           { label: 'New',             value: counts.new,         icon: <MessageSquare size={20} />, color: '#F59E0B', bg: '#FEF3C7' },
@@ -232,7 +232,7 @@ export default function ContactInquiries() {
         {selected && (
           <div>
             {/* Sender info */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 }}>
+            <div className="form-grid form-grid-2" style={{ gap: 12, marginBottom: 20 }}>
               <div style={{ background: 'var(--c-border-light)', borderRadius: 'var(--r-md)', padding: 14 }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--c-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>From</div>
                 <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 2 }}>{selected.name}</div>

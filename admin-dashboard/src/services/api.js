@@ -1,7 +1,6 @@
 import axios from 'axios';
 
-// Change to your backend URL
-const BASE_URL = 'http://localhost:3000';
+export const BASE_URL = 'https://beyomo.in:3090';
 
 const api = axios.create({
   baseURL: BASE_URL,

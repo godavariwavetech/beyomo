@@ -143,7 +143,7 @@ function TestPushPanel({ action, showToast }) {
           </div>
 
           {/* ── Title + Body ── */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+          <div className="form-grid form-grid-2" style={{ gap: 12, marginBottom: 16 }}>
             <div className="form-group">
               <label className="form-label">Title</label>
               <input className="form-input" value={testTitle} onChange={e => setTTitle(e.target.value)} placeholder="Notification title" />
@@ -269,8 +269,8 @@ export default function Notifications() {
 
   return (
     <div>
-      <TestPushPanel action={action} showToast={showToast} />
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:24 }}>
+      {/* <TestPushPanel action={action} showToast={showToast} /> */}
+      <div className="form-grid form-grid-2" style={{ gap:24 }}>
         {/* Compose */}
         <div>
           <div className="card mb-24">
@@ -281,7 +281,7 @@ export default function Notifications() {
               {/* Target audience */}
               <div style={{ marginBottom:16 }}>
                 <div className="form-label" style={{ marginBottom:8 }}>Target Audience</div>
-                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+                <div className="form-grid form-grid-2" style={{ gap:8 }}>
                   {targetOptions.map(opt => (
                     <div
                       key={opt.value}

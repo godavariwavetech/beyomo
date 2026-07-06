@@ -8,6 +8,7 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Users from './pages/Users';
 import Partners from './pages/Partners';
+import WebsiteRegistrations from './pages/WebsiteRegistrations';
 import Bookings from './pages/Bookings';
 import Services from './pages/Services';
 import Earnings from './pages/Earnings';
@@ -55,6 +56,7 @@ function ProtectedRoutes() {
         <Route path="dashboard"     element={<PermissionGuard page="dashboard"><Dashboard /></PermissionGuard>} />
         <Route path="users"         element={<PermissionGuard page="users"><Users /></PermissionGuard>} />
         <Route path="partners"      element={<PermissionGuard page="partners"><Partners /></PermissionGuard>} />
+        <Route path="website-registrations" element={<PermissionGuard page="partners"><WebsiteRegistrations /></PermissionGuard>} />
         <Route path="bookings"      element={<PermissionGuard page="bookings"><Bookings /></PermissionGuard>} />
         <Route path="services"      element={<PermissionGuard page="services"><Services /></PermissionGuard>} />
         <Route path="earnings"      element={<PermissionGuard page="earnings"><Earnings /></PermissionGuard>} />

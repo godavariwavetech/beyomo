@@ -39,7 +39,7 @@ function ZoneForm({ form, f, toggleCity, cities }) {
             No cities found. Add cities first from the Cities page.
           </div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
+          <div className="form-grid form-grid-3" style={{ gap: 8 }}>
             {cities.map(city => {
               const checked = form.cityIds.includes(city.id);
               return (

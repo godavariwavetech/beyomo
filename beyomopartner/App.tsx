@@ -1,4 +1,5 @@
 import React, {useEffect} from 'react';
+import {Text, TextInput} from 'react-native';
 import {Provider, useSelector, useDispatch} from 'react-redux';
 import {PersistGate} from 'redux-persist/integration/react';
 import {GestureHandlerRootView} from 'react-native-gesture-handler';
@@ -9,6 +10,20 @@ import AppNavigation from './src/navigation/AppNavigation';
 import {updatePartnerDeviceToken} from './src/redux/reducers/partner';
 import {createNotificationChannels, getFCMToken} from './src/services/NotificationsService';
 import {requestNotificationPermission} from './src/utils/requestPermissions';
+import {fonts} from './src/config/theme';
+
+// Apply DMSans-Regular as the default font for all Text and TextInput components
+// so any component without an explicit fontFamily still renders in the correct typeface.
+(Text as any).defaultProps = (Text as any).defaultProps || {};
+(Text as any).defaultProps.style = [
+  {fontFamily: fonts.textFont},
+  (Text as any).defaultProps.style,
+];
+(TextInput as any).defaultProps = (TextInput as any).defaultProps || {};
+(TextInput as any).defaultProps.style = [
+  {fontFamily: fonts.textFont},
+  (TextInput as any).defaultProps.style,
+];
 
 // Register background handler at module scope (required by RN Firebase)
 messaging().setBackgroundMessageHandler(async () => {});

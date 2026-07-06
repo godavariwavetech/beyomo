@@ -109,7 +109,7 @@ export default function Users() {
   return (
     <div>
       {/* Stats */}
-      <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)', marginBottom: 24 }}>
+      <div className="stats-grid" style={{ marginBottom: 24 }}>
         {[
           { label: 'Total Users',       value: stats.total,     color: '#064081' },
           { label: 'Active',            value: stats.active,    color: '#22C55E' },
@@ -276,7 +276,7 @@ export default function Users() {
 
             {tab === 'info' && (
               <>
-                <div className="mini-stats" style={{ gridTemplateColumns: 'repeat(3,1fr)', marginBottom: 20 }}>
+                <div className="mini-stats" style={{ marginBottom: 20 }}>
                   <div className="mini-stat"><div className="value">{selected.bookings ?? 0}</div><div className="label">Bookings</div></div>
                   <div className="mini-stat"><div className="value">₹{((selected.totalSpent ?? 0)/1000).toFixed(1)}k</div><div className="label">Total Spent</div></div>
                   <div className="mini-stat"><div className="value">{selected.addresses ?? 0}</div><div className="label">Addresses</div></div>

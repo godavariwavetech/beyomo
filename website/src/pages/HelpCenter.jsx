@@ -160,7 +160,7 @@ export default function HelpCenter() {
                       display: 'block', width: '100%', textAlign: 'left', padding: '10px 14px', borderRadius: 'var(--r-sm)',
                       fontSize: 14, fontWeight: activeTab === i ? 700 : 500,
                       color: activeTab === i ? 'var(--primary)' : 'var(--text)',
-                      background: activeTab === i ? 'rgba(6,64,129,0.07)' : 'transparent',
+                      background: activeTab === i ? 'rgba(16,86,65,0.07)' : 'transparent',
                       border: 'none', cursor: 'pointer', transition: 'all 0.18s', marginBottom: 4,
                       borderLeft: activeTab === i ? '3px solid var(--primary)' : '3px solid transparent',
                     }}>

@@ -124,7 +124,7 @@ export default function Cities() {
   return (
     <div>
       {/* Stats */}
-      <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(3,1fr)', marginBottom: 24 }}>
+      <div className="stats-grid stats-grid-3" style={{ marginBottom: 24 }}>
         {[
           { label: 'Total Cities',  value: cities.length, color: '#064081' },
           { label: 'Active Cities', value: active,        color: '#22C55E' },

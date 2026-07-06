@@ -24,6 +24,16 @@ const Partner = sequelize.define("Partner", {
     get() { try { return JSON.parse(this.getDataValue('serviceCategoryIds') || '[]'); } catch { return []; } },
     set(val) { this.setDataValue('serviceCategoryIds', JSON.stringify(val || [])); },
   },
+  // Free-text profession labels picked on the website "Join Now" form (not tied to real service_categories rows)
+  professions: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+    get() { try { return JSON.parse(this.getDataValue('professions') || '[]'); } catch { return []; } },
+    set(val) { this.setDataValue('professions', JSON.stringify(val || [])); },
+  },
+  gender: { type: DataTypes.ENUM("female", "male"), allowNull: true },
+  // "I am comfortable for Home Services" consent checkbox from the website Join Now form
+  homeServicesConsent: { type: DataTypes.BOOLEAN, allowNull: true, defaultValue: false },
   panUrl: { type: DataTypes.TEXT, allowNull: true },
   bankAccountNo: { type: DataTypes.STRING(30), allowNull: true },
   bankIfsc: { type: DataTypes.STRING(20), allowNull: true },
@@ -36,6 +46,7 @@ const Partner = sequelize.define("Partner", {
   // Signed running settlement balance: positive = admin owes partner; negative = partner owes admin
   walletBalance: { type: DataTypes.DECIMAL(12, 2), defaultValue: 0 },
   status: { type: DataTypes.ENUM("pending", "approved", "suspended", "rejected"), defaultValue: "pending" },
+  source: { type: DataTypes.ENUM("app", "website"), allowNull: false, defaultValue: "app" },
   deviceTokens: { type: DataTypes.JSON, defaultValue: [] },
   fcmToken: { type: DataTypes.TEXT, allowNull: true, defaultValue: null },
 }, {

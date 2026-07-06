@@ -371,7 +371,7 @@ export default function Bookings() {
 
   return (
     <div>
-      <div className="stats-grid" style={{ gridTemplateColumns:'repeat(5,1fr)', marginBottom:24 }}>
+      <div className="stats-grid stats-grid-5" style={{ marginBottom:24 }}>
         {[
           { label:'Total',       value:stats.total,      color:'#064081' },
           { label:'Pending',     value:stats.pending,    color:'#F59E0B' },
@@ -526,7 +526,7 @@ export default function Bookings() {
             )}
 
             {/* ── Customer / Partner row ── */}
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+            <div className="form-grid form-grid-2" style={{ gap:12 }}>
               <InfoBlock label="Customer">
                 <div style={{ fontWeight:700, fontSize:15 }}>{selected.userName || selected.user?.name || '—'}</div>
                 {(selected.userPhone || selected.user?.phone) && (
@@ -542,7 +542,7 @@ export default function Bookings() {
             </div>
 
             {/* ── Schedule & Address ── */}
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+            <div className="form-grid form-grid-2" style={{ gap:12 }}>
               <InfoBlock label="Scheduled">
                 <div style={{ display:'flex', alignItems:'center', gap:6 }}>
                   <Clock size={13} style={{ color:'var(--c-brand-primary)', flexShrink:0 }} />

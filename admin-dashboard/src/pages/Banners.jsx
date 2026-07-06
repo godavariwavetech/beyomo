@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, Image, ToggleLeft, ToggleRight, Monitor, Smartphone } from 'lucide-react';
+import { Plus, Edit2, Trash2, ToggleLeft, ToggleRight, Monitor, Smartphone } from 'lucide-react';
 import Modal from '../components/common/Modal';
+import ImageUploader from '../components/common/ImageUploader';
 import { useAuth } from '../context/AuthContext';
 import { useBanners } from '../hooks/useBanners';
-import api from '../services/api';
 
 const TYPE_CONFIG = {
   top:   { label: 'Top Banner',   desc: 'Large promotional card at the top of the home screen', icon: <Monitor size={16}/> },
@@ -14,42 +14,6 @@ const EMPTY_FORM = {
   type: 'top', title: '', subtitle: '', description: '',
   image: '', gradientStart: '#1a5c4a', gradientEnd: '#022723',
   buttonText: 'Book Now', targetScreen: '', targetParam: '', isActive: true, sortOrder: 0,
-};
-
-const ImageUploader = ({ value, onChange }) => {
-  const [uploading, setUploading] = useState(false);
-  const handleFile = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    setUploading(true);
-    try {
-      const fd = new FormData();
-      fd.append('image', file);
-      const res = await api.post('/api/v1/admin/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-      if (res.data?.status) onChange(res.data.url);
-    } catch {}
-    setUploading(false);
-  };
-  return (
-    <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-      {value ? (
-        <img src={value} alt="preview" style={{ width: 80, height: 48, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--c-border)', flexShrink: 0 }} />
-      ) : (
-        <div style={{ width: 80, height: 48, borderRadius: 6, border: '2px dashed var(--c-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: 'var(--c-text-muted)' }}>
-          <Image size={18}/>
-        </div>
-      )}
-      <div>
-        <label style={{ display: 'block' }}>
-          <input type="file" accept="image/jpeg,image/jpg,image/png,image/webp" style={{ display: 'none' }} onChange={handleFile} />
-          <span className="btn btn-outline btn-sm" style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <Image size={12}/> {uploading ? 'Uploading…' : value ? 'Change' : 'Upload Image'}
-          </span>
-        </label>
-        {value && <button type="button" style={{ marginTop: 4, fontSize: 11, color: 'var(--c-danger)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }} onClick={() => onChange('')}>Remove</button>}
-      </div>
-    </div>
-  );
 };
 
 export default function Banners() {
@@ -221,7 +185,7 @@ export default function Banners() {
 
   return (
     <div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
+      <div className="form-grid form-grid-2" style={{ gap: 24 }}>
         {/* Top Banners */}
         <div className="card">
           <div className="card-header">

@@ -16,7 +16,7 @@ interface BoxProps {
   style?: object;
 }
 
-export const SkeletonBox: React.FC<BoxProps> = ({w, h = 16, r = 8, color = BONE, style}) => {
+export const SkeletonBox: React.FC<BoxProps> = ({w, h, r = 8, color = BONE, style}) => {
   const anim = useRef(new Animated.Value(0.4)).current;
 
   useEffect(() => {
@@ -32,7 +32,8 @@ export const SkeletonBox: React.FC<BoxProps> = ({w, h = 16, r = 8, color = BONE,
   return (
     <Animated.View
       style={[
-        {backgroundColor: color, borderRadius: r, height: h, opacity: anim},
+        {backgroundColor: color, borderRadius: r, opacity: anim},
+        h !== undefined ? {height: h} : undefined,
         w !== undefined ? {width: w as number} : {flex: 1},
         style,
       ]}

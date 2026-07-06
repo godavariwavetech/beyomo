@@ -9,7 +9,7 @@ import Modal from '../components/common/Modal';
 import { useAuth } from '../context/AuthContext';
 import { useAdminUsers } from '../hooks/useAdminUsers';
 import { useSettings } from '../hooks/useSettings';
-import api from '../services/api';
+import api, { BASE_URL } from '../services/api';
 
 const SETTING_SECTIONS = [
   { id:'general',     label:'General',          icon:<SettingsIcon size={16}/> },
@@ -104,7 +104,7 @@ function AgreementSection() {
           </button>
           {exists && (
             <a
-              href="http://localhost:3000/api/v1/partners/agreement.pdf"
+              href={`${BASE_URL}/api/v1/partners/agreement.pdf`}
               target="_blank"
               rel="noreferrer"
               className="btn btn-outline">
@@ -363,7 +363,7 @@ export default function Settings() {
                   <div style={{ fontSize:24, fontWeight:800, color:'var(--c-brand-orange)', width:60, textAlign:'center' }}>{commission}%</div>
                 </div>
               </div>
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:16, marginBottom:24 }}>
+              <div className="form-grid form-grid-3" style={{ marginBottom:24 }}>
                 {[
                   { label:'Platform Gets', value:`${commission}%`, color:'var(--c-brand-primary)' },
                   { label:'Partner Gets',  value:`${100-commission}%`, color:'var(--c-success)' },

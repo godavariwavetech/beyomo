@@ -129,7 +129,7 @@ export default function Permissions() {
   return (
     <div>
       {/* Stats */}
-      <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(4,1fr)', marginBottom: 24 }}>
+      <div className="stats-grid" style={{ marginBottom: 24 }}>
         {[
           { label: 'Total Admins',     value: stats.total,   color: '#064081' },
           { label: 'Active',           value: stats.active,  color: '#22C55E' },
@@ -358,7 +358,7 @@ export default function Permissions() {
           </div>
 
           {/* Module grid */}
-          <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:8 }}>
+          <div className="form-grid form-grid-3" style={{ gap:8 }}>
             {ALL_MODULES.map(mod => {
               const allowed = customPerms?.includes(mod) ?? false;
               const isDefault = (ROLE_PERMISSIONS[adminForm.role||'support']||[]).includes(mod);
@@ -420,7 +420,7 @@ export default function Permissions() {
               </div>
 
               {!allowAllZones && (
-                <div style={{ display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:8 }}>
+                <div className="form-grid form-grid-2" style={{ gap:8 }}>
                   {zones.filter(z => z.isActive).map(zone => {
                     const checked = selectedZones.includes(zone.id);
                     return (

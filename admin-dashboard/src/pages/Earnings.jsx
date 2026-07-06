@@ -89,7 +89,7 @@ export default function Earnings() {
   return (
     <div>
       {/* Stats */}
-      <div className="stats-grid" style={{ gridTemplateColumns:'repeat(4,1fr)', marginBottom:24 }}>
+      <div className="stats-grid" style={{ marginBottom:24 }}>
         {[
           { icon:<DollarSign size={22}/>, label:'Total Revenue',       value:fmtCurrency(totalRevenue),    gradient:'linear-gradient(135deg,#064081,#0284c7)' },
           { icon:<Percent size={22}/>,    label:'Platform Commission', value:fmtCurrency(totalCommission), gradient:'linear-gradient(135deg,#0E5843,#16a34a)' },

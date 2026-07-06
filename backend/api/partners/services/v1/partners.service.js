@@ -35,7 +35,7 @@ const saveBase64Image = (base64DataUri, partnerId) => {
 const updateProfile = async (partnerId, updateData) => {
   const allowed = ["name", "email", "profilePicture", "bio", "experience", "cityId",
     "locationLat", "locationLng", "locationAddress", "locationCity", "locationState", "locationPincode",
-    "serviceCategoryIds"];
+    "serviceCategoryIds", "professions", "gender", "homeServicesConsent"];
   const filtered = {};
   allowed.forEach((f) => { if (updateData[f] !== undefined) filtered[f] = updateData[f]; });
 
@@ -84,11 +84,13 @@ const updateProfile = async (partnerId, updateData) => {
   return partner;
 };
 
-const saveBase64Doc = (base64DataUri, partnerId, prefix) => {
-  const matches = base64DataUri.match(/^data:image\/(jpeg|jpg|png|webp);base64,(.+)$/);
+const saveBase64Doc = (base64DataUri, partnerId, prefix, allowPdf = false) => {
+  const imgMatch = base64DataUri.match(/^data:image\/(jpeg|jpg|png|webp);base64,(.+)$/);
+  const pdfMatch = allowPdf && base64DataUri.match(/^data:application\/pdf;base64,(.+)$/);
+  const matches = imgMatch || pdfMatch;
   if (!matches) return null;
-  const ext = matches[1] === "jpeg" ? "jpg" : matches[1];
-  const buffer = Buffer.from(matches[2], "base64");
+  const ext = imgMatch ? (imgMatch[1] === "jpeg" ? "jpg" : imgMatch[1]) : "pdf";
+  const buffer = Buffer.from(matches[matches.length - 1], "base64");
   const filename = `${prefix}-${partnerId}-${Date.now()}.${ext}`;
   const uploadsDir = path.join(__dirname, "../../../../uploads");
   if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
@@ -109,7 +111,7 @@ const updateDocuments = async (partnerId, documentData) => {
 
   if (documentData.agreement !== undefined) {
     if (documentData.agreement && documentData.agreement.startsWith("data:")) {
-      fields.agreementUrl = saveBase64Doc(documentData.agreement, partnerId, "agreement") ?? null;
+      fields.agreementUrl = saveBase64Doc(documentData.agreement, partnerId, "agreement", true) ?? null;
     } else {
       fields.agreementUrl = documentData.agreement;
     }

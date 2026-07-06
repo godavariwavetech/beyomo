@@ -31,8 +31,9 @@ const createBooking = async (userId, bookingData) => {
 
   // Fetch all requested services
   const serviceIds = serviceItems.map(s => parseInt(s.id));
-  const foundServices = await Service.findAll({ where: { id: serviceIds, isActive: true } });
-  if (foundServices.length !== serviceIds.length) {
+  const uniqueServiceIds = [...new Set(serviceIds)];
+  const foundServices = await Service.findAll({ where: { id: uniqueServiceIds, isActive: true } });
+  if (foundServices.length !== uniqueServiceIds.length) {
     throw new AppError("One or more services not found or unavailable", 404);
   }
 

@@ -116,7 +116,7 @@ export default function Settlements() {
 
   return (
     <div>
-      <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(3,1fr)', marginBottom: 24 }}>
+      <div className="stats-grid stats-grid-3" style={{ marginBottom: 24 }}>
         <div className="stat-card">
           <div className="stat-label">Admin Owes Partners</div>
           <div className="stat-value" style={{ color: '#22C55E' }}>₹{fmt(stats.owedToPartners)}</div>

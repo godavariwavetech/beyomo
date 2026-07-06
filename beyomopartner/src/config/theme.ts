@@ -1,11 +1,11 @@
 export const fonts = {
-  primary: 'times-new-roman',
-  secondry: 'Arial',
+  primary: 'DMSans-Regular',
+  secondry: 'DMSans-Medium',
   title: 'DMSans-Bold',
   subTitle: 'DMSans-Regular',
-  dmSans: 'DM Sans',
-  textInput: "DMSans-Medium",
-  textFont: "DMSans-Regular",
+  dmSans: 'DMSans-Regular',
+  textInput: 'DMSans-Medium',
+  textFont: 'DMSans-Regular',
 };
 
 export const lightTheme = {

@@ -99,7 +99,7 @@ export default function Reports() {
 
       {activeTab === 'Revenue' && (
         <div>
-          <div className="stats-grid" style={{ gridTemplateColumns:'repeat(4,1fr)', marginBottom:24 }}>
+          <div className="stats-grid" style={{ marginBottom:24 }}>
             {[
               { label:'Total Revenue (12M)',    value:'₹43.24L', change:'+18%' },
               { label:'Platform Earnings',      value:'₹8.65L',  change:'+18%' },
@@ -145,7 +145,7 @@ export default function Reports() {
 
       {activeTab === 'Bookings' && (
         <div>
-          <div className="stats-grid" style={{ gridTemplateColumns:'repeat(4,1fr)', marginBottom:24 }}>
+          <div className="stats-grid" style={{ marginBottom:24 }}>
             {[
               { label:'Total Bookings (12M)', value:'3,842', change:'+22%' },
               { label:'Completion Rate',      value:'84.2%',  change:'+3.1%' },
@@ -180,7 +180,7 @@ export default function Reports() {
 
       {activeTab === 'User Growth' && (
         <div>
-          <div className="stats-grid" style={{ gridTemplateColumns:'repeat(4,1fr)', marginBottom:24 }}>
+          <div className="stats-grid" style={{ marginBottom:24 }}>
             {[
               { label:'Total Users',       value:'2,847', change:'+12%' },
               { label:'New This Month',    value:'145',   change:'+8 vs last' },

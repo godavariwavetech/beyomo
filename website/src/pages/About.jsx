@@ -12,7 +12,7 @@ const VALUES = [
 ];
 
 const TEAM = [
-  { initials: 'RK', name: 'Rajiv Kapoor', role: 'Co-Founder & CEO', grad: 'linear-gradient(135deg,#0E5843,#064081)', bio: 'Ex-Swiggy product lead with 8 years building marketplace tech at scale.' },
+  { initials: 'RK', name: 'Rajiv Kapoor', role: 'Co-Founder & CEO', grad: 'linear-gradient(135deg,#105641,#0b3c2e)', bio: 'Ex-Swiggy product lead with 8 years building marketplace tech at scale.' },
   { initials: 'AS', name: 'Ananya Singh', role: 'Co-Founder & COO', grad: 'linear-gradient(135deg,#9333ea,#6366f1)', bio: 'Serial entrepreneur passionate about empowering women-led businesses.' },
   { initials: 'VN', name: 'Vikram Nair', role: 'Chief Technology Officer', grad: 'linear-gradient(135deg,#0891b2,#0284c7)', bio: "Full-stack engineer and former tech lead at Zomato's growth team." },
   { initials: 'PM', name: 'Priya Mathur', role: 'Head of Operations', grad: 'linear-gradient(135deg,#d97706,#f59e0b)', bio: 'Operations specialist with deep experience scaling platforms to 20+ cities.' },
@@ -153,8 +153,8 @@ export default function About() {
       <section className="section">
         <div className="container">
           <div className="reveal" style={{ background: 'linear-gradient(135deg,var(--dark) 0%,var(--teal) 60%,var(--primary) 100%)', borderRadius: 'var(--r-xl)', padding: '64px', textAlign: 'center', position: 'relative', overflow: 'hidden' }}>
-            <div style={{ position: 'absolute', top: -80, right: -80, width: 260, height: 260, background: 'radial-gradient(circle,rgba(253,215,122,0.14) 0%,transparent 70%)', borderRadius: '50%' }} />
-            <div style={{ position: 'absolute', bottom: -60, left: -60, width: 220, height: 220, background: 'radial-gradient(circle,rgba(2,176,232,0.12) 0%,transparent 70%)', borderRadius: '50%' }} />
+            <div style={{ position: 'absolute', top: -80, right: -80, width: 260, height: 260, background: 'radial-gradient(circle,rgba(255,149,0,0.14) 0%,transparent 70%)', borderRadius: '50%' }} />
+            <div style={{ position: 'absolute', bottom: -60, left: -60, width: 220, height: 220, background: 'radial-gradient(circle,rgba(2,176,232,0.16) 0%,transparent 70%)', borderRadius: '50%' }} />
             <div style={{ position: 'relative', zIndex: 1 }}>
               <span style={{ background: 'rgba(255,255,255,0.1)', color: 'var(--accent)', padding: '5px 18px', borderRadius: 99, fontSize: 13, fontWeight: 700, border: '1px solid rgba(255,255,255,0.15)', display: 'inline-block', marginBottom: 22 }}>Be Part of It</span>
               <h2 style={{ fontSize: 'clamp(26px,4vw,42px)', fontWeight: 800, color: 'white', marginBottom: 14 }}>Be Part of the Beyomo Story</h2>

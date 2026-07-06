@@ -217,6 +217,7 @@ const listPartners = catchAsync(async (req, res, next) => {
   const result = await adminService.listPartners({
     search: req.query.search,
     status: req.query.status,
+    source: req.query.source,
     cityIds,
     page: parseInt(req.query.page) || 1,
     limit: parseInt(req.query.limit) || 10,

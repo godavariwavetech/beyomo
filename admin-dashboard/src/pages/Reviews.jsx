@@ -176,7 +176,7 @@ export default function Reviews() {
       >
         {selected && (
           <div>
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:20 }}>
+            <div className="form-grid form-grid-2" style={{ gap:12, marginBottom:20 }}>
               <div style={{ background:'var(--c-border-light)', borderRadius:'var(--r-md)', padding:14 }}>
                 <div style={{ fontSize:11, fontWeight:700, color:'var(--c-text-secondary)', textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:4 }}>Customer</div>
                 <div style={{ fontWeight:600 }}>{selected.userName}</div>

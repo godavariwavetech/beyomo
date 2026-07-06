@@ -13,12 +13,9 @@ import {
   ActivityIndicator,
   Modal,
   FlatList,
-  Image,
-  Linking,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import {launchImageLibrary} from 'react-native-image-picker';
 import {useDispatch} from 'react-redux';
 import {fonts} from '../../config/theme';
 import api from '../../utils/api';
@@ -31,7 +28,10 @@ import AppAlertModal from '../../components/AppAlertModal/AppAlertModal';
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
 
-const STEPS = ['Personal Info', 'Location', 'Categories', 'Skills', 'Documents'];
+const STEPS = ['Personal Info', 'Location'];
+
+// Matches the fixed profession list on the website's "Join Now" form exactly
+const PROFESSIONS = ['Beautician', 'Hairdresser', 'Makeup Artist', 'Mehendi', 'Spa Therapist', 'Aesthetician'];
 
 interface City {
   id: number;
@@ -42,51 +42,23 @@ interface City {
   radius: number;
 }
 
-interface Skill {
-  id: number;
-  name: string;
-}
-
-interface SkillCategory {
-  id: number;
-  name: string;
-  skills: Skill[];
-}
-
 const RegisterScreen = ({navigation}: any) => {
   const dispatch = useDispatch<AppDispatch>();
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [fetchingData, setFetchingData] = useState(true);
 
-  // Step 1 – Personal Info
+  // Step 1 – Personal Info (same fields as the website's "Join Now" form)
   const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [experience, setExperience] = useState('');
-  const [bio, setBio] = useState('');
-  const [profileImage, setProfileImage] = useState<{uri: string; base64?: string} | null>(null);
+  const [professions, setProfessions] = useState<Set<string>>(new Set());
+  const [gender, setGender] = useState<'female' | 'male'>('female');
+  const [homeServicesConsent, setHomeServicesConsent] = useState(false);
 
   // Step 2 – Location
-  const [cityId, setCityId] = useState<number | null>(null);
   const [selectedCity, setSelectedCity] = useState<City | null>(null);
-  const [state, setState] = useState('');
-  const [address, setAddress] = useState('');
   const [showCityPicker, setShowCityPicker] = useState(false);
 
-  // Data
   const [cities, setCities] = useState<City[]>([]);
-  const [skillCategories, setSkillCategories] = useState<SkillCategory[]>([]);
-
-  // Step 3 – Categories (service categories)
-  const [serviceCategories, setServiceCategories] = useState<{id: number; name: string; icon?: string}[]>([]);
-  const [selectedServiceCategoryIds, setSelectedServiceCategoryIds] = useState<Set<number>>(new Set());
-
-  // Step 4 – Skills (skill categories from Skills admin page)
-  const [selectedCategoryIds, setSelectedCategoryIds] = useState<Set<number>>(new Set());
-
-  // Step 4 – Documents
-  const [aadharImage, setAadharImage] = useState<{uri: string; base64?: string} | null>(null);
-  const [agreementImage, setAgreementImage] = useState<{uri: string; base64?: string} | null>(null);
   const {alertConfig, showAlert, hideAlert} = useAppAlert();
 
   useEffect(() => {
@@ -96,14 +68,8 @@ const RegisterScreen = ({navigation}: any) => {
   const fetchData = async () => {
     try {
       setFetchingData(true);
-      const [citiesRes, skillsRes, serviceCatsRes] = await Promise.all([
-        api.get(endpoints.CITIES),
-        api.get('/api/v1/skills/categories'),
-        api.get('/api/v1/services/categories'),
-      ]);
+      const citiesRes = await api.get(endpoints.CITIES);
       setCities(citiesRes.data?.data || []);
-      setSkillCategories(skillsRes.data?.data || []);
-      setServiceCategories(serviceCatsRes.data?.data || []);
     } catch {
       showAlert('Error', 'Failed to load data. Please try again.');
     } finally {
@@ -117,99 +83,34 @@ const RegisterScreen = ({navigation}: any) => {
         showAlert('Required', 'Please enter your full name.');
         return;
       }
-    }
-    if (step === 1) {
-      if (!selectedCity) {
-        showAlert('Required', 'Please select your city.');
-        return;
-      }
-      if (!address.trim()) {
-        showAlert('Required', 'Please enter your area/locality.');
-        return;
-      }
-    }
-    if (step === 2) {
-      if (selectedServiceCategoryIds.size === 0) {
-        showAlert('Required', 'Please select at least one service category.');
-        return;
-      }
-    }
-    if (step === 3) {
-      if (selectedCategoryIds.size === 0) {
-        showAlert('Required', 'Please select at least one skill.');
+      if (!homeServicesConsent) {
+        showAlert('Required', 'Please confirm you are comfortable for Home Services.');
         return;
       }
     }
     setStep(s => s + 1);
   };
 
-  const pickImage = (
-    onPicked: (img: {uri: string; base64?: string}) => void,
-  ) => {
-    launchImageLibrary(
-      {mediaType: 'photo', quality: 0.8, maxWidth: 1024, maxHeight: 1024, includeBase64: true},
-      response => {
-        if (response.didCancel || response.errorCode) return;
-        const asset = response.assets?.[0];
-        if (asset) onPicked({uri: asset.uri || '', base64: asset.base64});
-      },
-    );
-  };
-
-  const toggleCategory = (catId: number) => {
-    const next = new Set(selectedCategoryIds);
-    next.has(catId) ? next.delete(catId) : next.add(catId);
-    setSelectedCategoryIds(next);
-  };
-
-  const downloadAgreement = () => {
-    const url = `${api.defaults.baseURL}/api/v1/partners/agreement.pdf`;
-    Linking.openURL(url).catch(() =>
-      showAlert('Error', 'Could not open agreement. Please try again.'),
-    );
-  };
-
   const submit = async () => {
-    if (!aadharImage) {
-      showAlert('Required', 'Please upload your Aadhar card image.');
-      return;
-    }
-    if (!agreementImage) {
-      showAlert('Required', 'Please upload the signed agreement image.');
+    if (!selectedCity) {
+      showAlert('Required', 'Please select your city.');
       return;
     }
 
     setLoading(true);
     try {
-      // Update profile with skill categories
       const profilePayload: any = {
         name: name.trim(),
-        email: email.trim() || undefined,
-        experience: experience ? parseInt(experience, 10) : 0,
-        bio: bio.trim() || undefined,
-        cityId: selectedCity?.id,
+        cityId: selectedCity.id,
         location: {
-          city: selectedCity?.name,
-          state: selectedCity?.state,
-          address: address.trim(),
+          city: selectedCity.name,
+          state: selectedCity.state,
         },
-        serviceCategoryIds: Array.from(selectedServiceCategoryIds),
-        skillCategoryIds: Array.from(selectedCategoryIds),
+        professions: Array.from(professions),
+        gender,
+        homeServicesConsent,
       };
-      if (profileImage?.base64) {
-        profilePayload.profilePicture = `data:image/jpeg;base64,${profileImage.base64}`;
-      }
       await api.patch(endpoints.PARTNER_PROFILE, profilePayload);
-
-      // Upload documents
-      const docsPayload: any = {};
-      if (aadharImage?.base64) {
-        docsPayload.aadhar = `data:image/jpeg;base64,${aadharImage.base64}`;
-      }
-      if (agreementImage?.base64) {
-        docsPayload.agreement = `data:image/jpeg;base64,${agreementImage.base64}`;
-      }
-      await api.post(endpoints.PARTNER_DOCUMENTS || '/api/v1/partners/documents', docsPayload);
 
       await dispatch(refreshPartnerStatus());
       navigation.replace('AccountStatus');
@@ -264,8 +165,6 @@ const RegisterScreen = ({navigation}: any) => {
                   ]}
                   onPress={() => {
                     setSelectedCity(item);
-                    setCityId(item.id);
-                    setState(item.state);
                     setShowCityPicker(false);
                   }}>
                   <View>
@@ -331,7 +230,7 @@ const RegisterScreen = ({navigation}: any) => {
                   </View>
                   <View>
                     <Text style={styles.cardTitle}>Tell Us About You</Text>
-                    <Text style={styles.cardSubtitle}>Step 1 of 4 · Personal Info</Text>
+                    <Text style={styles.cardSubtitle}>Step 1 of 2 · Personal Info</Text>
                   </View>
                 </View>
 
@@ -341,35 +240,52 @@ const RegisterScreen = ({navigation}: any) => {
                 </View>
 
                 <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Email Address</Text>
-                  <TextInput style={styles.input} placeholder="priya@example.com" placeholderTextColor="#9CA3AF" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" returnKeyType="next" />
+                  <Text style={styles.inputLabel}>What is Your Profession?</Text>
+                  <View style={styles.categoriesGrid}>
+                    {PROFESSIONS.map(profession => {
+                      const sel = professions.has(profession);
+                      return (
+                        <TouchableOpacity
+                          key={profession}
+                          style={[styles.categoryChip, sel && styles.categoryChipSelected]}
+                          onPress={() => {
+                            const next = new Set(professions);
+                            sel ? next.delete(profession) : next.add(profession);
+                            setProfessions(next);
+                          }}>
+                          {sel && (
+                            <Ionicons name="checkmark-circle" size={sw(16)} color="#1a1a1a" style={{marginRight: sw(4)}} />
+                          )}
+                          <Text style={[styles.categoryChipText, sel && styles.categoryChipTextSelected]}>
+                            {profession}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
                 </View>
 
                 <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Years of Experience</Text>
-                  <TextInput style={styles.input} placeholder="e.g. 3" placeholderTextColor="#9CA3AF" value={experience} onChangeText={setExperience} keyboardType="number-pad" returnKeyType="next" />
+                  <Text style={styles.inputLabel}>Select Gender</Text>
+                  <View style={styles.genderRow}>
+                    <TouchableOpacity style={styles.genderOption} activeOpacity={0.7} onPress={() => setGender('female')}>
+                      <Ionicons name={gender === 'female' ? 'radio-button-on' : 'radio-button-off'} size={sw(20)} color="#FDD77A" />
+                      <Text style={styles.genderOptionText}>Female</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.genderOption} activeOpacity={0.7} onPress={() => setGender('male')}>
+                      <Ionicons name={gender === 'male' ? 'radio-button-on' : 'radio-button-off'} size={sw(20)} color="#FDD77A" />
+                      <Text style={styles.genderOptionText}>Male</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
 
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Short Bio</Text>
-                  <TextInput style={[styles.input, styles.textArea]} placeholder="Tell customers about your skills and expertise…" placeholderTextColor="#9CA3AF" value={bio} onChangeText={setBio} multiline numberOfLines={3} returnKeyType="done" />
-                </View>
-
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Profile Picture</Text>
-                  <TouchableOpacity
-                    style={[styles.profileImageButton, profileImage && styles.profileImageSelected]}
-                    onPress={() => pickImage(setProfileImage)}>
-                    {profileImage ? (
-                      <Image source={{uri: profileImage.uri}} style={styles.profileImagePreview} />
-                    ) : (
-                      <>
-                        <Ionicons name="camera-outline" size={sw(32)} color="#FDD77A" />
-                        <Text style={styles.profileImageText}>Tap to add profile picture</Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-                </View>
+                <TouchableOpacity
+                  style={styles.consentRow}
+                  activeOpacity={0.7}
+                  onPress={() => setHomeServicesConsent(!homeServicesConsent)}>
+                  <Ionicons name={homeServicesConsent ? 'checkbox' : 'square-outline'} size={sw(20)} color="#FDD77A" />
+                  <Text style={styles.consentText}>I am comfortable for Home Services *</Text>
+                </TouchableOpacity>
 
                 <TouchableOpacity style={styles.btnWrapper} activeOpacity={0.85} onPress={nextStep}>
                   <LinearGradient colors={['#E4BA69', '#FDD77A', '#E3BB67']} style={styles.btn} start={{x: 0, y: 0}} end={{x: 1, y: 0}}>
@@ -389,7 +305,7 @@ const RegisterScreen = ({navigation}: any) => {
                   </View>
                   <View>
                     <Text style={styles.cardTitle}>Your Location</Text>
-                    <Text style={styles.cardSubtitle}>Step 2 of 4 · Service Area</Text>
+                    <Text style={styles.cardSubtitle}>Step 2 of 2 · Service Area</Text>
                   </View>
                 </View>
 
@@ -405,219 +321,6 @@ const RegisterScreen = ({navigation}: any) => {
                   </TouchableOpacity>
                 </View>
 
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>State</Text>
-                  <TextInput style={styles.input} placeholder="e.g. Maharashtra" placeholderTextColor="#9CA3AF" value={state} onChangeText={setState} editable={false} />
-                </View>
-
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Area / Locality *</Text>
-                  <TextInput style={styles.input} placeholder="e.g. Andheri West" placeholderTextColor="#9CA3AF" value={address} onChangeText={setAddress} returnKeyType="done" />
-                </View>
-
-                <View style={styles.btnRow}>
-                  <TouchableOpacity style={styles.backBtn} activeOpacity={0.7} onPress={() => setStep(0)}>
-                    <Ionicons name="arrow-back" size={sw(18)} color="#FDD77A" />
-                    <Text style={styles.backBtnText}>Back</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={[styles.btnWrapper, styles.btnFlex]} activeOpacity={0.85} onPress={nextStep}>
-                    <LinearGradient colors={['#E4BA69', '#FDD77A', '#E3BB67']} style={styles.btn} start={{x: 0, y: 0}} end={{x: 1, y: 0}}>
-                      <Text style={styles.btnText}>Continue</Text>
-                      <Ionicons name="arrow-forward" size={sw(16)} color="#1a1a1a" />
-                    </LinearGradient>
-                  </TouchableOpacity>
-                </View>
-              </>
-            )}
-
-            {/* ── Step 3: Service Categories ── */}
-            {step === 2 && (
-              <>
-                <View style={styles.cardTitleRow}>
-                  <View style={styles.iconCircle}>
-                    <Ionicons name="grid-outline" size={sw(24)} color="#FDD77A" />
-                  </View>
-                  <View>
-                    <Text style={styles.cardTitle}>Service Categories</Text>
-                    <Text style={styles.cardSubtitle}>Step 3 of 5 · What you offer</Text>
-                  </View>
-                </View>
-
-                <Text style={styles.servicesLabel}>
-                  Select the service categories you work in *
-                </Text>
-
-                <View style={styles.categoriesGrid}>
-                  {serviceCategories.map(cat => {
-                    const sel = selectedServiceCategoryIds.has(cat.id);
-                    return (
-                      <TouchableOpacity
-                        key={cat.id}
-                        style={[styles.categoryChip, sel && styles.categoryChipSelected]}
-                        onPress={() => {
-                          const next = new Set(selectedServiceCategoryIds);
-                          sel ? next.delete(cat.id) : next.add(cat.id);
-                          setSelectedServiceCategoryIds(next);
-                        }}>
-                        {sel && (
-                          <Ionicons name="checkmark-circle" size={sw(16)} color="#1a1a1a" style={{marginRight: sw(4)}} />
-                        )}
-                        <Text style={[styles.categoryChipText, sel && styles.categoryChipTextSelected]}>
-                          {cat.name}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-
-                {selectedServiceCategoryIds.size > 0 && (
-                  <View style={styles.infoBox}>
-                    <Ionicons name="checkmark-circle-outline" size={sw(16)} color="#FDD77A" />
-                    <Text style={styles.infoText}>
-                      {selectedServiceCategoryIds.size} categor{selectedServiceCategoryIds.size === 1 ? 'y' : 'ies'} selected
-                    </Text>
-                  </View>
-                )}
-
-                <View style={styles.btnRow}>
-                  <TouchableOpacity style={styles.backBtn} activeOpacity={0.7} onPress={() => setStep(1)}>
-                    <Ionicons name="arrow-back" size={sw(18)} color="#FDD77A" />
-                    <Text style={styles.backBtnText}>Back</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={[styles.btnWrapper, styles.btnFlex]} activeOpacity={0.85} onPress={nextStep}>
-                    <LinearGradient colors={['#E4BA69', '#FDD77A', '#E3BB67']} style={styles.btn} start={{x: 0, y: 0}} end={{x: 1, y: 0}}>
-                      <Text style={styles.btnText}>Continue</Text>
-                      <Ionicons name="arrow-forward" size={sw(16)} color="#1a1a1a" />
-                    </LinearGradient>
-                  </TouchableOpacity>
-                </View>
-              </>
-            )}
-
-            {/* ── Step 4: Skill Categories ── */}
-            {step === 3 && (
-              <>
-                <View style={styles.cardTitleRow}>
-                  <View style={styles.iconCircle}>
-                    <Ionicons name="briefcase-outline" size={sw(24)} color="#FDD77A" />
-                  </View>
-                  <View>
-                    <Text style={styles.cardTitle}>Your Skills</Text>
-                    <Text style={styles.cardSubtitle}>Step 4 of 5 · Select Skills</Text>
-                  </View>
-                </View>
-
-                <Text style={styles.servicesLabel}>
-                  Select all skill areas you specialise in *
-                </Text>
-
-                <View style={styles.categoriesGrid}>
-                  {skillCategories.map(cat => {
-                    const sel = selectedCategoryIds.has(cat.id);
-                    return (
-                      <TouchableOpacity
-                        key={cat.id}
-                        style={[styles.categoryChip, sel && styles.categoryChipSelected]}
-                        onPress={() => toggleCategory(cat.id)}>
-                        {sel && (
-                          <Ionicons name="checkmark-circle" size={sw(16)} color="#1a1a1a" style={{marginRight: sw(4)}} />
-                        )}
-                        <Text style={[styles.categoryChipText, sel && styles.categoryChipTextSelected]}>
-                          {cat.name}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-
-                {selectedCategoryIds.size > 0 && (
-                  <View style={styles.infoBox}>
-                    <Ionicons name="checkmark-circle-outline" size={sw(16)} color="#FDD77A" />
-                    <Text style={styles.infoText}>
-                      {selectedCategoryIds.size} skill{selectedCategoryIds.size === 1 ? '' : 's'} selected
-                    </Text>
-                  </View>
-                )}
-
-                <View style={styles.btnRow}>
-                  <TouchableOpacity style={styles.backBtn} activeOpacity={0.7} onPress={() => setStep(2)}>
-                    <Ionicons name="arrow-back" size={sw(18)} color="#FDD77A" />
-                    <Text style={styles.backBtnText}>Back</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={[styles.btnWrapper, styles.btnFlex]} activeOpacity={0.85} onPress={nextStep}>
-                    <LinearGradient colors={['#E4BA69', '#FDD77A', '#E3BB67']} style={styles.btn} start={{x: 0, y: 0}} end={{x: 1, y: 0}}>
-                      <Text style={styles.btnText}>Continue</Text>
-                      <Ionicons name="arrow-forward" size={sw(16)} color="#1a1a1a" />
-                    </LinearGradient>
-                  </TouchableOpacity>
-                </View>
-              </>
-            )}
-
-            {/* ── Step 5: Documents ── */}
-            {step === 4 && (
-              <>
-                <View style={styles.cardTitleRow}>
-                  <View style={styles.iconCircle}>
-                    <Ionicons name="document-text-outline" size={sw(24)} color="#FDD77A" />
-                  </View>
-                  <View>
-                    <Text style={styles.cardTitle}>Documents</Text>
-                    <Text style={styles.cardSubtitle}>Step 5 of 5 · Verification</Text>
-                  </View>
-                </View>
-
-                {/* Agreement section */}
-                <View style={styles.agreementBox}>
-                  <View style={styles.agreementHeader}>
-                    <Ionicons name="shield-checkmark-outline" size={sw(20)} color="#FDD77A" />
-                    <Text style={styles.agreementTitle}>Partner Agreement</Text>
-                  </View>
-                  <Text style={styles.agreementDesc}>
-                    Download the agreement, sign it, and upload a photo of the signed document.
-                  </Text>
-                  <TouchableOpacity style={styles.downloadBtn} activeOpacity={0.8} onPress={downloadAgreement}>
-                    <Ionicons name="download-outline" size={sw(18)} color="#1a1a1a" />
-                    <Text style={styles.downloadBtnText}>Download Agreement PDF</Text>
-                  </TouchableOpacity>
-                </View>
-
-                {/* Upload signed agreement */}
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Upload Signed Agreement *</Text>
-                  <TouchableOpacity
-                    style={[styles.docUploadBtn, agreementImage && styles.docUploadSelected]}
-                    onPress={() => pickImage(setAgreementImage)}>
-                    {agreementImage ? (
-                      <Image source={{uri: agreementImage.uri}} style={styles.docImagePreview} />
-                    ) : (
-                      <>
-                        <Ionicons name="cloud-upload-outline" size={sw(28)} color="#FDD77A" />
-                        <Text style={styles.docUploadText}>Tap to upload signed agreement</Text>
-                        <Text style={styles.docUploadHint}>Photo of signed agreement document</Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-                </View>
-
-                {/* Upload Aadhar */}
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Upload Aadhar Card *</Text>
-                  <TouchableOpacity
-                    style={[styles.docUploadBtn, aadharImage && styles.docUploadSelected]}
-                    onPress={() => pickImage(setAadharImage)}>
-                    {aadharImage ? (
-                      <Image source={{uri: aadharImage.uri}} style={styles.docImagePreview} />
-                    ) : (
-                      <>
-                        <Ionicons name="card-outline" size={sw(28)} color="#FDD77A" />
-                        <Text style={styles.docUploadText}>Tap to upload Aadhar card</Text>
-                        <Text style={styles.docUploadHint}>Front side of your Aadhar card</Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-                </View>
-
                 <View style={styles.infoBox}>
                   <Ionicons name="information-circle-outline" size={sw(16)} color="#FDD77A" />
                   <Text style={styles.infoText}>
@@ -626,7 +329,7 @@ const RegisterScreen = ({navigation}: any) => {
                 </View>
 
                 <View style={styles.btnRow}>
-                  <TouchableOpacity style={styles.backBtn} activeOpacity={0.7} onPress={() => setStep(3)}>
+                  <TouchableOpacity style={styles.backBtn} activeOpacity={0.7} onPress={() => setStep(0)}>
                     <Ionicons name="arrow-back" size={sw(18)} color="#FDD77A" />
                     <Text style={styles.backBtnText}>Back</Text>
                   </TouchableOpacity>
@@ -737,6 +440,11 @@ const styles = StyleSheet.create({
 
   inputGroup: {gap: sw(6)},
   inputLabel: {fontFamily: fonts.textFont, fontSize: sw(12), color: 'rgba(255,255,255,0.65)', fontWeight: '600', letterSpacing: 0.3},
+  genderRow: {flexDirection: 'row', gap: sw(20)},
+  genderOption: {flexDirection: 'row', alignItems: 'center', gap: sw(8)},
+  genderOptionText: {fontFamily: fonts.textFont, fontSize: sw(14), color: '#FEFEFE'},
+  consentRow: {flexDirection: 'row', alignItems: 'center', gap: sw(10), paddingVertical: sw(4)},
+  consentText: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#FEFEFE', flex: 1},
   input: {
     backgroundColor: 'rgba(255,255,255,0.10)',
     borderRadius: sw(12),
@@ -748,7 +456,6 @@ const styles = StyleSheet.create({
     fontSize: sw(14),
     color: '#FEFEFE',
   },
-  textArea: {height: sw(80), paddingTop: sw(12), textAlignVertical: 'top'},
 
   infoBox: {
     flexDirection: 'row',
@@ -813,9 +520,7 @@ const styles = StyleSheet.create({
   cityPickerText: {fontFamily: fonts.textFont, fontSize: sw(14), color: '#FEFEFE'},
   cityPickerPlaceholder: {fontFamily: fonts.textFont, fontSize: sw(14), color: '#9CA3AF'},
 
-  servicesLabel: {fontFamily: fonts.title, fontSize: sw(13), fontWeight: '600', color: 'rgba(255,255,255,0.7)', marginTop: sw(4)},
-
-  // Category grid (step 3)
+  // Profession checkboxes (step 1)
   categoriesGrid: {flexDirection: 'row', flexWrap: 'wrap', gap: sw(10)},
   categoryChip: {
     flexDirection: 'row',
@@ -833,64 +538,6 @@ const styles = StyleSheet.create({
   },
   categoryChipText: {fontFamily: fonts.textFont, fontSize: sw(13), fontWeight: '600', color: '#FEFEFE'},
   categoryChipTextSelected: {color: '#1a1a1a'},
-  categoryChipCount: {fontFamily: fonts.textFont, fontSize: sw(11), color: 'rgba(255,255,255,0.5)'},
-  categoryChipCountSelected: {color: 'rgba(26,26,26,0.6)'},
-
-  // Profile image (step 1)
-  profileImageButton: {
-    backgroundColor: 'rgba(255,255,255,0.10)',
-    borderRadius: sw(12),
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.18)',
-    borderStyle: 'dashed',
-    height: sw(120),
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: sw(8),
-  },
-  profileImageSelected: {borderColor: '#FDD77A', borderStyle: 'solid'},
-  profileImagePreview: {width: '100%', height: '100%', borderRadius: sw(10)},
-  profileImageText: {fontFamily: fonts.textFont, fontSize: sw(12), color: 'rgba(255,255,255,0.65)', textAlign: 'center'},
-
-  // Agreement box (step 4)
-  agreementBox: {
-    backgroundColor: 'rgba(253,215,122,0.06)',
-    borderRadius: sw(14),
-    borderWidth: 1,
-    borderColor: 'rgba(253,215,122,0.25)',
-    padding: sw(16),
-    gap: sw(10),
-  },
-  agreementHeader: {flexDirection: 'row', alignItems: 'center', gap: sw(8)},
-  agreementTitle: {fontFamily: fonts.title, fontSize: sw(15), fontWeight: '700', color: '#FDD77A'},
-  agreementDesc: {fontFamily: fonts.textFont, fontSize: sw(12), color: 'rgba(255,255,255,0.65)', lineHeight: sw(18)},
-  downloadBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: sw(8),
-    backgroundColor: '#FDD77A',
-    borderRadius: sw(10),
-    paddingVertical: sw(12),
-  },
-  downloadBtnText: {fontFamily: fonts.title, fontSize: sw(13), fontWeight: '700', color: '#1a1a1a'},
-
-  // Document upload (step 4)
-  docUploadBtn: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderRadius: sw(12),
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.18)',
-    borderStyle: 'dashed',
-    height: sw(130),
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: sw(6),
-  },
-  docUploadSelected: {borderColor: '#FDD77A', borderStyle: 'solid'},
-  docImagePreview: {width: '100%', height: '100%', borderRadius: sw(10)},
-  docUploadText: {fontFamily: fonts.textFont, fontSize: sw(13), fontWeight: '600', color: 'rgba(255,255,255,0.8)'},
-  docUploadHint: {fontFamily: fonts.textFont, fontSize: sw(11), color: 'rgba(255,255,255,0.45)'},
 });
 
 export default RegisterScreen;

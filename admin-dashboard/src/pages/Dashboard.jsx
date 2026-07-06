@@ -114,13 +114,13 @@ export default function Dashboard() {
   return (
     <div>
       {/* Stats Grid */}
-      <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+      <div className="stats-grid">
         <StatCard icon={Users}        label="Total Users"      value={fmtNum(s.totalUsers.value)}     change={s.totalUsers.change}     changeType={s.totalUsers.changeType}     extra={s.totalUsers.extra}     gradient="linear-gradient(135deg, #064081, #0284c7)" />
         <StatCard icon={UserCog}      label="Total Partners"   value={fmtNum(s.totalPartners.value)}   change={s.totalPartners.change}   changeType={s.totalPartners.changeType}   extra={s.totalPartners.extra}   gradient="linear-gradient(135deg, #0E5843, #16a34a)" />
         <StatCard icon={CalendarCheck}label="Today's Bookings" value={fmtNum(s.todayBookings.value)}   change={s.todayBookings.change}   changeType={s.todayBookings.changeType}   extra={s.todayBookings.extra}   gradient="linear-gradient(135deg, #FF9500, #f97316)" />
         <StatCard icon={DollarSign}   label="Monthly Revenue"  value={fmtCurrency(s.monthlyRevenue.value)} change={s.monthlyRevenue.change} changeType={s.monthlyRevenue.changeType} extra={s.monthlyRevenue.extra} gradient="linear-gradient(135deg, #02B0E8, #0891b2)" />
       </div>
-      <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)', marginTop: -8 }}>
+      <div className="stats-grid" style={{ marginTop: -8 }}>
         <StatCard icon={Zap}    label="Active Jobs Now"  value={fmtNum(s.activeJobs.value)}    change={s.activeJobs.change}    changeType={s.activeJobs.changeType}    extra={s.activeJobs.extra} />
         <StatCard icon={Star}   label="Pending Reviews"  value={fmtNum(s.pendingReviews.value)} change={s.pendingReviews.change} changeType={s.pendingReviews.changeType} extra={s.pendingReviews.extra} />
         <StatCard icon={Tag}    label="Active Coupons"   value={fmtNum(s.activeCoupons.value)}  change={s.activeCoupons.change}  changeType={s.activeCoupons.changeType}  extra={s.activeCoupons.extra} />

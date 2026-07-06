@@ -92,7 +92,7 @@ export default function Partners() {
   const [regLoading, setRegLoading]   = useState(false);
 
   useEffect(() => {
-    const params = cityParam ? { cityIds: cityParam } : {};
+    const params = { source: 'app', ...(cityParam ? { cityIds: cityParam } : {}) };
     fetchList(params).then(res => {
       if (res.ok) setPartners((res.data?.data ?? []).map(normalizePartner));
       setPageLoading(false);
@@ -362,7 +362,7 @@ export default function Partners() {
           </div>
           <div style={{ flex:1 }}>
             <div style={{ fontSize:14, fontWeight:700, color:'white' }}>{pendingPartners.length} Partner Application{pendingPartners.length > 1 ? 's' : ''} Awaiting Review</div>
-            <div style={{ fontSize:12, color:'rgba(255,255,255,0.8)', marginTop:2 }}>New partners registered via the app and are waiting for approval.</div>
+            <div style={{ fontSize:12, color:'rgba(255,255,255,0.8)', marginTop:2 }}>New applications from the app, waiting for approval. Website sign-ups are under Website Registrations.</div>
           </div>
           <button className="btn btn-sm" style={{ background:'white', color:'#92400e', fontWeight:700, border:'none' }} onClick={() => setStatus('pending')}>
             Review Now
@@ -370,7 +370,7 @@ export default function Partners() {
         </div>
       )}
 
-      <div className="stats-grid" style={{ gridTemplateColumns:'repeat(5,1fr)', marginBottom:24 }}>
+      <div className="stats-grid stats-grid-5" style={{ marginBottom:24 }}>
         {[
           { label:'Total Partners', value:stats.total,     color:'#064081' },
           { label:'Online Now',     value:stats.online,    color:'#22C55E' },
@@ -519,7 +519,7 @@ export default function Partners() {
               <label className="form-label">Email Address</label>
               <input className="form-input" type="email" placeholder="partner@gmail.com" value={addForm.email} onChange={e => setAddForm(f => ({...f, email: e.target.value}))} />
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <div className="form-grid form-grid-2" style={{ gap: 16 }}>
               <div className="form-group">
                 <label className="form-label">City</label>
                 <input className="form-input" placeholder="Mumbai" value={addForm.city} onChange={e => setAddForm(f => ({...f, city: e.target.value}))} />
@@ -602,7 +602,7 @@ export default function Partners() {
 
             {tab === 'info' && (
               <>
-                <div className="mini-stats" style={{ gridTemplateColumns:'repeat(3,1fr)', marginBottom:20 }}>
+                <div className="mini-stats" style={{ marginBottom:20 }}>
                   <div className="mini-stat"><div className="value">{selected.totalJobs}</div><div className="label">Total Jobs</div></div>
                   <div className="mini-stat"><div className="value">★{selected.rating}</div><div className="label">Rating</div></div>
                   <div className="mini-stat"><div className="value">₹{(selected.totalEarnings/1000).toFixed(0)}k</div><div className="label">Total Earned</div></div>
@@ -667,7 +667,7 @@ export default function Partners() {
 
             {tab === 'earnings' && (
               <div>
-                <div className="mini-stats" style={{ gridTemplateColumns:'repeat(3,1fr)', marginBottom:20 }}>
+                <div className="mini-stats" style={{ marginBottom:20 }}>
                   <div className="mini-stat"><div className="value">₹{selected.monthlyEarnings.toLocaleString('en-IN')}</div><div className="label">This Month</div></div>
                   <div className="mini-stat"><div className="value">₹{(selected.totalEarnings/(selected.totalJobs||1)).toFixed(0)}</div><div className="label">Avg per Job</div></div>
                   <div className="mini-stat"><div className="value">₹{selected.totalEarnings.toLocaleString('en-IN')}</div><div className="label">All Time</div></div>

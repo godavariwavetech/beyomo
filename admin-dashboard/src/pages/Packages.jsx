@@ -5,6 +5,7 @@ import { useCityFilter } from '../context/CityContext';
 import { Badge } from '../components/common/Badge';
 import Modal from '../components/common/Modal';
 import RevenueSplitFields from '../components/common/RevenueSplitFields';
+import ImageUploader from '../components/common/ImageUploader';
 import api from '../services/api';
 
 const fmt = (n) => Number(n || 0).toLocaleString('en-IN');
@@ -555,7 +556,7 @@ export default function Packages() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
           {/* Title & Description */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div className="form-grid form-grid-2" style={{ gap: 12 }}>
             <div>
               <label className="form-label">Title *</label>
               <input className="form-input" placeholder="e.g. Party Combo" value={form.title}
@@ -568,18 +569,17 @@ export default function Packages() {
             </div>
           </div>
 
-          {/* Image URL */}
+          {/* Banner Image */}
           <div>
-            <label className="form-label">Image URL</label>
-            <input className="form-input" placeholder="https://…" value={form.image}
-              onChange={e => setForm(f => ({ ...f, image: e.target.value }))} />
+            <label className="form-label">Banner Image</label>
+            <ImageUploader value={form.image} onChange={url => setForm(f => ({ ...f, image: url }))} width={140} height={74} />
           </div>
 
           {/* ── Locations (multi-select pills) ── */}
           <CityMultiSelect cities={cities} selected={selectedCityIds} onChange={setSelectedCityIds} />
 
           {/* Package Type + Price + Original Price */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+          <div className="form-grid form-grid-3" style={{ gap: 12 }}>
             <div>
               <label className="form-label">Package Type *</label>
               <select className="form-input" value={form.packageType}
@@ -601,7 +601,7 @@ export default function Packages() {
           </div>
 
           {/* Validity + Active */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, alignItems: 'end' }}>
+          <div className="form-grid form-grid-3" style={{ gap: 12, alignItems: 'end' }}>
             <div>
               <label className="form-label">Valid From</label>
               <input className="form-input" type="date" value={form.validFrom}
@@ -682,7 +682,7 @@ export default function Packages() {
           {form.packageType === 'flexible' && (
             <div style={{ background: 'var(--c-border-light)', borderRadius: 8, padding: '12px 14px' }}>
               <label className="form-label" style={{ marginBottom: 10 }}>Flexible Settings</label>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div className="form-grid form-grid-2" style={{ gap: 12 }}>
                 <div>
                   <label className="form-label">Number of Services User Picks *</label>
                   <input className="form-input" type="number" min="1" placeholder="e.g. 3" value={form.serviceCount}

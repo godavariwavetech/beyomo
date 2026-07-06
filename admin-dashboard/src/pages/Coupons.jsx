@@ -244,7 +244,7 @@ export default function Coupons() {
   return (
     <div>
       {/* Stats */}
-      <div className="stats-grid" style={{ gridTemplateColumns:'repeat(5,1fr)', marginBottom:24 }}>
+      <div className="stats-grid stats-grid-5" style={{ marginBottom:24 }}>
         {[
           { label:'Total Coupons', value:stats.total,      color:'#064081' },
           { label:'Active',        value:stats.active,     color:'#22C55E' },
@@ -290,7 +290,7 @@ export default function Coupons() {
           </button>
         </div>
 
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:16, padding:20 }}>
+        <div className="form-grid form-grid-2" style={{ padding:20 }}>
           {filtered.map(c => (
             <div key={c.id} style={{ border:'1px solid var(--c-border)', borderRadius:'var(--r-lg)', overflow:'hidden', opacity:c.status==='expired'?0.65:1 }}>
               <div style={{ padding:'16px 20px', display:'flex', alignItems:'center', justifyContent:'space-between', borderBottom:'1px solid var(--c-border)' }}>
@@ -312,7 +312,7 @@ export default function Coupons() {
                 </div>
               </div>
 
-              <div style={{ padding:'14px 20px', display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:12 }}>
+              <div className="form-grid form-grid-4" style={{ padding:'14px 20px', gap:12 }}>
                 <div>
                   <div style={{ fontSize:11, color:'var(--c-text-secondary)', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.5px' }}>Discount</div>
                   <div style={{ fontWeight:800, fontSize:18, color:'var(--c-brand-orange)' }}>

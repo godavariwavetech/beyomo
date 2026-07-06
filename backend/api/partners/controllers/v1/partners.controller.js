@@ -45,6 +45,9 @@ const updateProfileSchema = Joi.object({
   ),
   skillCategoryIds: Joi.array().items(Joi.number().integer().positive()),
   serviceCategoryIds: Joi.array().items(Joi.number().integer().positive()),
+  professions: Joi.array().items(Joi.string().trim()),
+  gender: Joi.string().valid("female", "male"),
+  homeServicesConsent: Joi.boolean(),
 });
 
 const documentsSchema = Joi.object({

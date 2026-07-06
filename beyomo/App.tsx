@@ -2,6 +2,7 @@ import React, {useEffect} from 'react';
 import {
   View,
   Text,
+  TextInput,
   TouchableOpacity,
   StyleSheet,
 } from 'react-native';
@@ -14,9 +15,23 @@ import AppNavigation from './src/navigation/AppNavigation';
 import {updateDeviceToken} from './src/redux/reducers/user';
 import {createNotificationChannels, getFCMToken} from './src/services/NotificationsService';
 import {requestNotificationPermission} from './src/utils/requestPermissions';
+import {fonts} from './src/config/theme';
 
 // Register background handler at module scope (required by RN Firebase)
 messaging().setBackgroundMessageHandler(async () => {});
+
+// App-wide default so any Text/TextInput without an explicit fontFamily
+// still renders in Poppins instead of the OS default font.
+(Text as any).defaultProps = (Text as any).defaultProps || {};
+(Text as any).defaultProps.style = [
+  {fontFamily: fonts.textFont},
+  (Text as any).defaultProps.style,
+];
+(TextInput as any).defaultProps = (TextInput as any).defaultProps || {};
+(TextInput as any).defaultProps.style = [
+  {fontFamily: fonts.textFont},
+  (TextInput as any).defaultProps.style,
+];
 
 class ErrorBoundary extends React.Component<
   {children: React.ReactNode},

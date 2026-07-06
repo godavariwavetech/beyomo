@@ -65,13 +65,13 @@ export default function Header({ onMenuClick }) {
 
       <div className="header-breadcrumb">
         <h1>{pageInfo.title}</h1>
-        <p className="text-sm" style={{ color: 'var(--c-text-secondary)', display: window.innerWidth > 640 ? 'block' : 'none' }}>{pageInfo.subtitle}</p>
+        <p className="header-subtitle text-sm" style={{ color: 'var(--c-text-secondary)' }}>{pageInfo.subtitle}</p>
       </div>
 
       <div className="header-actions">
         {/* Zone restriction indicator */}
         {userZones.length > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+          <div className="header-zones" style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
             {userZones.map(z => (
               <span key={z.id} style={{
                 display: 'inline-flex', alignItems: 'center', gap: 4,
@@ -101,7 +101,7 @@ export default function Header({ onMenuClick }) {
               }}
             >
               <MapPin size={14} style={{ color: 'var(--c-primary)' }} />
-              <span>{btnLabel}</span>
+              <span className="header-citylabel">{btnLabel}</span>
               {isFiltered && (
                 <span style={{
                   background: 'var(--c-primary, #0d9488)', color: 'white',
@@ -202,7 +202,7 @@ export default function Header({ onMenuClick }) {
         <div style={{ position: 'relative' }}>
           <div className="header-user" onClick={() => setShowDropdown(!showDropdown)}>
             <div className="header-user-avatar">{user?.avatar}</div>
-            <div className="header-user-info" style={{ display: 'block' }}>
+            <div className="header-user-info">
               <div className="name">{user?.name}</div>
               <div className="role" style={{ fontSize: 11, color: 'var(--c-text-secondary)' }}>
                 <span style={{ background: roleColor.bg, color: roleColor.text, padding: '1px 6px', borderRadius: 'var(--r-full)', fontSize: 10, fontWeight: 700 }}>

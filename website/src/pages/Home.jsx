@@ -1,52 +1,102 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import {
+  Search, CalendarCheck, Sofa, ShieldCheck, CreditCard, Zap, MessageCircle, SprayCan,
+  Star, Smartphone, Building2, Briefcase, MapPin, Check, Lock, Handshake, Sparkles, CheckCircle2,
+  Waves, Sun, ArrowRight,
+} from 'lucide-react';
 import { useRevealAll } from '../hooks/useReveal';
+import { useCity } from '../context/CityContext';
+import CitySelectorModal from '../components/CitySelectorModal';
+import { getBanners } from '../api/banners';
+import { getCategories } from '../api/services';
+
+function StarRow({ count = 5, size = 14 }) {
+  return (
+    <span style={{ display: 'inline-flex', gap: 2, verticalAlign: 'middle' }}>
+      {Array.from({ length: count }).map((_, i) => (
+        <Star key={i} size={size} fill="#F59E0B" color="#F59E0B" />
+      ))}
+    </span>
+  );
+}
+
+// Banners can carry admin-set gradientStart/gradientEnd (used elsewhere, e.g. the app),
+// but the website always renders its own on-brand gradient so promos never clash with the theme.
+const BRAND_GRADIENTS = [
+  'linear-gradient(135deg, #062c20 0%, #105641 55%, #02b0e8 100%)',
+  'linear-gradient(135deg, #0b3c2e 0%, #1c7a5c 60%, #02b0e8 100%)',
+  'linear-gradient(135deg, #105641 0%, #02b0e8 100%)',
+];
+function bannerGradient(index) {
+  return BRAND_GRADIENTS[index % BRAND_GRADIENTS.length];
+}
 
 /* ── Data ── */
 const SERVICES = [
-  { title: 'Facial', meta: '⭐ 4.5 · 245 bookings', price: 'From ₹500', img: 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=800&q=90&fit=crop' },
-  { title: 'Hair Spa', meta: '⭐ 4.3 · 189 bookings', price: 'From ₹800', img: 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=800&q=90&fit=crop' },
-  { title: 'Makeup', meta: '⭐ 4.7 · 156 bookings', price: 'From ₹1,200', img: 'https://images.unsplash.com/photo-1487412947147-5cebf100ffc2?w=800&q=90&fit=crop' },
-  { title: 'Waxing', meta: '⭐ 4.2 · 312 bookings', price: 'From ₹300', img: 'https://images.unsplash.com/photo-1560750588-73207b1ef5b8?w=800&q=90&fit=crop' },
-  { title: 'Pedicure', meta: '⭐ 4.4 · 278 bookings', price: 'From ₹400', img: 'https://images.unsplash.com/photo-1604654894610-df63bc536371?w=800&q=90&fit=crop' },
-  { title: 'Bridal Makeup', meta: '⭐ 4.9 · 42 bookings', price: 'From ₹5,000', img: 'https://images.unsplash.com/photo-1595476108010-b4d1f102b1b1?w=800&q=90&fit=crop' },
-  { title: 'Massage', meta: '⭐ 4.6 · 134 bookings', price: 'From ₹900', img: 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?w=800&q=90&fit=crop' },
-  { title: 'Haircut', meta: '⭐ 4.1 · 398 bookings', price: 'From ₹250', img: 'https://images.unsplash.com/photo-1560869713-7d0a29430803?w=800&q=90&fit=crop' },
+  { title: 'Facial', img: 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=800&q=90&fit=crop' },
+  { title: 'Hair Spa', img: 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=800&q=90&fit=crop' },
+  { title: 'Makeup', img: 'https://images.unsplash.com/photo-1487412947147-5cebf100ffc2?w=800&q=90&fit=crop' },
+  { title: 'Waxing', img: 'https://images.unsplash.com/photo-1560750588-73207b1ef5b8?w=800&q=90&fit=crop' },
+  { title: 'Pedicure', img: 'https://images.unsplash.com/photo-1604654894610-df63bc536371?w=800&q=90&fit=crop' },
+  { title: 'Bridal Makeup', img: 'https://images.unsplash.com/photo-1595476108010-b4d1f102b1b1?w=800&q=90&fit=crop' },
+  { title: 'Massage', img: 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?w=800&q=90&fit=crop' },
+  { title: 'Haircut', img: 'https://images.unsplash.com/photo-1560869713-7d0a29430803?w=800&q=90&fit=crop' },
 ];
 
 const STEPS = [
-  { n: 1, icon: '🔍', title: 'Browse & Choose', desc: 'Explore our full menu of beauty and wellness services. Filter by category, price, or ratings to find your perfect match.' },
-  { n: 2, icon: '📅', title: 'Book Your Slot', desc: 'Pick a date and time that works for you. Our system instantly matches you with a verified professional nearby.' },
-  { n: 3, icon: '🛋️', title: 'Relax at Home', desc: 'Your professional arrives fully equipped at your door. Sit back, enjoy, and pay securely via UPI or card.' },
+  { n: 1, icon: Search, title: 'Browse & Choose', desc: 'Explore our full menu of beauty and wellness services. Filter by category, price, or ratings to find your perfect match.' },
+  { n: 2, icon: CalendarCheck, title: 'Book Your Slot', desc: 'Pick a date and time that works for you. Our system instantly matches you with a verified professional nearby.' },
+  { n: 3, icon: Sofa, title: 'Relax at Home', desc: 'Your professional arrives fully equipped at your door. Sit back, enjoy, and pay securely via UPI or card.' },
 ];
 
 const FEATURES = [
-  { bg: '#D1FAE5', icon: '🛡️', title: 'Verified & Trained Professionals', desc: 'Every partner undergoes background verification, skill assessment, and hygiene training before being listed.' },
-  { bg: '#DBEAFE', icon: '💳', title: 'Secure & Flexible Payments', desc: 'Pay via UPI, card, or Razorpay after the service is done. No advance payment required for most services.' },
-  { bg: '#FEF3C7', icon: '⚡', title: 'On-Time Guarantee', desc: "We track every booking in real-time. If a professional is running late, you'll be notified instantly with a live ETA." },
-  { bg: '#FEE2E2', icon: '💬', title: '24/7 Customer Support', desc: 'Our support team is always available to assist with bookings, reschedules, complaints, or any other query.' },
-  { bg: '#EDE9FE', icon: '🧴', title: 'Premium Products Used', desc: 'Our professionals use only high-quality, dermatologist-approved products for all skin, hair, and wellness services.' },
-  { bg: '#F0FDF4', icon: '⭐', title: 'Rating & Review System', desc: 'After every service, rate your experience. Reviews are verified and help maintain quality across all professionals.' },
+  { bg: '#D1FAE5', color: '#059669', icon: ShieldCheck, title: 'Verified & Trained Professionals', desc: 'Every partner undergoes background verification, skill assessment, and hygiene training before being listed.' },
+  { bg: '#DBEAFE', color: '#2563EB', icon: CreditCard, title: 'Secure & Flexible Payments', desc: 'Pay via UPI, card, or Razorpay after the service is done. No advance payment required for most services.' },
+  { bg: '#FEF3C7', color: '#D97706', icon: Zap, title: 'On-Time Guarantee', desc: "We track every booking in real-time. If a professional is running late, you'll be notified instantly with a live ETA." },
+  { bg: '#FEE2E2', color: '#DC2626', icon: MessageCircle, title: '24/7 Customer Support', desc: 'Our support team is always available to assist with bookings, reschedules, complaints, or any other query.' },
+  { bg: '#EDE9FE', color: '#7C3AED', icon: SprayCan, title: 'Premium Products Used', desc: 'Our professionals use only high-quality, dermatologist-approved products for all skin, hair, and wellness services.' },
+  { bg: '#F0FDF4', color: '#CA8A04', icon: Star, title: 'Rating & Review System', desc: 'After every service, rate your experience. Reviews are verified and help maintain quality across all professionals.' },
 ];
 
-const PROFESSIONALS = [
-  { initials: 'SK', name: 'Sonal Kapoor', service: 'Facial & Skin Care · Mumbai', rating: '★★★★★  4.8 · 124 jobs', exp: '5 years exp.', grad: 'linear-gradient(135deg,#0E5843,#064081)' },
-  { initials: 'HK', name: 'Harleen Kaur', service: 'Bridal Makeup · Delhi', rating: '★★★★★  5.0 · 34 jobs', exp: '9 years exp.', grad: 'linear-gradient(135deg,#9333ea,#6366f1)' },
-  { initials: 'PR', name: 'Preethi Raj', service: 'Massage & Wellness · Chennai', rating: '★★★★★  4.7 · 89 jobs', exp: '6 years exp.', grad: 'linear-gradient(135deg,#0891b2,#0284c7)' },
-  { initials: 'BN', name: 'Bhavna Nair', service: 'Skin Care · Kochi', rating: '★★★★★  4.8 · 102 jobs', exp: '8 years exp.', grad: 'linear-gradient(135deg,#d97706,#f59e0b)' },
+const CITIES = ['Mumbai','Delhi','Bangalore','Hyderabad','Chennai','Pune','Kochi','Lucknow'];
+const CITIES_SOON = ['Jaipur','Ahmedabad'];
+
+const ACHIEVEMENTS = [
+  { icon: Smartphone, value: '1M+', label: 'App Downloads' },
+  { icon: CalendarCheck, value: '1.5M+', label: 'Bookings Completed' },
+  { icon: Star, value: '4.7', label: "India's Top Rated Beauty App" },
+  { icon: Building2, value: '8+', label: 'Cities in India' },
+  { icon: Briefcase, value: '1000+', label: 'Professionals' },
 ];
 
-const TESTIMONIALS = [
-  { stars: '★★★★★', text: '"Amazing facial! My skin feels so rejuvenated. Sonal was on time, very professional, and used excellent products. Will definitely book again!"', name: 'Meera Gupta', loc: 'Mumbai · Facial', initials: 'MG' },
-  { stars: '★★★★★', text: '"Harleen transformed my bridal look completely! Every guest complimented my makeup. She is truly an artist. BEST EVER. So happy I found Beyomo!"', name: 'Lakshmi Das', loc: 'Delhi · Bridal Makeup', initials: 'LD' },
-  { stars: '★★★★★', text: '"Preethi is incredible! The massage session was therapeutic. She knows exactly how to relieve stress. Already booked next month. Highly recommend!"', name: 'Priya Sharma', loc: 'Mumbai · Massage', initials: 'PS' },
-  { stars: '★★★★★', text: '"Bhavna is absolutely professional. My skin has never looked better. Very satisfied with the service and the products used. Amazing experience!"', name: 'Nandita Roy', loc: 'Kochi · Skin Care', initials: 'NR' },
-  { stars: '★★★★★', text: '"The booking process is so smooth and the service was delivered exactly on time. The hair spa left my hair incredibly soft. Beyomo is now my go-to app!"', name: 'Rekha Malhotra', loc: 'Chennai · Hair Spa', initials: 'RM' },
-  { stars: '★★★★★', text: '"Absolutely magical transformation! I looked stunning at the party. The makeup lasted all night and multiple people asked for the professional\'s contact!"', name: 'Pooja Mehta', loc: 'Noida · Bridal Makeup', initials: 'PM' },
+const SERVICE_HIGHLIGHTS = [
+  { icon: Sparkles, img: 'https://images.unsplash.com/photo-1487412947147-5cebf100ffc2?w=700&q=85&fit=crop', title: 'Salon at Home', desc: 'Beyomo brings beauty home with a full range of salon services — waxing, facials, mani-pedi, clean-ups, body polishing and nourishing hair spa, all just a booking away.' },
+  { icon: Waves, img: 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?w=700&q=85&fit=crop', title: 'Spa at Home', desc: 'Relax and recharge without leaving home. Our soothing body massages help you de-stress, with specialized care for elderly clients, new moms, kids, and period pain.' },
+  { icon: Sun, img: 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=700&q=85&fit=crop', title: 'Hydra Facial at Home', desc: 'Bring back your natural glow with professional Hydra Facials at home — deep cleansing, hydration, and instant radiance for healthy, youthful-looking skin.' },
 ];
 
-const CITIES = ['🏙️ Mumbai','🏙️ Delhi','🏙️ Bangalore','🏙️ Hyderabad','🏙️ Chennai','🏙️ Pune','🏙️ Kochi','🏙️ Lucknow'];
-const CITIES_SOON = ['🏙️ Jaipur — Coming Soon','🏙️ Ahmedabad — Coming Soon'];
+const MORE_ABOUT_SECTIONS = [
+  { heading: 'Facials & Hydra Facials at Home', text: 'From basic clean-ups to advanced gold, diamond, and Korean facials, our beauticians use premium products to restore your glow. Add our deep-hydrating Hydra Facial for an instant, celebrity-level radiance — all without stepping outside.' },
+  { heading: 'Waxing & Threading at Home', text: 'Choose from chocolate waxing, Rica waxing, Brazilian waxing, full-body waxing, and Korean waxing for smooth, long-lasting results. Pair it with precise eyebrow and upper-lip threading for a complete, polished look.' },
+  { heading: 'Manicure & Pedicure', text: 'Pamper your hands and feet with classic, French, or deluxe mani-pedi packages that exfoliate, cleanse, and soften skin while leaving your nails perfectly finished.' },
+  { heading: 'Haircuts & Styling', text: "Trendy women's, men's, and kids' haircuts, blow-drying, straightening, curling, and event-ready styling — delivered by trained stylists at your doorstep." },
+  { heading: 'Bridal & Party Makeup', text: 'From engagement and mehndi looks to the big wedding day, our certified makeup artists craft picture-perfect transformations for every occasion, complete with hairstyling and draping.' },
+  { heading: 'Hair Spa & Treatments', text: 'Scalp scrub and massage, henna and herbal application, root touch-ups, hair coloring, and deep-conditioning hair spa — all designed to keep your hair salon-fresh, every time.' },
+  { heading: 'Body Massage & Polishing', text: 'Relieve stress with warm oil, energising, or relaxation massages, or reveal radiant skin with body polishing and hydra body polishing treatments using natural scrubs and hydrating serums.' },
+  { heading: 'Packages & Combos', text: 'Save more with curated bridal bundles, facial-and-waxing combos, and full grooming kits — tailored to your beauty and wellness needs.' },
+];
+
+const FAQS = [
+  { q: 'How do I book a service at home with Beyomo?', a: 'Open the Beyomo app or website, enter your location, pick a service and a time slot, and a verified professional will arrive at your doorstep.' },
+  { q: 'Are Beyomo professionals verified?', a: 'Yes — every professional undergoes background verification, skill assessment, and hygiene training before being listed on the platform.' },
+  { q: 'What if my professional is running late?', a: "We track every booking in real time. If a professional is running late, you'll be notified instantly with a live ETA." },
+  { q: 'Can I reschedule or cancel a booking?', a: "Yes, bookings can be rescheduled or cancelled from the app up until shortly before your appointment — see our Cancellation Policy for details." },
+  { q: 'What payment methods are supported?', a: 'You can pay via UPI, debit/credit card, or wallet — most services let you pay securely after the service is completed.' },
+  { q: 'Is Beyomo available in my city?', a: "We're currently live in 8+ cities including Mumbai, Delhi, Bangalore, Hyderabad, Chennai, Pune, Kochi, and Lucknow, with more launching soon." },
+  { q: 'Do I need to provide anything for the service?', a: 'No — our professionals arrive fully equipped with all tools, products, and kits needed for your service.' },
+  { q: 'How do I become a Beyomo partner professional?', a: 'Tap "Become a Partner" on our website, fill in your details, and our team will reach out to onboard you after verification.' },
+];
 
 /* ── Counter animation ── */
 function useCounter(target, duration = 1800, start = false) {
@@ -67,12 +117,13 @@ function useCounter(target, duration = 1800, start = false) {
   return count;
 }
 
-function StatItem({ value, label }) {
+function StatItem({ value, label, icon: Icon }) {
   const ref = useRef(null);
   const [started, setStarted] = useState(false);
+  const isDecimal = /\d+\.\d/.test(String(value));
   const num = parseInt(String(value).replace(/[^0-9]/g, ''));
   const suffix = String(value).replace(/[0-9,]/g, '');
-  const count = useCounter(num, 1600, started);
+  const count = useCounter(num, 1600, started && !isDecimal);
 
   useEffect(() => {
     const el = ref.current;
@@ -84,122 +135,159 @@ function StatItem({ value, label }) {
 
   return (
     <div className="stat-item" ref={ref}>
-      <div className="stat-val">{started ? count.toLocaleString('en-IN') + suffix : '0' + suffix}</div>
+      {Icon && <div className="stat-icon"><Icon size={24} color="#fff" /></div>}
+      <div className="stat-val" style={Icon ? { fontSize: 28 } : undefined}>{isDecimal ? value : (started ? count.toLocaleString('en-IN') + suffix : '0' + suffix)}</div>
       <div className="stat-label">{label}</div>
     </div>
   );
 }
 
-/* ── Floating blob ── */
-function Blob({ style }) {
-  return <div className="anim-blob" style={{ position: 'absolute', borderRadius: '60% 40% 30% 70% / 60% 30% 70% 40%', ...style }} />;
-}
-
 export default function Home() {
-  const s1 = useRevealAll();
   const s2 = useRevealAll();
   const s3 = useRevealAll();
-  const s4 = useRevealAll();
-  const s5 = useRevealAll();
+  const s6 = useRevealAll();
+  const s7 = useRevealAll();
+  const s8 = useRevealAll();
+  const navigate = useNavigate();
+  const { city } = useCity();
+  const [cityModalOpen, setCityModalOpen] = useState(false);
+  const [moreAboutOpen, setMoreAboutOpen] = useState(false);
+  const [openFaq, setOpenFaq] = useState(null);
+  const [banners, setBanners] = useState([]);
+  const [bannerIndex, setBannerIndex] = useState(0);
+  const [categories, setCategories] = useState([]);
+
+  useEffect(() => {
+    getBanners().then(res => setBanners(res?.data || [])).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    getCategories(city?.id).then(res => setCategories(res?.data || [])).catch(() => {});
+  }, [city]);
+
+  useEffect(() => {
+    if (banners.length < 2) return;
+    const t = setInterval(() => setBannerIndex(i => (i + 1) % banners.length), 5000);
+    return () => clearInterval(t);
+  }, [banners.length]);
+
+  const goToServices = () => {
+    if (!city) {
+      setCityModalOpen(true);
+      return;
+    }
+    navigate('/services');
+  };
+
+  const goToCategory = (categoryId) => {
+    if (!city) {
+      setCityModalOpen(true);
+      return;
+    }
+    navigate(categoryId ? `/services/${categoryId}` : '/services');
+  };
+
+  const serviceTiles = categories.length > 0
+    ? categories.map(c => ({ key: c.id, id: c.id, title: c.name, img: c.image }))
+    : SERVICES.map(s => ({ key: s.title, title: s.title, img: s.img }));
 
   return (
     <div>
-      {/* ══ HERO ══ */}
-      <section style={{ minHeight: '100vh', background: 'linear-gradient(135deg, var(--dark) 0%, var(--teal) 42%, #0d7a5e 72%, var(--dark) 100%)', position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', paddingTop: 70 }}>
-        {/* Animated blobs */}
-        <Blob style={{ top: '-15%', left: '-8%', width: 580, height: 580, background: 'radial-gradient(circle, rgba(253,215,122,0.1) 0%, transparent 70%)', animationDuration: '10s' }} />
-        <Blob style={{ bottom: '-12%', right: '-8%', width: 480, height: 480, background: 'radial-gradient(circle, rgba(2,176,232,0.1) 0%, transparent 70%)', animationDuration: '8s', animationDelay: '2s' }} />
-        <Blob style={{ top: '30%', right: '5%', width: 240, height: 240, background: 'radial-gradient(circle, rgba(253,215,122,0.06) 0%, transparent 70%)', animationDuration: '6s', animationDelay: '1s' }} />
-
-        <div className="container" style={{ position: 'relative', zIndex: 1 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 64, alignItems: 'center', padding: '80px 0' }} className="hero-grid">
-            {/* Text */}
-            <div>
-              <div className="anim-fadeDown d-1" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.08)', color: 'var(--accent)', padding: '7px 18px', borderRadius: 'var(--r-full)', fontSize: 13, fontWeight: 700, marginBottom: 24, border: '1px solid rgba(255,255,255,0.12)', backdropFilter: 'blur(8px)' }}>
-                <span style={{ width: 8, height: 8, background: 'var(--accent)', borderRadius: '50%' }} className="anim-dot" />
-                Now Available in 8+ Cities
-              </div>
-              <h1 className="anim-fadeUp d-2" style={{ fontSize: 'clamp(36px,5.5vw,64px)', fontWeight: 800, color: 'white', lineHeight: 1.08, marginBottom: 22 }}>
-                Beauty &amp; Wellness<br /><span style={{ color: 'var(--accent)' }}>at Your Doorstep</span>
-              </h1>
-              <p className="anim-fadeUp d-3" style={{ fontSize: 18, color: 'rgba(255,255,255,0.75)', lineHeight: 1.68, marginBottom: 38, maxWidth: 480 }}>
-                Book certified beauty and wellness professionals who come to you. Facial, massage, bridal makeup, hair care and more — done at home, at your convenience.
-              </p>
-              <div className="anim-fadeUp d-4" style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
-                <a href="#download" className="btn btn-accent">📱 Download the App</a>
-                <a href="#services" className="btn btn-outline-white">Explore Services ↓</a>
-              </div>
-              <div className="anim-fadeUp d-6" style={{ display: 'flex', gap: 36, marginTop: 52, paddingTop: 32, borderTop: '1px solid rgba(255,255,255,0.1)', flexWrap: 'wrap' }}>
-                {[['2.8K+','Happy Customers'],['186','Verified Pros'],['4.4★','Avg. Rating']].map(([v,l]) => (
-                  <div key={l}>
-                    <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--accent)' }}>{v}</div>
-                    <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.55)', marginTop: 3 }}>{l}</div>
-                  </div>
+      {/* ══ HERO (admin-managed banner carousel) ══ */}
+      <section className="gl-hero">
+        <h1 className="sr-only">Beyomo — Book beauty &amp; wellness services at Home</h1>
+        <div className="gl-hero-banner">
+          {banners.length > 0 ? (
+            <div className="banner-carousel">
+              <div className="banner-track" style={{ transform: `translateX(-${bannerIndex * 100}%)` }}>
+                {banners.map((b, i) => (
+                  b.image ? (
+                    <div key={b.id} className="banner-slide banner-slide-image-only" onClick={goToServices} role="button" tabIndex={0}>
+                      <img src={b.image} alt={b.title} className="banner-slide-img-full" />
+                    </div>
+                  ) : (
+                    <div key={b.id} className="banner-slide" style={{ background: bannerGradient(i) }}>
+                      <div className="banner-slide-content">
+                        {b.subtitle && <div className="banner-slide-subtitle">{b.subtitle}</div>}
+                        <div className="banner-slide-title">{b.title}</div>
+                        {b.description && <p className="banner-slide-desc">{b.description}</p>}
+                        <a href="#services" className="banner-slide-btn" onClick={e => { e.preventDefault(); goToServices(); }}>{b.buttonText || 'Book Now'} →</a>
+                      </div>
+                    </div>
+                  )
                 ))}
               </div>
+              {banners.length > 1 && (
+                <>
+                  <button type="button" className="banner-arrow banner-arrow-prev" onClick={() => setBannerIndex(i => (i - 1 + banners.length) % banners.length)} aria-label="Previous banner">‹</button>
+                  <button type="button" className="banner-arrow banner-arrow-next" onClick={() => setBannerIndex(i => (i + 1) % banners.length)} aria-label="Next banner">›</button>
+                  <div className="banner-dots banner-dots-overlay">
+                    {banners.map((b, i) => (
+                      <button key={b.id} type="button" className={`banner-dot${i === bannerIndex ? ' active' : ''}`} onClick={() => setBannerIndex(i)} aria-label={`Go to banner ${i + 1}`} />
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
-
-            {/* App mockup */}
-            <div className="anim-fadeLeft d-4 hero-visual" style={{ display: 'flex', justifyContent: 'center' }}>
-              <div className="anim-float" style={{ background: 'white', borderRadius: 36, padding: 24, boxShadow: '0 48px 100px rgba(0,0,0,0.38)', maxWidth: 300, width: '100%', position: 'relative' }}>
-                {/* Glow */}
-                <div style={{ position: 'absolute', inset: -2, borderRadius: 38, background: 'linear-gradient(135deg, rgba(253,215,122,0.3), rgba(2,176,232,0.2))', filter: 'blur(12px)', zIndex: -1 }} />
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
-                  <div style={{ width: 36, height: 36, background: 'linear-gradient(135deg,var(--teal),var(--primary))', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 14, fontWeight: 700 }}>B</div>
-                  <div>
-                    <div style={{ fontSize: 14, fontWeight: 700 }}>Beyomo</div>
-                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>Beauty at Home</div>
-                  </div>
-                  <div style={{ marginLeft: 'auto', background: '#D1FAE5', color: '#065F46', fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 99, display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <span style={{ width: 6, height: 6, background: '#10B981', borderRadius: '50%', display: 'inline-block' }} />
-                    Live
-                  </div>
+          ) : (
+            <div className="gl-hero-banner-inner">
+              <img src="https://images.unsplash.com/photo-1487412947147-5cebf100ffc2?w=1600&q=85&fit=crop" alt="Beyomo beauty services at home" loading="eager" />
+              <div className="gl-hero-overlay">
+                <h2>With Beyomo</h2>
+                <p>Book beauty &amp; wellness services at Home</p>
+                <div className="gl-hero-pills">
+                  <div className="gl-hero-pill">At Home<br />Service</div>
+                  <div className="gl-hero-pill">Verified<br />Professionals</div>
+                  <div className="gl-hero-pill">Affordable<br />Pricing</div>
                 </div>
-                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>Popular Services</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
-                  {[['Facial','https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=150&q=80'],['Makeup','https://images.unsplash.com/photo-1487412947147-5cebf100ffc2?w=150&q=80'],['Massage','https://images.unsplash.com/photo-1544161515-4ab6ce6db874?w=150&q=80'],['Hair Spa','https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=150&q=80']].map(([name, img]) => (
-                    <div key={name} style={{ background: 'var(--light)', borderRadius: 12, padding: 10, textAlign: 'center', transition: 'transform 0.2s' }}
-                      onMouseOver={e => e.currentTarget.style.transform = 'scale(1.04)'}
-                      onMouseOut={e => e.currentTarget.style.transform = ''}
-                    >
-                      <img src={img} alt={name} style={{ width: '100%', height: 60, objectFit: 'cover', borderRadius: 8, marginBottom: 6 }} />
-                      <span style={{ fontSize: 12, fontWeight: 700 }}>{name}</span>
-                    </div>
-                  ))}
-                </div>
-                <div style={{ background: 'linear-gradient(135deg,var(--teal),var(--primary))', color: 'white', borderRadius: 14, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <div style={{ width: 38, height: 38, background: 'rgba(255,255,255,0.15)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>✅</div>
-                  <div>
-                    <div style={{ fontSize: 12, fontWeight: 700 }}>Booking Confirmed!</div>
-                    <div style={{ fontSize: 11, opacity: 0.75, marginTop: 2 }}>Sonal arrives at 10:00 AM</div>
-                  </div>
+                <div className="gl-hero-availability">We are available in <strong>8+ cities</strong></div>
+              </div>
+            </div>
+          )}
+          <div className="gl-hero-location-wrapper">
+            <div className="gl-hero-location-section">
+              <div className="gl-location-details">
+                <div className="gl-location-pin"><MapPin size={18} color="var(--primary)" /></div>
+                <div>
+                  <p style={{ margin: 0, fontWeight: 700, fontSize: 16 }}>{city ? city.name : 'Select your city'}</p>
+                  <p style={{ margin: 0, fontSize: 12, color: 'var(--muted)' }} onClick={() => setCityModalOpen(true)} role="button">Change location</p>
                 </div>
               </div>
+              <button onClick={goToServices} className="gl-explore-btn">Explore Services</button>
             </div>
           </div>
         </div>
       </section>
 
       {/* ══ SERVICES ══ */}
-      <section className="section" id="services" ref={s1}>
-        <div className="container">
-          <span className="badge reveal">Our Services</span>
-          <h2 className="section-title reveal">Everything Beauty,<br />Brought to You</h2>
-          <p className="section-sub reveal">From quick threading to full bridal transformations — we have a certified professional for every beauty need.</p>
-          <div className="services-grid reveal-stagger">
-            {SERVICES.map(s => (
-              <div key={s.title} className="service-card reveal">
-                <img src={s.img} alt={s.title} loading="lazy" />
-                <div className="service-card-body">
-                  <div className="service-card-title">{s.title}</div>
-                  <div className="service-card-meta">{s.meta}</div>
-                  <div className="service-card-price">{s.price}</div>
-                </div>
+      <section className="gl-services-wrapper" id="services">
+        <span className="badge anim-fadeUp">Top Categories</span>
+        <h2 className="section-title anim-fadeUp">Book our services at affordable price</h2>
+        <p className="section-sub anim-fadeUp" style={{ margin: '14px 0 0' }}>Pick a category and get a verified professional at your doorstep, on your schedule.</p>
+        <div className="gl-services-grid">
+          {serviceTiles.map((s, i) => (
+            <a key={s.key} className={`gl-service-icon-card anim-fadeUp d-${Math.min(i, 9)}`} onClick={e => { e.preventDefault(); goToCategory(s.id); }} href="#services">
+              <img src={s.img} alt={s.title} loading="lazy" />
+              <p>{s.title}</p>
+            </a>
+          ))}
+        </div>
+        <div style={{ textAlign: 'center', marginTop: 40 }}>
+          <button onClick={goToServices} className="btn btn-primary">Book a Service →</button>
+        </div>
+      </section>
+
+      {/* ══ WHY BEYOMO (checklist) ══ */}
+      <section className="gl-why-wrapper">
+        <div className="gl-why-section">
+          <h2 className="section-title" style={{ fontSize: 28 }}>Why Beyomo?</h2>
+          <div className="gl-why-steps">
+            {['Best brands in 1-time use packs', 'Trained, verified professionals', 'Mess-free service at your doorstep'].map(t => (
+              <div className="gl-why-step" key={t}>
+                <span className="gl-why-check"><Check size={14} strokeWidth={3} /></span>
+                <p style={{ margin: 0, fontSize: 17, fontWeight: 500 }}>{t}</p>
               </div>
             ))}
-          </div>
-          <div style={{ textAlign: 'center', marginTop: 40 }}>
-            <a href="#download" className="btn btn-primary">See All 12+ Services →</a>
           </div>
         </div>
       </section>
@@ -216,7 +304,7 @@ export default function Home() {
             {STEPS.map((s, i) => (
               <div key={s.n} className="step-card reveal">
                 <div className="step-number">{s.n}</div>
-                <div className="step-icon">{s.icon}</div>
+                <div className="step-icon" style={{ display: 'flex', justifyContent: 'center' }}><s.icon size={34} color="var(--primary)" /></div>
                 <div className="step-title">{s.title}</div>
                 <p className="step-desc">{s.desc}</p>
                 {i < STEPS.length - 1 && <div className="step-connector" />}
@@ -226,16 +314,40 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ══ STATS BANNER ══ */}
+      {/* ══ ACHIEVEMENTS ══ */}
       <div className="stats-banner">
         <div className="container">
-          <div className="stats-banner-grid">
-            {[['2,847+','Happy Customers'],['186','Verified Professionals'],['3,842+','Services Completed'],['4.4 ★','Average Rating']].map(([v,l]) => (
-              <StatItem key={l} value={v} label={l} />
+          <h2 style={{ fontSize: 'clamp(24px,3vw,36px)', fontWeight: 800, color: 'white', textAlign: 'center', marginBottom: 44, position: 'relative' }}>Delivering Beauty, Creating Trust</h2>
+          <div className="stats-banner-grid stats-banner-grid-5">
+            {ACHIEVEMENTS.map(a => (
+              <StatItem key={a.label} value={a.value} label={a.label} icon={a.icon} />
             ))}
           </div>
         </div>
       </div>
+
+      {/* ══ SERVICES WE OFFER ══ */}
+      <section className="section" ref={s6}>
+        <div className="container">
+          <span className="badge reveal">What We Offer</span>
+          <h2 className="section-title reveal">Services We Offer</h2>
+          <div className="services-highlight-grid reveal-stagger">
+            {SERVICE_HIGHLIGHTS.map(h => (
+              <div key={h.title} className="services-highlight-card reveal" onClick={goToServices} role="button">
+                <div className="services-highlight-img-wrap">
+                  <img src={h.img} alt={h.title} loading="lazy" />
+                  <span className="services-highlight-icon-badge"><h.icon size={22} color="#fff" /></span>
+                </div>
+                <div className="services-highlight-body">
+                  <div className="services-highlight-title">{h.title}</div>
+                  <p className="services-highlight-desc">{h.desc}</p>
+                  <span className="services-highlight-link">Explore <ArrowRight size={15} /></span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
 
       {/* ══ WHY BEYOMO ══ */}
       <section className="section" ref={s3}>
@@ -246,7 +358,7 @@ export default function Home() {
           <div className="features-grid reveal-stagger" style={{ marginTop: 52 }}>
             {FEATURES.map(f => (
               <div key={f.title} className="feature-card reveal">
-                <div className="feature-icon" style={{ background: f.bg }}>{f.icon}</div>
+                <div className="feature-icon" style={{ background: f.bg }}><f.icon size={26} color={f.color} /></div>
                 <div>
                   <div className="feature-title">{f.title}</div>
                   <p className="feature-desc">{f.desc}</p>
@@ -257,62 +369,94 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ══ PROFESSIONALS ══ */}
-      <section className="section section-alt" ref={s4}>
+      {/* ══ MORE ABOUT SERVICES (SEO + FAQ) ══ */}
+      <section className="section section-alt" ref={s7}>
         <div className="container">
-          <span className="badge reveal">Top Rated</span>
-          <h2 className="section-title reveal">Meet Our Star Professionals</h2>
-          <p className="section-sub reveal">Handpicked based on ratings, experience, and customer satisfaction scores.</p>
-          <div className="partners-grid reveal-stagger">
-            {PROFESSIONALS.map(p => (
-              <div key={p.name} className="partner-card reveal">
-                <div className="partner-avatar" style={{ background: p.grad }}>{p.initials}</div>
-                <div className="partner-name">{p.name}</div>
-                <div className="partner-service">{p.service}</div>
-                <div className="partner-rating">{p.rating}</div>
-                <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 8, background: 'var(--light)', padding: '4px 10px', borderRadius: 99, display: 'inline-block' }}>{p.exp}</div>
-              </div>
-            ))}
+          <div className="more-about-toggle reveal" onClick={() => setMoreAboutOpen(o => !o)}>
+            <h2 className="section-title" style={{ fontSize: 26 }}>More About Beyomo Services</h2>
+            <span className="faq-chevron" style={{ transform: moreAboutOpen ? 'rotate(180deg)' : 'none', width: 32, height: 32 }}>▾</span>
           </div>
-          <div style={{ textAlign: 'center', marginTop: 40 }}>
-            <a href="#download" className="btn btn-secondary">Download the App →</a>
-          </div>
-        </div>
-      </section>
-
-      {/* ══ TESTIMONIALS ══ */}
-      <section className="section" id="testimonials" ref={s5}>
-        <div className="container">
-          <span className="badge reveal">Customer Love</span>
-          <h2 className="section-title reveal">What Our Customers Say</h2>
-          <p className="section-sub reveal">Real reviews from real customers. No fake ratings — ever.</p>
-          <div className="testimonials-grid reveal-stagger">
-            {TESTIMONIALS.map(t => (
-              <div key={t.name} className="testimonial-card reveal">
-                <div className="testimonial-stars">{t.stars}</div>
-                <p className="testimonial-text">{t.text}</p>
-                <div className="testimonial-author">
-                  <div className="testimonial-avatar">{t.initials}</div>
-                  <div>
-                    <div className="testimonial-name">{t.name}</div>
-                    <div className="testimonial-loc">{t.loc}</div>
-                  </div>
+          {moreAboutOpen && (
+            <div className="more-about-content">
+              <p>Looking good isn't just about beauty — it's about confidence, comfort, and self-care. Visiting a salon regularly often means traffic, long waits, and inconsistent results. <strong>Beyomo</strong> brings professional beauty care straight to your doorstep, with a team of skilled, verified beauticians delivering safe, high-quality salon services at home.</p>
+              <p>From facials and waxing to hair care, spa, and bridal services, Beyomo is a complete one-stop solution for all your beauty needs — with the comfort, convenience, and care you can count on, in every city we serve.</p>
+              {MORE_ABOUT_SECTIONS.map(sec => (
+                <div key={sec.heading}>
+                  <h3>{sec.heading}</h3>
+                  <p>{sec.text}</p>
                 </div>
+              ))}
+
+              <h3 style={{ marginTop: 40 }}>Frequently Asked Questions</h3>
+              <div style={{ marginTop: 20 }}>
+                {FAQS.map((f, i) => (
+                  <div key={f.q} className={`faq-item${openFaq === i ? ' open' : ''}`}>
+                    <div className="faq-question" onClick={() => setOpenFaq(openFaq === i ? null : i)}>
+                      {f.q}
+                      <span className="faq-chevron">▾</span>
+                    </div>
+                    <div className="faq-answer"><div className="faq-answer-inner">{f.a}</div></div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </div>
+          )}
         </div>
       </section>
 
       {/* ══ CITIES ══ */}
-      <section className="section section-alt" id="cities">
-        <div className="container" style={{ textAlign: 'center' }}>
-          <span className="badge reveal">Service Areas</span>
-          <h2 className="section-title reveal">Now Available in Your City</h2>
-          <p className="section-sub reveal" style={{ margin: '14px auto 0' }}>We're expanding fast. Beyomo is currently live in these cities with more launching soon.</p>
-          <div className="cities-grid reveal">
-            {CITIES.map(c => <div key={c} className="city-pill">{c}</div>)}
-            {CITIES_SOON.map(c => <div key={c} className="city-pill coming-soon">{c}</div>)}
+      <section className="gl-cities-section" id="cities">
+        <div className="gl-cities-sub-section">
+          <p className="gl-title">Proudly Made in India</p>
+          <p className="gl-heading">We Are Live In 8+ Cities</p>
+          <div className="gl-cities-container">
+            {CITIES.map((c, i) => (
+              <React.Fragment key={c}>
+                <span role="button" onClick={() => setCityModalOpen(true)}>{c}</span>
+                {(i < CITIES.length - 1 || CITIES_SOON.length) ? <span className="sep">|</span> : null}
+              </React.Fragment>
+            ))}
+            {CITIES_SOON.map((c, i) => (
+              <React.Fragment key={c}>
+                <span style={{ opacity: 0.5 }}>{c} (Coming Soon)</span>
+                {i < CITIES_SOON.length - 1 ? <span className="sep">|</span> : null}
+              </React.Fragment>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ══ TRUST STRIP ══ */}
+      <section style={{ padding: '32px 0', background: 'var(--light)', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)' }}>
+        <div className="container" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: 24 }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--muted)', display: 'inline-flex', alignItems: 'center', gap: 6 }}><Lock size={14} /> 100% Secure Payments, Powered by Razorpay</span>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+            {['UPI', 'Visa', 'Mastercard', 'RuPay', 'Net Banking'].map((m) => (
+              <span key={m} style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', background: 'white', border: '1px solid var(--border)', borderRadius: 'var(--r-full)', padding: '6px 14px' }}>{m}</span>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ══ BECOME A PARTNER ══ */}
+      <section className="section" id="become-a-partner" ref={s8}>
+        <div className="container">
+          <div className="reveal" style={{
+            background: 'linear-gradient(135deg, var(--dark) 0%, var(--teal) 100%)',
+            borderRadius: 28, padding: '56px 40px', textAlign: 'center',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 18,
+          }}>
+            <span className="badge" style={{ background: 'rgba(255,255,255,0.12)', color: 'white' }}>For Beauty & Wellness Professionals</span>
+            <h2 className="section-title" style={{ color: 'white', margin: 0 }}>Grow Your Business With Beyomo</h2>
+            <p className="section-sub" style={{ color: 'rgba(255,255,255,0.75)', maxWidth: 560, margin: 0 }}>
+              Join thousands of verified professionals earning flexibly on their own schedule. Get steady bookings, secure payments, and full support — register in minutes.
+            </p>
+            <Link to="/become-a-partner" style={{
+              padding: '14px 32px', background: 'var(--accent)', color: 'var(--dark)',
+              borderRadius: 'var(--r-full)', fontSize: 15, fontWeight: 700,
+              textDecoration: 'none', boxShadow: '0 8px 24px rgba(255,149,0,0.35)',
+              marginTop: 8, display: 'inline-flex', alignItems: 'center', gap: 8,
+            }}><Handshake size={18} /> Become a Partner</Link>
           </div>
         </div>
       </section>
@@ -328,17 +472,15 @@ export default function Home() {
                 Get your first booking at 20% off with code <strong style={{ color: 'var(--accent)', background: 'rgba(255,255,255,0.1)', padding: '2px 8px', borderRadius: 6 }}>WELCOME20</strong>. Book beauty and wellness pros on the go, track their arrival live, and pay in one tap.
               </p>
               <div className="app-badges">
-                <a href="#" className="app-badge">
-                  <div className="app-badge-icon">🍎</div>
-                  <div className="app-badge-text"><small>Download on the</small><strong>App Store</strong></div>
+                <a href="https://apps.apple.com" target="_blank" rel="noreferrer" className="app-badge-img-link">
+                  <img src="/getlook/app_store_download.png" alt="Download on the App Store" />
                 </a>
-                <a href="#" className="app-badge">
-                  <div className="app-badge-icon">▶️</div>
-                  <div className="app-badge-text"><small>Get it on</small><strong>Google Play</strong></div>
+                <a href="https://play.google.com" target="_blank" rel="noreferrer" className="app-badge-img-link">
+                  <img src="/getlook/play_store_download.png" alt="Get it on Google Play" />
                 </a>
               </div>
               <div style={{ marginTop: 28, fontSize: 14, color: 'rgba(255,255,255,0.55)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ color: '#F59E0B' }}>★★★★★</span> 4.8 rating · 10,000+ downloads
+                <StarRow size={14} /> 4.8 rating · 10,000+ downloads
               </div>
             </div>
 
@@ -346,13 +488,13 @@ export default function Home() {
             <div className="app-screens" style={{ display: 'flex', justifyContent: 'center', gap: 20, alignItems: 'flex-start' }}>
               <div className="anim-float" style={{ background: 'white', borderRadius: 28, width: 200, padding: 16, boxShadow: '0 32px 72px rgba(0,0,0,0.28)' }}>
                 <div style={{ background: 'linear-gradient(135deg,var(--teal),var(--primary))', borderRadius: 14, height: 90, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
-                  <div style={{ color: 'white', textAlign: 'center' }}><div style={{ fontSize: 26 }}>💆</div><div style={{ fontSize: 11, fontWeight: 700, opacity: 0.9, marginTop: 4 }}>Book Beauty</div></div>
+                  <div style={{ color: 'white', textAlign: 'center' }}><Sparkles size={26} /><div style={{ fontSize: 11, fontWeight: 700, opacity: 0.9, marginTop: 4 }}>Book Beauty</div></div>
                 </div>
                 {[80,48,52,48].map((h,i) => <div key={i} style={{ height: h, background: i===3?'linear-gradient(135deg,var(--teal),var(--primary))':'var(--light)', borderRadius: 10, marginBottom: 10 }} />)}
               </div>
               <div className="anim-float-slow" style={{ background: 'white', borderRadius: 28, width: 200, padding: 16, boxShadow: '0 32px 72px rgba(0,0,0,0.28)', marginTop: 40 }}>
                 <div style={{ background: '#FEF3C7', borderRadius: 14, height: 90, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
-                  <div style={{ textAlign: 'center' }}><div style={{ fontSize: 26 }}>✅</div><div style={{ fontSize: 11, fontWeight: 700, color: 'var(--dark)', marginTop: 4 }}>Booking Confirmed</div></div>
+                  <div style={{ textAlign: 'center' }}><CheckCircle2 size={26} color="#16A34A" /><div style={{ fontSize: 11, fontWeight: 700, color: 'var(--dark)', marginTop: 4 }}>Booking Confirmed</div></div>
                 </div>
                 {[52,72,48,52].map((h,i) => <div key={i} style={{ height: h, background: i===3?'linear-gradient(135deg,var(--teal),var(--primary))':'var(--light)', borderRadius: 10, marginBottom: 10 }} />)}
               </div>
@@ -362,11 +504,10 @@ export default function Home() {
       </section>
 
 
+      <CitySelectorModal open={cityModalOpen} onClose={() => setCityModalOpen(false)} onSelected={() => navigate('/services')} />
+
       <style>{`
-        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.35} }
         @media (max-width: 768px) {
-          .hero-grid { grid-template-columns: 1fr !important; text-align: center; gap: 40px !important; padding: 60px 0 !important; }
-          .hero-visual { display: none !important; }
           .app-screens { display: none !important; }
           .app-inner { grid-template-columns: 1fr !important; text-align: center; }
           .app-badges { justify-content: center; }

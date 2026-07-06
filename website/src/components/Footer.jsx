@@ -1,83 +1,100 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { Heart } from 'lucide-react';
+
+const iconProps = { width: 17, height: 17, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' };
+
+function InstagramIcon() {
+  return (
+    <svg {...iconProps}>
+      <rect x="2" y="2" width="20" height="20" rx="5" />
+      <circle cx="12" cy="12" r="4" />
+      <circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+function FacebookIcon() {
+  return (
+    <svg {...iconProps}>
+      <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z" />
+    </svg>
+  );
+}
+
+function LinkedinIcon() {
+  return (
+    <svg {...iconProps}>
+      <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4V8h4v1.5A5 5 0 0 1 16 8z" />
+      <rect x="2" y="9" width="4" height="12" />
+      <circle cx="4" cy="4" r="2" />
+    </svg>
+  );
+}
 
 export default function Footer() {
   return (
-    <footer className="footer">
-      <div className="container">
-        <div className="footer-inner">
-          {/* Brand */}
-          <div>
-            <Link to="/" style={{ display: 'inline-flex', alignItems: 'center', gap: 10, textDecoration: 'none', marginBottom: 16 }}>
-              <div style={{ width: 40, height: 40, background: 'var(--accent)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, fontWeight: 800, color: 'var(--dark)', flexShrink: 0 }}>B</div>
-              <span style={{ fontSize: 20, fontWeight: 800, color: 'white' }}>Beyomo</span>
-            </Link>
-            <p style={{ fontSize: 14, lineHeight: 1.75, color: 'rgba(255,255,255,0.6)', maxWidth: 260, marginBottom: 20 }}>
-              Beauty &amp; Wellness at Your Doorstep. Book certified professionals for any service — at home, on your schedule.
-            </p>
-            <div className="footer-social">
-              <a href="#" title="Facebook">📘</a>
-              <a href="#" title="Instagram">📸</a>
-              <a href="#" title="Twitter">🐦</a>
-              <a href="#" title="YouTube">▶️</a>
-            </div>
-            <div style={{ marginTop: 24 }}>
-              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: 10 }}>Download the App</div>
-              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                <a href="#" style={{ background: 'rgba(255,255,255,0.08)', color: 'white', padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600, border: '1px solid rgba(255,255,255,0.08)', transition: 'all 0.2s', display: 'inline-flex', alignItems: 'center', gap: 6 }}>🍎 App Store</a>
-                <a href="#" style={{ background: 'rgba(255,255,255,0.08)', color: 'white', padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600, border: '1px solid rgba(255,255,255,0.08)', transition: 'all 0.2s', display: 'inline-flex', alignItems: 'center', gap: 6 }}>▶️ Google Play</a>
+    <footer className="gl-footer">
+      <div className="gl-footer-sub">
+        <div className="gl-footer-about-links">
+          <div className="gl-footer-about">
+            <Link to="/" style={{ display: 'inline-flex', alignItems: 'center', textDecoration: 'none', marginBottom: 14 }}>
+              <div style={{
+                background: 'linear-gradient(135deg, var(--dark) 0%, var(--teal) 55%, var(--primary) 100%)',
+                borderRadius: 9, padding: '7px 14px', display: 'flex', alignItems: 'center',
+              }}>
+                <img src="/logo.png" alt="Beyomo" style={{ height: 22, display: 'block' }} />
               </div>
-            </div>
+            </Link>
+            <p className="gl-footer-heading" style={{ marginBottom: 8 }}>About Beyomo</p>
+            <p className="gl-footer-text">Beyomo is India's beauty and wellness at-home service brand, bringing trained, verified professionals to your doorstep for facials, hair care, makeup, massage, and more — booked in minutes.</p>
           </div>
 
-          {/* Services */}
           <div>
-            <div className="footer-heading">Services</div>
-            <div className="footer-links">
-              {['Facial & Skin Care','Hair Care','Makeup','Waxing & Threading','Nail Care','Massage & Wellness','Bridal Packages'].map(s => <a key={s} href="#">{s}</a>)}
-            </div>
-          </div>
-
-          {/* Company */}
-          <div>
-            <div className="footer-heading">Company</div>
-            <div className="footer-links">
+            <p className="gl-footer-heading">Company</p>
+            <div className="gl-footer-links">
               <Link to="/about">About Us</Link>
-              <a href="#">Blog</a>
-              <a href="#">Press</a>
-              <Link to="/contact">Contact</Link>
+              <Link to="/become-a-partner">Become a Partner</Link>
+              <Link to="/privacy">Privacy Policy</Link>
+              <Link to="/terms">Terms &amp; Conditions</Link>
+              <Link to="/contact">Contact Us</Link>
             </div>
           </div>
 
-          {/* Support */}
           <div>
-            <div className="footer-heading">Support</div>
-            <div className="footer-links">
+            <p className="gl-footer-heading">Support</p>
+            <div className="gl-footer-links">
               <Link to="/help">Help Center</Link>
-              <a href="#">Track Booking</a>
               <Link to="/cancellation">Cancellation Policy</Link>
               <Link to="/refund">Refund Policy</Link>
-              <a href="#">Safety Guidelines</a>
-            </div>
-            <div style={{ marginTop: 24 }}>
-              <div className="footer-heading">Contact</div>
-              <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.55)', lineHeight: 2 }}>
-                <div>✉️ support@beyomo.com</div>
-                <div>📞 +91 1800-XXX-XXXX</div>
-                <div>🕐 Mon–Sun, 8 AM–10 PM</div>
-              </div>
+              <Link to="/cookies">Cookie Policy</Link>
             </div>
           </div>
         </div>
 
-        <div className="footer-bottom">
-          <div style={{ color: 'rgba(255,255,255,0.38)' }}>© 2026 Beyomo Technologies Pvt. Ltd. All rights reserved.</div>
-          <div className="footer-bottom-links">
-            <Link to="/privacy">Privacy Policy</Link>
-            <Link to="/terms">Terms of Service</Link>
-            <Link to="/cookies">Cookie Policy</Link>
+        <div className="gl-footer-right">
+          <div className="gl-footer-issue-box">
+            <p className="gl-footer-text-strong">Facing issues? Reach us out at:</p>
+            <p className="gl-footer-text">Contact Us <a href="mailto:hi@beyomo.com" style={{ color: 'var(--primary)' }}>hi@beyomo.com</a></p>
+          </div>
+          <div>
+            <p className="gl-footer-text-strong">Experience the Beyomo App</p>
+            <div className="gl-footer-app-links">
+              <a href="https://apps.apple.com" target="_blank" rel="noreferrer"><img src="/getlook/app_store_download.png" alt="App Store" /></a>
+              <a href="https://play.google.com" target="_blank" rel="noreferrer"><img src="/getlook/play_store_download.png" alt="Google Play" /></a>
+            </div>
+            <p className="gl-footer-text-strong" style={{ marginBottom: 0, display: 'flex', alignItems: 'center', gap: 6 }}>Show some love <Heart size={14} fill="var(--primary)" color="var(--primary)" /> on social media</p>
+            <div className="gl-footer-social">
+              <a href="#" title="Instagram"><InstagramIcon /></a>
+              <a href="#" title="Facebook"><FacebookIcon /></a>
+              <a href="#" title="LinkedIn"><LinkedinIcon /></a>
+            </div>
           </div>
         </div>
+      </div>
+
+      <div className="gl-footer-copyright">
+        Copyright © 2026 Beyomo — Beauty &amp; Wellness at Home. All Rights Reserved.
       </div>
     </footer>
   );

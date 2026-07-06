@@ -12,11 +12,13 @@ const path = require("path");
 const Partner = require("../../../partners/models/partner.model");
 const PartnerSkillCategory = require("../../../skills/models/PartnerSkillCategory");
 
-const saveBase64 = (dataUri, prefix) => {
-  const m = dataUri.match(/^data:image\/(jpeg|jpg|png|webp);base64,(.+)$/);
+const saveBase64 = (dataUri, prefix, allowPdf = false) => {
+  const imgMatch = dataUri.match(/^data:image\/(jpeg|jpg|png|webp);base64,(.+)$/);
+  const pdfMatch = allowPdf && dataUri.match(/^data:application\/pdf;base64,(.+)$/);
+  const m = imgMatch || pdfMatch;
   if (!m) return null;
-  const ext = m[1] === "jpeg" ? "jpg" : m[1];
-  const buf = Buffer.from(m[2], "base64");
+  const ext = imgMatch ? (imgMatch[1] === "jpeg" ? "jpg" : imgMatch[1]) : "pdf";
+  const buf = Buffer.from(m[m.length - 1], "base64");
   const fname = `${prefix}-${Date.now()}.${ext}`;
   const dir = path.join(__dirname, "../../../../uploads");
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -33,6 +35,7 @@ const partnerApplySchema = Joi.object({
   experience: Joi.number().integer().min(0).default(0),
   serviceCategoryIds: Joi.array().items(Joi.number().integer().positive()).default([]),
   skillCategoryIds: Joi.array().items(Joi.number().integer().positive()).default([]),
+  professions: Joi.array().items(Joi.string().trim()).default([]),
   selfie: Joi.string().allow("", null),
   aadhar: Joi.string().allow("", null),
   agreement: Joi.string().allow("", null),
@@ -157,12 +160,14 @@ const partnerApply = catchAsync(async (req, res, next) => {
     locationCity: value.city || null,
     experience: value.experience || 0,
     status: "pending",
+    source: "website",
   };
 
   if (value.selfie?.startsWith("data:")) partnerData.profilePicture = saveBase64(value.selfie, "selfie") ?? null;
   if (value.aadhar?.startsWith("data:")) partnerData.aadharUrl = saveBase64(value.aadhar, "aadhar") ?? null;
-  if (value.agreement?.startsWith("data:")) partnerData.agreementUrl = saveBase64(value.agreement, "agreement") ?? null;
+  if (value.agreement?.startsWith("data:")) partnerData.agreementUrl = saveBase64(value.agreement, "agreement", true) ?? null;
   if (value.serviceCategoryIds?.length > 0) partnerData.serviceCategoryIds = value.serviceCategoryIds;
+  if (value.professions?.length > 0) partnerData.professions = value.professions;
 
   const partner = await Partner.create(partnerData);
 

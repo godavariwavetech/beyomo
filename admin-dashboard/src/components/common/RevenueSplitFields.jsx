@@ -15,7 +15,7 @@ const RevenueSplitFields = ({ form, setForm }) => {
       </label>
 
       {/* Three inputs */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+      <div className="form-grid form-grid-3" style={{ gap: 10 }}>
         <div className="form-group" style={{ margin: 0 }}>
           <label className="form-label" style={{ fontSize: 11 }}>Admin Cut (%)</label>
           <input

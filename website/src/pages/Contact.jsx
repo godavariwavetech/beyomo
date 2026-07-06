@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useRevealAll } from '../hooks/useReveal';
+import { API_BASE_URL } from '../config';
 
 const INFO = [
   { icon: '📧', bg: '#DBEAFE', title: 'Email Support', detail: 'support@beyomo.com', sub: 'We reply within 4 hours' },
@@ -21,7 +22,7 @@ export default function Contact() {
     e.preventDefault();
     setLoading(true);
     try {
-      const res = await fetch('/api/v1/contacts', {
+      const res = await fetch(`${API_BASE_URL}/api/v1/contacts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
@@ -134,7 +135,7 @@ export default function Contact() {
 
       {/* ── Map Placeholder ── */}
       <div style={{ background: 'linear-gradient(135deg,var(--light),#e2e8f0)', height: 320, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden' }}>
-        <div style={{ position: 'absolute', inset: 0, backgroundImage: 'radial-gradient(circle at 50% 50%, rgba(2,176,232,0.06) 0%, transparent 60%)' }} />
+        <div style={{ position: 'absolute', inset: 0, backgroundImage: 'radial-gradient(circle at 50% 50%, rgba(16,86,65,0.06) 0%, transparent 60%)' }} />
         <div style={{ textAlign: 'center', position: 'relative' }}>
           <div style={{ fontSize: 52, marginBottom: 12 }}>📍</div>
           <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--text)' }}>Mumbai, Maharashtra</div>

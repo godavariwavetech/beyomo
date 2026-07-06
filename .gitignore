@@ -44,3 +44,9 @@ android/.gradle/
 local.properties
 *.keystore
 !debug.keystore
+
+# Zip archives / build packages -- never commit these
+*.zip
+
+# Separate repo nested in this working tree, has its own git history
+/beyomo_website/

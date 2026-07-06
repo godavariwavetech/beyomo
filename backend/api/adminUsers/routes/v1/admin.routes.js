@@ -4,6 +4,7 @@ const path = require("path");
 const fs = require("fs");
 const multer = require("multer");
 const adminAuthenticate = require("../../../../utils/adminAuthenticate");
+const config = require("../../../../config");
 
 const uploadsDir = path.join(__dirname, "../../../../uploads");
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
@@ -65,8 +66,7 @@ const {
 // File Upload
 router.post("/upload", adminAuthenticate(), upload.single("image"), (req, res) => {
   if (!req.file) return res.status(400).json({ status: false, message: "No file uploaded" });
-  const baseUrl = `${req.protocol}://${req.get("host")}`;
-  res.status(200).json({ status: true, url: `${baseUrl}/uploads/${req.file.filename}` });
+  res.status(200).json({ status: true, url: `${config.PUBLIC_BASE_URL}/uploads/${req.file.filename}` });
 });
 
 // Agreement PDF upload/status

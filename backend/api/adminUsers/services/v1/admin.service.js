@@ -92,10 +92,11 @@ const createUser = async (data) => {
 
 // ==================== PARTNERS ====================
 
-const listPartners = async ({ search, status, cityIds, page = 1, limit = 10 }) => {
+const listPartners = async ({ search, status, source, cityIds, page = 1, limit = 10 }) => {
   const offset = (page - 1) * limit;
   const where = { ...cityIdsFilter(cityIds) };
   if (status) where.status = status;
+  if (source) where.source = source;
   if (search) {
     where[Op.or] = [
       { name: { [Op.like]: `%${search}%` } },
