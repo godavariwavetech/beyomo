@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Search, Download, Eye, XCircle, MapPin, CreditCard, Clock, UserCheck, Package, FileText, Tag, PlusCircle, CalendarClock, Check, Gift } from 'lucide-react';
+import { Search, Download, Eye, XCircle, MapPin, CreditCard, Clock, UserCheck, Package, FileText, Tag, PlusCircle, CalendarClock, Check, Gift, CalendarCheck, RefreshCw, CheckCircle2 } from 'lucide-react';
 import { useBookings } from '../hooks/useBookings';
 import { useAuth } from '../context/AuthContext';
 import { useCityFilter } from '../context/CityContext';
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { Badge } from '../components/common/Badge';
 import Modal from '../components/common/Modal';
 import api from '../services/api';
@@ -73,8 +74,13 @@ export default function Bookings() {
   const [addingSvc, setAddingSvc]           = useState(false);
   const [updatingQtyIdx, setUpdatingQtyIdx] = useState(null);
   const [qtyDrafts, setQtyDrafts]           = useState({}); // {[serviceIndex]: pendingQty}
+  const [addMode, setAddMode]               = useState('catalog'); // 'catalog' | 'addon'
+  const [addonName, setAddonName]           = useState('');
+  const [addonPrice, setAddonPrice]         = useState('');
+  const [addonQty, setAddonQty]             = useState(1);
+  const [addingAddon, setAddingAddon]       = useState(false);
 
-  useEffect(() => {
+  const loadBookings = () => {
     const params = cityParam ? { cityIds: cityParam, limit: 1000 } : { limit: 1000 };
     fetchList(params).then(res => {
       if (res.ok) {
@@ -101,7 +107,10 @@ export default function Bookings() {
       }
       setPageLoading(false);
     });
-  }, [cityParam]);
+  };
+
+  useEffect(() => { loadBookings(); }, [cityParam]);
+  useAutoRefresh(loadBookings);
 
   const services = [...new Set(bookings.map(b => b.service ?? b.services?.[0]?.name).filter(Boolean))].sort();
 
@@ -129,6 +138,10 @@ export default function Bookings() {
     setSvcSearch('');
     setUpdatingQtyIdx(null);
     setQtyDrafts({});
+    setAddMode('catalog');
+    setAddonName('');
+    setAddonPrice('');
+    setAddonQty(1);
     setPartners([]);
     setRescheduleDate('');
     setRescheduleReason('');
@@ -214,6 +227,31 @@ export default function Bookings() {
       showToast(msg, 'danger');
     }
     setAddingSvc(false);
+  };
+
+  const handleAddAddon = async (bookingId) => {
+    const price = parseFloat(addonPrice);
+    if (!addonName.trim() || !(price >= 0)) { showToast('Enter a label and a valid amount.', 'warning'); return; }
+    setAddingAddon(true);
+    try {
+      const res = await api.patch(`/api/v1/admin/bookings/${bookingId}/services`, {
+        services: [{ isAddOn: true, name: addonName.trim(), price, qty: addonQty }],
+      });
+      const updated = res.data?.data;
+      if (updated) {
+        const parsedSvcs = parseServices(updated.services ?? selected?.services);
+        const newTotal = parseFloat(updated.totalAmount ?? selected?.amount ?? 0);
+        setSelected(prev => ({ ...prev, services: parsedSvcs, amount: newTotal, totalAmount: newTotal }));
+        setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, amount: newTotal } : b));
+      }
+      setAddonName(''); setAddonPrice(''); setAddonQty(1);
+      showToast('Add-on added to booking.', 'success');
+    } catch (err) {
+      const msg = err.response?.data?.message ?? 'Failed to add add-on.';
+      console.error('[addAddon]', err.response?.data ?? err.message);
+      showToast(msg, 'danger');
+    }
+    setAddingAddon(false);
   };
 
   // Adjusts the local draft qty for a row — does NOT call the API. Saved via handleSaveQty.
@@ -373,15 +411,22 @@ export default function Bookings() {
     <div>
       <div className="stats-grid stats-grid-5" style={{ marginBottom:24 }}>
         {[
-          { label:'Total',       value:stats.total,      color:'#064081' },
-          { label:'Pending',     value:stats.pending,    color:'#F59E0B' },
-          { label:'In Progress', value:stats.inProgress, color:'#8B5CF6' },
-          { label:'Completed',   value:stats.completed,  color:'#22C55E' },
-          { label:'Cancelled',   value:stats.cancelled,  color:'#EF4444' },
+          { label:'Total',       value:stats.total,      color:'#064081', icon:CalendarCheck },
+          { label:'Pending',     value:stats.pending,    color:'#F59E0B', icon:Clock },
+          { label:'In Progress', value:stats.inProgress, color:'#8B5CF6', icon:RefreshCw },
+          { label:'Completed',   value:stats.completed,  color:'#22C55E', icon:CheckCircle2 },
+          { label:'Cancelled',   value:stats.cancelled,  color:'#EF4444', icon:XCircle },
         ].map(s => (
           <div className="stat-card" key={s.label} style={{ cursor:'pointer' }} onClick={() => { setStatus(s.label === 'Total' ? 'all' : s.label.toLowerCase().replace(' ','_')); setPage(1); }}>
-            <div className="stat-label">{s.label}</div>
-            <div className="stat-value" style={{ color:s.color }}>{s.value}</div>
+            <div className="stat-card-header">
+              <div>
+                <div className="stat-label">{s.label}</div>
+                <div className="stat-value" style={{ color:s.color }}>{s.value}</div>
+              </div>
+              <div className="stat-icon" style={{ background: `${s.color}1A` }}>
+                <s.icon size={20} style={{ color:s.color }} />
+              </div>
+            </div>
           </div>
         ))}
       </div>
@@ -612,6 +657,9 @@ export default function Bookings() {
                                 <div style={{ fontSize:13, fontWeight:600, display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
                                   <span style={{ textDecoration: svc.removed ? 'line-through' : 'none', color: svc.removed ? 'var(--c-text-muted)' : undefined }}>{svc.name}</span>
                                   <span style={{ fontSize:10, background:tag.bg, color:tag.text, padding:'1px 6px', borderRadius:4, fontWeight:700 }}>{tag.label}</span>
+                                  {svc.isAddOn && (
+                                    <span style={{ fontSize:10, background:'#fff3e4', color:'#c87b1a', padding:'1px 6px', borderRadius:4, fontWeight:700 }}>Add-on</span>
+                                  )}
                                   {svc.serviceStatus && (
                                     <span style={{ fontSize:10, background:statusColor.bg, color:statusColor.text, padding:'1px 6px', borderRadius:4, fontWeight:600, textTransform:'capitalize' }}>
                                       {svc.serviceStatus}
@@ -619,6 +667,11 @@ export default function Bookings() {
                                   )}
                                 </div>
                                 {svc.duration && <div style={{ fontSize:11, color:'var(--c-text-muted)', marginTop:2 }}>{svc.duration} min</div>}
+                                {svc.adminPercent != null && svc.partnerPercent != null && svc.gstPercent != null && (
+                                  <div style={{ fontSize:10, color:'var(--c-text-muted)', marginTop:2 }}>
+                                    Admin {svc.adminPercent}% · Partner {svc.partnerPercent}% · GST {svc.gstPercent}%
+                                  </div>
+                                )}
                                 {svc.assignedPartnerName && (
                                   <div style={{ fontSize:11, color:'var(--c-text-secondary)', marginTop:3, display:'flex', alignItems:'center', gap:4 }}>
                                     <UserCheck size={11} /> {svc.assignedPartnerName}
@@ -765,82 +818,142 @@ export default function Bookings() {
                 <div style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.5px', color:'var(--c-text-secondary)', marginBottom:10, display:'flex', alignItems:'center', gap:6 }}>
                   <PlusCircle size={14} /> Add Services to Booking
                 </div>
-                {/* Filter input */}
-                <input
-                  type="text"
-                  placeholder="Filter services…"
-                  value={svcSearch}
-                  onChange={e => setSvcSearch(e.target.value)}
-                  style={{ width:'100%', border:'1px solid var(--c-border)', borderRadius:'var(--r-sm)', padding:'6px 10px', fontSize:13, background:'var(--c-bg-card)', color:'var(--c-text-primary)', marginBottom:8, boxSizing:'border-box' }}
-                />
-                {/* Service list with checkboxes */}
-                <div style={{ maxHeight:180, overflowY:'auto', border:'1px solid var(--c-border)', borderRadius:'var(--r-sm)', background:'var(--c-bg-card)', marginBottom:8 }}>
-                  {(svcSearch.trim()
-                    ? allServices.filter(s => s.name.toLowerCase().includes(svcSearch.toLowerCase()))
-                    : allServices
-                  ).slice(0, 50).map(s => {
-                    const svcId = String(s.id ?? s._id);
-                    const cartItem = svcCart.find(item => String(item.svc.id ?? item.svc._id) === svcId);
-                    const alreadyInBooking = servicesList.some(svc =>
-                      !svc.removed && (
-                        (svc.serviceId != null && String(svc.serviceId) === svcId) ||
-                        (svc.name === s.name)
-                      )
-                    );
-                    return (
-                      <div key={svcId} style={{ display:'flex', alignItems:'center', gap:10, padding:'7px 12px', borderBottom:'1px solid var(--c-border-light)', background: alreadyInBooking ? 'var(--c-border-light)' : cartItem ? 'rgba(6,64,129,0.04)' : undefined, opacity: alreadyInBooking ? 0.6 : 1 }}>
-                        <input
-                          type="checkbox"
-                          checked={!!cartItem}
-                          disabled={alreadyInBooking}
-                          onChange={() => {
-                            if (alreadyInBooking) return;
-                            if (cartItem) setSvcCart(prev => prev.filter(item => String(item.svc.id ?? item.svc._id) !== svcId));
-                            else setSvcCart(prev => [...prev, {svc: s, qty: 1}]);
-                          }}
-                          style={{ cursor: alreadyInBooking ? 'not-allowed' : 'pointer', width:15, height:15, flexShrink:0 }}
-                        />
-                        <div style={{ flex:1, minWidth:0 }}>
-                          <div style={{ fontSize:13, fontWeight: cartItem ? 600 : 400, display:'flex', alignItems:'center', gap:6 }}>
-                            {s.name}
-                            {alreadyInBooking && (
-                              <span style={{ fontSize:10, background:'#dbeafe', color:'#1d4ed8', padding:'1px 6px', borderRadius:4, fontWeight:700 }}>In booking</span>
+
+                {/* Catalog vs. custom add-on toggle */}
+                <div style={{ display:'flex', background:'var(--c-bg-card)', border:'1px solid var(--c-border)', borderRadius:'var(--r-sm)', padding:3, marginBottom:10 }}>
+                  <button
+                    onClick={() => setAddMode('catalog')}
+                    style={{ flex:1, border:'none', borderRadius:4, padding:'6px 0', fontSize:12, fontWeight:600, cursor:'pointer', background: addMode === 'catalog' ? 'var(--c-brand-primary)' : 'transparent', color: addMode === 'catalog' ? '#fff' : 'var(--c-text-secondary)' }}>
+                    From Catalog
+                  </button>
+                  <button
+                    onClick={() => setAddMode('addon')}
+                    style={{ flex:1, border:'none', borderRadius:4, padding:'6px 0', fontSize:12, fontWeight:600, cursor:'pointer', background: addMode === 'addon' ? 'var(--c-brand-primary)' : 'transparent', color: addMode === 'addon' ? '#fff' : 'var(--c-text-secondary)' }}>
+                    Custom Add-on
+                  </button>
+                </div>
+
+                {addMode === 'catalog' ? (
+                  <>
+                    {/* Filter input */}
+                    <input
+                      type="text"
+                      placeholder="Filter services…"
+                      value={svcSearch}
+                      onChange={e => setSvcSearch(e.target.value)}
+                      style={{ width:'100%', border:'1px solid var(--c-border)', borderRadius:'var(--r-sm)', padding:'6px 10px', fontSize:13, background:'var(--c-bg-card)', color:'var(--c-text-primary)', marginBottom:8, boxSizing:'border-box' }}
+                    />
+                    {/* Service list with checkboxes */}
+                    <div style={{ maxHeight:180, overflowY:'auto', border:'1px solid var(--c-border)', borderRadius:'var(--r-sm)', background:'var(--c-bg-card)', marginBottom:8 }}>
+                      {(svcSearch.trim()
+                        ? allServices.filter(s => s.name.toLowerCase().includes(svcSearch.toLowerCase()))
+                        : allServices
+                      ).slice(0, 50).map(s => {
+                        const svcId = String(s.id ?? s._id);
+                        const cartItem = svcCart.find(item => String(item.svc.id ?? item.svc._id) === svcId);
+                        const alreadyInBooking = servicesList.some(svc =>
+                          !svc.removed && (
+                            (svc.serviceId != null && String(svc.serviceId) === svcId) ||
+                            (svc.name === s.name)
+                          )
+                        );
+                        return (
+                          <div key={svcId} style={{ display:'flex', alignItems:'center', gap:10, padding:'7px 12px', borderBottom:'1px solid var(--c-border-light)', background: alreadyInBooking ? 'var(--c-border-light)' : cartItem ? 'rgba(6,64,129,0.04)' : undefined, opacity: alreadyInBooking ? 0.6 : 1 }}>
+                            <input
+                              type="checkbox"
+                              checked={!!cartItem}
+                              disabled={alreadyInBooking}
+                              onChange={() => {
+                                if (alreadyInBooking) return;
+                                if (cartItem) setSvcCart(prev => prev.filter(item => String(item.svc.id ?? item.svc._id) !== svcId));
+                                else setSvcCart(prev => [...prev, {svc: s, qty: 1}]);
+                              }}
+                              style={{ cursor: alreadyInBooking ? 'not-allowed' : 'pointer', width:15, height:15, flexShrink:0 }}
+                            />
+                            <div style={{ flex:1, minWidth:0 }}>
+                              <div style={{ fontSize:13, fontWeight: cartItem ? 600 : 400, display:'flex', alignItems:'center', gap:6 }}>
+                                {s.name}
+                                {alreadyInBooking && (
+                                  <span style={{ fontSize:10, background:'#dbeafe', color:'#1d4ed8', padding:'1px 6px', borderRadius:4, fontWeight:700 }}>In booking</span>
+                                )}
+                              </div>
+                              <div style={{ fontSize:11, color:'var(--c-text-muted)' }}>
+                                ₹{parseFloat(s.basePrice || 0).toLocaleString('en-IN')} · {s.duration} min
+                              </div>
+                              {s.category?.adminPercent != null && (
+                                <div style={{ fontSize:10, color:'var(--c-text-muted)' }}>
+                                  Admin {s.category.adminPercent}% · Partner {s.category.partnerPercent}% · GST {s.category.gstPercent}%
+                                </div>
+                              )}
+                            </div>
+                            {cartItem && !alreadyInBooking && (
+                              <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+                                <button style={{ width:24, height:24, border:'1px solid var(--c-border)', borderRadius:4, background:'var(--c-bg-card)', cursor:'pointer', fontSize:13, fontWeight:700 }}
+                                  onClick={() => setSvcCart(prev => prev.map(item => String(item.svc.id ?? item.svc._id) === svcId ? {...item, qty: Math.max(1, item.qty - 1)} : item))}>–</button>
+                                <span style={{ minWidth:20, textAlign:'center', fontSize:13, fontWeight:700 }}>{cartItem.qty}</span>
+                                <button style={{ width:24, height:24, border:'1px solid var(--c-border)', borderRadius:4, background:'var(--c-bg-card)', cursor:'pointer', fontSize:13, fontWeight:700 }}
+                                  onClick={() => setSvcCart(prev => prev.map(item => String(item.svc.id ?? item.svc._id) === svcId ? {...item, qty: item.qty + 1} : item))}>+</button>
+                              </div>
                             )}
                           </div>
-                          <div style={{ fontSize:11, color:'var(--c-text-muted)' }}>
-                            ₹{parseFloat(s.basePrice || 0).toLocaleString('en-IN')} · {s.duration} min
-                          </div>
-                        </div>
-                        {cartItem && !alreadyInBooking && (
-                          <div style={{ display:'flex', alignItems:'center', gap:4 }}>
-                            <button style={{ width:24, height:24, border:'1px solid var(--c-border)', borderRadius:4, background:'var(--c-bg-card)', cursor:'pointer', fontSize:13, fontWeight:700 }}
-                              onClick={() => setSvcCart(prev => prev.map(item => String(item.svc.id ?? item.svc._id) === svcId ? {...item, qty: Math.max(1, item.qty - 1)} : item))}>–</button>
-                            <span style={{ minWidth:20, textAlign:'center', fontSize:13, fontWeight:700 }}>{cartItem.qty}</span>
-                            <button style={{ width:24, height:24, border:'1px solid var(--c-border)', borderRadius:4, background:'var(--c-bg-card)', cursor:'pointer', fontSize:13, fontWeight:700 }}
-                              onClick={() => setSvcCart(prev => prev.map(item => String(item.svc.id ?? item.svc._id) === svcId ? {...item, qty: item.qty + 1} : item))}>+</button>
-                          </div>
-                        )}
+                        );
+                      })}
+                      {allServices.length === 0 && <div style={{ padding:'12px', fontSize:13, color:'var(--c-text-muted)', textAlign:'center' }}>Loading services…</div>}
+                    </div>
+                    {/* Cart summary */}
+                    {svcCart.length > 0 && (
+                      <div style={{ fontSize:12, color:'var(--c-text-secondary)', marginBottom:8, display:'flex', justifyContent:'space-between' }}>
+                        <span>{svcCart.length} service(s) selected</span>
+                        <span style={{ fontWeight:700, color:'var(--c-brand-primary)' }}>
+                          ₹{svcCart.reduce((sum, item) => sum + parseFloat(item.svc.basePrice || 0) * item.qty, 0).toLocaleString('en-IN')}
+                        </span>
                       </div>
-                    );
-                  })}
-                  {allServices.length === 0 && <div style={{ padding:'12px', fontSize:13, color:'var(--c-text-muted)', textAlign:'center' }}>Loading services…</div>}
-                </div>
-                {/* Cart summary */}
-                {svcCart.length > 0 && (
-                  <div style={{ fontSize:12, color:'var(--c-text-secondary)', marginBottom:8, display:'flex', justifyContent:'space-between' }}>
-                    <span>{svcCart.length} service(s) selected</span>
-                    <span style={{ fontWeight:700, color:'var(--c-brand-primary)' }}>
-                      ₹{svcCart.reduce((sum, item) => sum + parseFloat(item.svc.basePrice || 0) * item.qty, 0).toLocaleString('en-IN')}
-                    </span>
-                  </div>
+                    )}
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={() => handleAddServices(selected.id)}
+                      disabled={addingSvc || !svcCart.length}
+                      style={{ display:'flex', alignItems:'center', gap:6 }}>
+                      {addingSvc ? '…' : <><PlusCircle size={13}/> Add {svcCart.length || ''} Service{svcCart.length !== 1 ? 's' : ''}</>}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:8 }}>
+                      <input
+                        type="text"
+                        placeholder="Label (e.g. Extra stain removal)"
+                        value={addonName}
+                        onChange={e => setAddonName(e.target.value)}
+                        style={{ width:'100%', border:'1px solid var(--c-border)', borderRadius:'var(--r-sm)', padding:'6px 10px', fontSize:13, background:'var(--c-bg-card)', color:'var(--c-text-primary)', boxSizing:'border-box' }}
+                      />
+                      <div style={{ display:'flex', gap:8 }}>
+                        <input
+                          type="number"
+                          min="0"
+                          placeholder="Amount (₹)"
+                          value={addonPrice}
+                          onChange={e => setAddonPrice(e.target.value)}
+                          style={{ flex:1, border:'1px solid var(--c-border)', borderRadius:'var(--r-sm)', padding:'6px 10px', fontSize:13, background:'var(--c-bg-card)', color:'var(--c-text-primary)', boxSizing:'border-box' }}
+                        />
+                        <div style={{ display:'flex', alignItems:'center', gap:6, border:'1px solid var(--c-border)', borderRadius:'var(--r-sm)', padding:'0 8px' }}>
+                          <button style={{ width:22, height:22, border:'1px solid var(--c-border)', borderRadius:4, background:'var(--c-bg-card)', cursor:'pointer', fontSize:13, fontWeight:700 }}
+                            onClick={() => setAddonQty(q => Math.max(1, q - 1))}>–</button>
+                          <span style={{ minWidth:18, textAlign:'center', fontSize:13, fontWeight:700 }}>{addonQty}</span>
+                          <button style={{ width:22, height:22, border:'1px solid var(--c-border)', borderRadius:4, background:'var(--c-bg-card)', cursor:'pointer', fontSize:13, fontWeight:700 }}
+                            onClick={() => setAddonQty(q => q + 1)}>+</button>
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={() => handleAddAddon(selected.id)}
+                      disabled={addingAddon || !addonName.trim() || !(parseFloat(addonPrice) >= 0)}
+                      style={{ display:'flex', alignItems:'center', gap:6 }}>
+                      {addingAddon ? '…' : <><PlusCircle size={13}/> Add Add-on</>}
+                    </button>
+                  </>
                 )}
-                <button
-                  className="btn btn-primary btn-sm"
-                  onClick={() => handleAddServices(selected.id)}
-                  disabled={addingSvc || !svcCart.length}
-                  style={{ display:'flex', alignItems:'center', gap:6 }}>
-                  {addingSvc ? '…' : <><PlusCircle size={13}/> Add {svcCart.length || ''} Service{svcCart.length !== 1 ? 's' : ''}</>}
-                </button>
               </div>
             )}
 

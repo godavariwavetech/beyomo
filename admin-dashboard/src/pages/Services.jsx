@@ -6,12 +6,14 @@ import RevenueSplitFields from '../components/common/RevenueSplitFields';
 import { useAuth } from '../context/AuthContext';
 import { useServices, useCategories } from '../hooks/useServices';
 import { useCityFilter } from '../context/CityContext';
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import api from '../services/api';
 
 const DEFAULT_CATEGORIES = [
-  'Facial', 'Hair Spa', 'Makeup', 'Waxing',
-  'Pedicure', 'Haircut', 'Bridal Makeup', 'Threading',
-  'Massage', 'Manicure', 'Skin Care', 'Nail Art',
+  'Men Grooming', 'Haircut', 'Hair Spa', 'Hair Colour',
+  'Head Massage', 'Hair Treatments', 'Threading', 'Waxing',
+  'De-Tan', 'Facials', 'Peeloff Mask', 'Pedicure',
+  'Manicure', 'Mehndi', 'Nail Art', 'Bridal Services',
 ];
 
 const ImagePicker = ({ value, onChange, label = 'Image' }) => {
@@ -221,8 +223,8 @@ export default function Services() {
   const [catForm, setCatForm]         = useState({});
   const [seedingCats, setSeedingCats] = useState(false);
 
-  useEffect(() => {
-    const params = cityId ? { cityId } : {};
+  const loadServices = () => {
+    const params = cityId ? { cityId, limit: 1000 } : { limit: 1000 };
     fetchServices(params).then(res => {
       if (res.ok) setServices((res.data?.data ?? []).map(s => ({
         ...s,
@@ -243,7 +245,10 @@ export default function Services() {
       })));
     });
     fetchCats(params).then(res => { if (res.ok) setCatList(res.data?.data ?? []); });
-  }, [cityId]);
+  };
+
+  useEffect(() => { loadServices(); }, [cityId]);
+  useAutoRefresh(loadServices);
 
   const categories = ['all', ...cats.map(c => c.name ?? c)];
 
@@ -309,6 +314,7 @@ export default function Services() {
       image: cat.image ?? '',
       cityIds: cat.cityIds ?? [],
       isActive: newActive,
+      showOnHome: cat.showOnHome ?? false,
       adminPercent:   parseFloat(cat.adminPercent   ?? 20),
       partnerPercent: parseFloat(cat.partnerPercent ?? 80),
       gstPercent:     parseFloat(cat.gstPercent     ?? 18),
@@ -699,6 +705,19 @@ export default function Services() {
               />
             </div>
             <RevenueSplitFields form={catForm} setForm={setCatForm} />
+            <label style={{
+              display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginTop: 10,
+              background: catForm.showOnHome ? 'rgba(6,64,129,0.06)' : 'var(--c-border-light)',
+              border: `1px solid ${catForm.showOnHome ? 'var(--c-brand-primary)' : 'var(--c-border)'}`,
+              borderRadius: 8, padding: '10px 12px',
+            }}>
+              <input type="checkbox" checked={catForm.showOnHome ?? false}
+                onChange={e => setCatForm(f => ({ ...f, showOnHome: e.target.checked }))} />
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>Show on Home Screen</div>
+                <div style={{ fontSize: 11, color: 'var(--c-text-muted)' }}>Feature this category on the app header and website's home page</div>
+              </div>
+            </label>
             <div style={{ marginTop: 10, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button className="btn btn-primary btn-sm" onClick={saveCat} style={{ whiteSpace: 'nowrap' }}>{editingCat ? 'Update' : 'Add'}</button>
               {editingCat && <button className="btn btn-outline btn-sm" onClick={() => { setEditingCat(null); setCatForm({ cityIds: [], adminPercent: 20, partnerPercent: 80, gstPercent: 5 }); }}>Cancel</button>}
@@ -733,6 +752,11 @@ export default function Services() {
                       {isActive ? <CheckCircle size={9}/> : <XCircle size={9}/>}
                       {isActive ? 'Active' : 'Inactive'}
                     </span>
+                    {c.showOnHome && (
+                      <span title="Featured on home screen" style={{ fontSize: 10, fontWeight: 700, color: 'var(--c-brand-primary)', background: 'rgba(6,64,129,0.08)', padding: '1px 6px', borderRadius: 4 }}>
+                        HOME
+                      </span>
+                    )}
                   </div>
                   {c.description && <div style={{ fontSize: 12, color: 'var(--c-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.description}</div>}
                   {(c.cityIds ?? []).length > 0 && (
@@ -756,7 +780,7 @@ export default function Services() {
                 >
                   <Power size={14}/>
                 </button>
-                <button className="btn btn-ghost btn-icon" title="Edit" onClick={() => { setEditingCat(c); setCatForm({ name: c.name, description: c.description || '', image: c.image || '', cityIds: c.cityIds ?? [], adminPercent: parseFloat(c.adminPercent ?? 20), partnerPercent: parseFloat(c.partnerPercent ?? 80), gstPercent: parseFloat(c.gstPercent ?? 5) }); }}><Edit2 size={14}/></button>
+                <button className="btn btn-ghost btn-icon" title="Edit" onClick={() => { setEditingCat(c); setCatForm({ name: c.name, description: c.description || '', image: c.image || '', cityIds: c.cityIds ?? [], adminPercent: parseFloat(c.adminPercent ?? 20), partnerPercent: parseFloat(c.partnerPercent ?? 80), gstPercent: parseFloat(c.gstPercent ?? 5), showOnHome: c.showOnHome ?? false }); }}><Edit2 size={14}/></button>
                 <button className="btn btn-ghost btn-icon" title="Delete" style={{ color: 'var(--c-danger)' }} onClick={() => deleteCat(c._id ?? c.id)}><Trash2 size={14}/></button>
               </div>
             );

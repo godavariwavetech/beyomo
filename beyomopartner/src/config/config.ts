@@ -26,7 +26,6 @@ export const endpoints = {
   PARTNER_BOOKING_ARRIVED: (id: string) => `/api/v1/partners/bookings/${id}/arrived`,
   PARTNER_EXTRA_SERVICES: (id: string) => `/api/v1/partners/bookings/${id}/extra-services`,
   PARTNER_CLAIM_SERVICES: (id: string) => `/api/v1/partners/bookings/${id}/claim-services`,
-  PARTNER_PROPOSE_CHANGES: (id: string) => `/api/v1/partners/bookings/${id}/propose-changes`,
 
   // Reviews
   PARTNER_REVIEWS: (partnerId: string) => `/api/v1/reviews/partner/${partnerId}`,

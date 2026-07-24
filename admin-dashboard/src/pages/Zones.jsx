@@ -4,6 +4,7 @@ import Modal from '../components/common/Modal';
 import { useAuth } from '../context/AuthContext';
 import { useZones } from '../hooks/useZones';
 import api from '../services/api';
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
 
 const parseArr = (val) => {
   if (!val) return [];
@@ -91,10 +92,13 @@ export default function Zones() {
   const [adding, setAdding]   = useState(false);
   const [form, setForm]       = useState(EMPTY_FORM);
 
-  useEffect(() => {
+  const loadZones = () => {
     fetchList().then(res => { if (res.ok) setZones(res.data?.data ?? []); });
     api.get('/api/v1/admin/cities').then(r => setCities(r.data?.data ?? [])).catch(() => {});
-  }, []);
+  };
+
+  useEffect(() => { loadZones(); }, []);
+  useAutoRefresh(loadZones);
 
   const f = (k, v) => setForm(p => ({ ...p, [k]: v }));
 

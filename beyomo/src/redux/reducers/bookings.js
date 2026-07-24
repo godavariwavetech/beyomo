@@ -70,18 +70,6 @@ export const rescheduleBooking = createAsyncThunk(
   },
 );
 
-export const respondServiceUpdate = createAsyncThunk(
-  'bookings/respondServiceUpdate',
-  async ({bookingId, action}, {rejectWithValue}) => {
-    try {
-      const response = await api.patch(endpoints.RESPOND_SERVICE_UPDATE(String(bookingId)), {action});
-      return response.data.data;
-    } catch (error) {
-      return rejectWithValue(error.response?.data?.message ?? 'Failed to respond to service update.');
-    }
-  },
-);
-
 export const addUserServices = createAsyncThunk(
   'bookings/addUserServices',
   async ({bookingId, services}, {rejectWithValue}) => {
@@ -207,24 +195,6 @@ const bookingsSlice = createSlice({
         }
       })
       .addCase(rescheduleBooking.rejected, (state, action) => {
-        state.actionLoading = false;
-        state.error = action.payload;
-      })
-
-      .addCase(respondServiceUpdate.pending, state => {
-        state.actionLoading = true;
-      })
-      .addCase(respondServiceUpdate.fulfilled, (state, action) => {
-        state.actionLoading = false;
-        if (action.payload) {
-          const normalized = normalizeBooking(action.payload);
-          state.selected = normalized;
-          state.list = state.list.map(b =>
-            (b.id ?? b._id) === (action.payload.id ?? action.payload._id) ? normalized : b,
-          );
-        }
-      })
-      .addCase(respondServiceUpdate.rejected, (state, action) => {
         state.actionLoading = false;
         state.error = action.payload;
       })

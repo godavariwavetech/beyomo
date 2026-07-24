@@ -119,18 +119,6 @@ const JobDetailsScreen = ({navigation, route}: any) => {
         duration: job.service?.duration, price: job.service?.basePrice ?? totalAmount}]
     : [];
 
-  // A service-change request the partner sent stays pending until the customer
-  // responds — show it here too, not just inside the Checklist screen, so it's
-  // visible the moment you open this job (e.g. after reopening the app).
-  const pendingUpdate = job?.serviceUpdatePending
-    ? (() => {
-        const p = job?.pendingServicesUpdate;
-        if (!p) return null;
-        if (typeof p === 'string') { try { return JSON.parse(p); } catch { return null; } }
-        return p;
-      })()
-    : null;
-
   const handleCall = () => {
     if (!customerPhone) { showAlert('Not Available', 'Customer phone number is not available.'); return; }
     Linking.openURL(`tel:${customerPhone}`);
@@ -145,8 +133,8 @@ const JobDetailsScreen = ({navigation, route}: any) => {
     Linking.openURL(url);
   };
 
-  // Marking arrival only records arrivedAt + notifies the customer — the booking stays
-  // "confirmed" until the partner actually taps "Start Service" on the checklist screen.
+  // Marking arrival only records arrivedAt + notifies the customer — independent of
+  // reaching the checklist, which is now reachable as soon as the booking is confirmed.
   const handleArrived = () =>
     showAlert('Arrived at Location', "Confirm you have arrived at the customer's location.", [
       {text: 'Not Yet', style: 'cancel'},
@@ -156,7 +144,6 @@ const JobDetailsScreen = ({navigation, route}: any) => {
           setArriving(true);
           await dispatch(markPartnerArrived(job.id));
           setArriving(false);
-          navigation.navigate('JobChecklist', {job});
         },
       },
     ]);
@@ -264,38 +251,6 @@ const JobDetailsScreen = ({navigation, route}: any) => {
           </View>
         </View>
 
-        {/* ── Pending service-change request card ── */}
-        {pendingUpdate && (
-          <View style={[styles.card, styles.pendingCard]}>
-            <View style={styles.cardRow}>
-              <View style={[styles.iconBox, {backgroundColor: '#FEF9EC'}]}>
-                <Ionicons name="time-outline" size={sw(18)} color="#C87B1A" />
-              </View>
-              <Text style={[styles.sectionTitle, {color: '#92400E'}]}>Awaiting Customer Approval</Text>
-            </View>
-            <Text style={styles.pendingSub}>The following changes have been sent to the customer:</Text>
-            {(pendingUpdate.services ?? []).map((svc: any, idx: number) => (
-              <View key={idx} style={[styles.svcRow, idx > 0 && styles.svcRowBorder]}>
-                <Text style={styles.svcName} numberOfLines={1}>
-                  {svc.name}{svc.qty > 1 ? ` ×${svc.qty}` : ''}{svc.addedByPartner ? '  (Added)' : ''}
-                </Text>
-                <Text style={styles.svcPrice}>₹{Number((svc.price || 0) * (svc.qty || 1)).toLocaleString('en-IN')}</Text>
-              </View>
-            ))}
-            <View style={styles.totalRow}>
-              <Text style={styles.totalLabel}>Proposed Total</Text>
-              <Text style={[styles.totalValue, {color: '#C87B1A'}]}>₹{Number(pendingUpdate.totalAmount ?? 0).toLocaleString('en-IN')}</Text>
-            </View>
-            <TouchableOpacity
-              style={styles.pendingLinkBtn}
-              activeOpacity={0.8}
-              onPress={() => navigation.navigate('JobChecklist', {job})}>
-              <Text style={styles.pendingLinkText}>View in Checklist</Text>
-              <Ionicons name="arrow-forward" size={sw(13)} color="#92400E" />
-            </TouchableOpacity>
-          </View>
-        )}
-
         {/* ── Earnings card ── */}
         <LinearGradient colors={['#0E5843', '#022723']} style={styles.earningsCard}
           start={{x: 0, y: 0}} end={{x: 1, y: 0}}>
@@ -383,32 +338,42 @@ const JobDetailsScreen = ({navigation, route}: any) => {
               </View>
               <Ionicons name="chevron-forward" size={sw(18)} color="#CCCCCC" />
             </TouchableOpacity>
+
+            {rawStatus === 'confirmed' && (
+              <>
+                <View style={styles.actionDivider} />
+                <TouchableOpacity style={styles.actionRow} onPress={handleArrived}
+                  disabled={arriving || !!job?.arrivedAt} activeOpacity={0.85}>
+                  <View style={[styles.actionIcon, {backgroundColor: '#FFF3E4'}]}>
+                    {arriving
+                      ? <ActivityIndicator size="small" color="#C87B1A" />
+                      : <Ionicons name="location" size={sw(20)} color="#C87B1A" />}
+                  </View>
+                  <View style={{flex: 1}}>
+                    <Text style={styles.actionTitle}>{job?.arrivedAt ? 'Arrived at Location' : 'Mark as Arrived'}</Text>
+                    <Text style={styles.actionSub}>
+                      {job?.arrivedAt ? 'Customer has been notified' : 'Notify the customer you\'ve reached them'}
+                    </Text>
+                  </View>
+                  {job?.arrivedAt
+                    ? <Ionicons name="checkmark-circle" size={sw(18)} color="#16a34a" />
+                    : <Ionicons name="chevron-forward" size={sw(18)} color="#CCCCCC" />}
+                </TouchableOpacity>
+              </>
+            )}
           </View>
         )}
 
-        {/* ── Primary CTA ── */}
+        {/* ── Primary CTA — services can be edited as soon as the booking is confirmed,
+             no need to wait for arrival first ── */}
         {rawStatus === 'confirmed' && (
-          job?.arrivedAt ? (
-            <TouchableOpacity onPress={() => navigation.navigate('JobChecklist', {job})} activeOpacity={0.88}>
-              <LinearGradient colors={['#0E5843', '#022723']} style={styles.primaryBtn}
-                start={{x: 0, y: 0}} end={{x: 1, y: 0}}>
-                <Ionicons name="list" size={sw(20)} color="#FDD77A" />
-                <Text style={styles.primaryBtnText}>Continue to Checklist</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity onPress={handleArrived} disabled={arriving} activeOpacity={0.88}>
-              <LinearGradient colors={arriving ? ['#888','#888'] : ['#0E5843', '#022723']} style={styles.primaryBtn}
-                start={{x: 0, y: 0}} end={{x: 1, y: 0}}>
-                {arriving ? <ActivityIndicator color="#FFFFFF" /> : (
-                  <>
-                    <Ionicons name="location" size={sw(20)} color="#FDD77A" />
-                    <Text style={styles.primaryBtnText}>Arrived at Location</Text>
-                  </>
-                )}
-              </LinearGradient>
-            </TouchableOpacity>
-          )
+          <TouchableOpacity onPress={() => navigation.navigate('JobChecklist', {job})} activeOpacity={0.88}>
+            <LinearGradient colors={['#0E5843', '#022723']} style={styles.primaryBtn}
+              start={{x: 0, y: 0}} end={{x: 1, y: 0}}>
+              <Ionicons name="list" size={sw(20)} color="#FDD77A" />
+              <Text style={styles.primaryBtnText}>Continue to Checklist</Text>
+            </LinearGradient>
+          </TouchableOpacity>
         )}
 
       </ScrollView>
@@ -494,16 +459,6 @@ const styles = StyleSheet.create({
   },
   totalLabel: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#5C5C5C', fontWeight: '600'},
   totalValue: {fontFamily: fonts.title, fontSize: sw(16), fontWeight: '800', color: '#012823'},
-
-  /* Pending change request */
-  pendingCard: {borderWidth: 1, borderColor: '#FDE9BF', backgroundColor: '#FFFBEB'},
-  pendingSub: {fontFamily: fonts.textFont, fontSize: sw(12), color: '#92400E', marginBottom: sw(4)},
-  pendingLinkBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: sw(6),
-    marginTop: sw(10), paddingVertical: sw(8), borderRadius: sw(8),
-    borderWidth: 1, borderColor: '#FDE9BF',
-  },
-  pendingLinkText: {fontFamily: fonts.title, fontSize: sw(12), fontWeight: '700', color: '#92400E'},
 
   /* Earnings */
   earningsCard: {

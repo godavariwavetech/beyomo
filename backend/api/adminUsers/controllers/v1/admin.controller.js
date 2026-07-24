@@ -41,7 +41,35 @@ const createPartnerSchema = Joi.object({
   email: Joi.string().email().allow(null, ""),
   city: Joi.string().trim().allow(null, ""),
   experience: Joi.number().min(0).default(0),
+  gender: Joi.string().valid("female", "male").allow(null, ""),
+  professions: Joi.array().items(Joi.string().trim()).default([]),
+  categories: Joi.array().items(Joi.number().integer().positive()).default([]),
+  profilePicture: Joi.string().allow(null, ""),
+  aadharUrl: Joi.string().allow(null, ""),
+  agreementUrl: Joi.string().allow(null, ""),
+  bankAccountNo: Joi.string().trim().allow(null, ""),
+  bankIfsc: Joi.string().trim().allow(null, ""),
+  bankName: Joi.string().trim().allow(null, ""),
+  bankHolderName: Joi.string().trim().allow(null, ""),
 });
+
+const updatePartnerSchema = Joi.object({
+  name: Joi.string().trim(),
+  phone: Joi.string().trim(),
+  email: Joi.string().email().allow(null, ""),
+  city: Joi.string().trim().allow(null, ""),
+  experience: Joi.number().min(0),
+  gender: Joi.string().valid("female", "male").allow(null, ""),
+  professions: Joi.array().items(Joi.string().trim()),
+  categories: Joi.array().items(Joi.number().integer().positive()),
+  profilePicture: Joi.string().allow(null, ""),
+  aadharUrl: Joi.string().allow(null, ""),
+  agreementUrl: Joi.string().allow(null, ""),
+  bankAccountNo: Joi.string().trim().allow(null, ""),
+  bankIfsc: Joi.string().trim().allow(null, ""),
+  bankName: Joi.string().trim().allow(null, ""),
+  bankHolderName: Joi.string().trim().allow(null, ""),
+}).min(1);
 
 const createUserSchema = Joi.object({
   name: Joi.string().trim().required(),
@@ -95,6 +123,7 @@ const categorySchema = Joi.object({
   image: Joi.string().allow(null, ""),
   isActive: Joi.boolean().default(true),
   sortOrder: Joi.number().default(0),
+  showOnHome: Joi.boolean().default(false),
   adminPercent:   Joi.number().min(0).max(100).default(20),
   partnerPercent: Joi.number().min(0).max(100).default(80),
   gstPercent:     Joi.number().min(0).max(100).default(18),
@@ -243,6 +272,13 @@ const createPartner = catchAsync(async (req, res, next) => {
   res.status(201).json({ status: true, message: "Partner created", data: partner });
 });
 
+const updatePartner = catchAsync(async (req, res, next) => {
+  const { error, value } = updatePartnerSchema.validate(req.body);
+  if (error) return next(new AppError(error.details[0].message, 400));
+  const partner = await adminService.updatePartner(req.params.id, value);
+  res.status(200).json({ status: true, message: "Partner updated", data: partner });
+});
+
 const createUser = catchAsync(async (req, res, next) => {
   const { error, value } = createUserSchema.validate(req.body);
   if (error) return next(new AppError(error.details[0].message, 400));
@@ -376,10 +412,18 @@ const rescheduleBooking = catchAsync(async (req, res, next) => {
 
 const editBookingServicesSchema = Joi.object({
   services: Joi.array().items(
-    Joi.object({
-      id: Joi.number().integer().min(1).required(),
-      qty: Joi.number().integer().min(1).default(1),
-    })
+    Joi.alternatives().try(
+      Joi.object({
+        id: Joi.number().integer().min(1).required(),
+        qty: Joi.number().integer().min(1).default(1),
+      }),
+      Joi.object({
+        isAddOn: Joi.boolean().valid(true).required(),
+        name: Joi.string().trim().min(1).max(120).required(),
+        price: Joi.number().min(0).required(),
+        qty: Joi.number().integer().min(1).default(1),
+      })
+    )
   ).optional().default([]),
   removeIndices: Joi.array().items(Joi.number().integer().min(0)).optional().default([]),
   updateQty: Joi.array().items(
@@ -860,7 +904,7 @@ const deletePackageHandler = catchAsync(async (req, res) => {
 module.exports = {
   login, logout, devAdminHints,
   listUsers, getUserById, updateUserStatus, deleteUser, createUser,
-  listPartners, getPartnerById, updatePartnerStatus, createPartner,
+  listPartners, getPartnerById, updatePartnerStatus, createPartner, updatePartner,
   listCategories, createCategory, updateCategory, deleteCategory,
   listServices, createService, updateService, deleteService, patchService, patchServiceCity,
   listBookings, getBookingDetail, assignPartner, cancelBooking, rescheduleBooking, editBookingServices,

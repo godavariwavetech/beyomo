@@ -135,6 +135,7 @@ const PackageDetailScreen = ({navigation, route}: {navigation: any; route: any})
         duration: s.duration,
         image: s.image,
         qty: 1,
+        isPackageItem: true,
       }));
     } else {
       if (selectedIds.size < requiredCount) {
@@ -150,6 +151,7 @@ const PackageDetailScreen = ({navigation, route}: {navigation: any; route: any})
           duration: s.duration,
           image: s.image,
           qty: 1,
+          isPackageItem: true,
         }));
     }
 

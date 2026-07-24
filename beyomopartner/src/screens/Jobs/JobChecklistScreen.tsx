@@ -25,45 +25,30 @@ const parseServices = (s: any): any[] => {
   return [];
 };
 
+// Local working copy of each service line tags its origin: `_origIndex` points back
+// into the server's last-saved `services` array (null if it was added locally this
+// session and never saved yet), and `_removed` soft-marks a deletion so we can diff
+// against the baseline at save time instead of guessing from array positions.
+const tagWithOrigIndex = (svcs: any[]) => svcs.map((s, i) => ({...s, _origIndex: i, _removed: false}));
+
 const JobChecklistScreen = ({navigation, route}: any) => {
   const insets = useSafeAreaInsets();
   const [job, setJob] = useState<any>(route?.params?.job ?? null);
-  const [services, setServices] = useState<any[]>(() => parseServices(route?.params?.job?.services));
+  const [services, setServices] = useState<any[]>(() => tagWithOrigIndex(parseServices(route?.params?.job?.services)));
   const [totalAmount, setTotalAmount] = useState<number>(Number(route?.params?.job?.totalAmount ?? 0));
-  const [submitting, setSubmitting] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [starting, setStarting] = useState(false);
 
-  // Approval flow state — restore from the booking's own fields on mount so a pending
-  // request you sent before closing the app still shows as pending when you reopen it,
-  // instead of resetting to idle and only showing on the customer's side.
-  type ApprovalStatus = 'idle' | 'pending' | 'approved' | 'rejected';
-  const parsePendingUpdate = (j: any) => {
-    const p = j?.pendingServicesUpdate;
-    if (!p) return null;
-    if (typeof p === 'string') { try { return JSON.parse(p); } catch { return null; } }
-    return p;
-  };
-  const initialJob = route?.params?.job;
-  const initialPendingUpdate = parsePendingUpdate(initialJob);
-  const [approvalStatus, setApprovalStatus] = useState<ApprovalStatus>(
-    initialJob?.serviceUpdatePending ? 'pending' : 'idle',
-  );
-  const [pendingProposedServices, setPendingProposedServices] = useState<any[]>(
-    initialJob?.serviceUpdatePending ? (initialPendingUpdate?.services ?? []) : [],
-  );
-  const [pendingTotal, setPendingTotal] = useState<number>(
-    initialJob?.serviceUpdatePending ? Number(initialPendingUpdate?.totalAmount ?? 0) : 0,
-  );
-  const [checkingStatus, setCheckingStatus] = useState(false);
-
-  // Add service modal
+  // Add Service modal — either pick from the catalog, or key in a free-form add-on charge
   const [showModal, setShowModal] = useState(false);
+  const [addMode, setAddMode] = useState<'catalog' | 'addon'>('catalog');
   const [allServices, setAllServices] = useState<any[]>([]);
   const [loadingSvcs, setLoadingSvcs] = useState(false);
   const [search, setSearch] = useState('');
   const [selectedSvc, setSelectedSvc] = useState<any>(null);
   const [addQty, setAddQty] = useState(1);
-  const [adding, setAdding] = useState(false);
+  const [addonName, setAddonName] = useState('');
+  const [addonPrice, setAddonPrice] = useState('');
   const {alertConfig, showAlert, hideAlert} = useAppAlert();
 
   const fetchAllServices = useCallback(async () => {
@@ -76,15 +61,17 @@ const JobChecklistScreen = ({navigation, route}: any) => {
   }, []);
 
   const openModal = () => {
+    setAddMode('catalog');
     setSelectedSvc(null); setAddQty(1); setSearch('');
+    setAddonName(''); setAddonPrice('');
     if (allServices.length === 0) fetchAllServices();
     setShowModal(true);
   };
 
-  // Add a brand new service to the local list
-  const handleAddService = async () => {
+  // Add a catalog service to the local list — carries its category's commission
+  // split so it's visible immediately, before the change is even saved.
+  const handleAddService = () => {
     if (!selectedSvc) return;
-    setAdding(true);
     const newSvc = {
       serviceId: selectedSvc.id,
       name: selectedSvc.name,
@@ -93,14 +80,34 @@ const JobChecklistScreen = ({navigation, route}: any) => {
       duration: selectedSvc.duration || null,
       image: selectedSvc.image || null,
       addedByPartner: true,
-      serviceStatus: 'claimed',
+      adminPercent: selectedSvc.category?.adminPercent != null ? parseFloat(selectedSvc.category.adminPercent) : undefined,
+      partnerPercent: selectedSvc.category?.partnerPercent != null ? parseFloat(selectedSvc.category.partnerPercent) : undefined,
+      gstPercent: selectedSvc.category?.gstPercent != null ? parseFloat(selectedSvc.category.gstPercent) : undefined,
+      _origIndex: null,
+      _removed: false,
     };
     setServices(prev => [...prev, newSvc]);
     setShowModal(false);
-    setAdding(false);
   };
 
-  // Edit qty of existing service
+  // Add a free-form add-on charge (no catalog service backing it)
+  const handleAddAddon = () => {
+    const price = parseFloat(addonPrice);
+    if (!addonName.trim() || !(price >= 0)) return;
+    const newAddon = {
+      name: addonName.trim(),
+      price,
+      qty: addQty,
+      isAddOn: true,
+      addedByPartner: true,
+      _origIndex: null,
+      _removed: false,
+    };
+    setServices(prev => [...prev, newAddon]);
+    setShowModal(false);
+  };
+
+  // Edit qty of existing service (by position in the local array)
   const updateQty = (idx: number, delta: number) => {
     setServices(prev => prev.map((s, i) => {
       if (i !== idx) return s;
@@ -109,94 +116,88 @@ const JobChecklistScreen = ({navigation, route}: any) => {
     }));
   };
 
-  // Delete a service
+  // Delete a service — soft-remove if it's already saved on the booking (so we can
+  // tell the server which index to drop), or just drop it locally if it was only
+  // added this session and never saved.
   const deleteService = (idx: number) => {
     showAlert('Remove Service', `Remove "${services[idx]?.name}" from this booking?`, [
       {text: 'Cancel', style: 'cancel'},
       {text: 'Remove', style: 'destructive', onPress: () =>
-        setServices(prev => prev.filter((_, i) => i !== idx))},
+        setServices(prev => {
+          const target = prev[idx];
+          if (target._origIndex == null) return prev.filter((_, i) => i !== idx);
+          return prev.map((s, i) => i === idx ? {...s, _removed: true} : s);
+        })},
     ]);
   };
 
-  // Recalculate total from local services
+  // Recalculate total from local (visible, non-removed) services
   const recalcTotal = (svcs: any[]) => {
-    const base = svcs.reduce((s, i) => s + (parseFloat(i.price) || 0) * (i.qty || 1), 0);
+    const visible = svcs.filter(s => !s._removed);
+    const base = visible.reduce((s, i) => s + (parseFloat(i.price) || 0) * (i.qty || 1), 0);
     const coupon = parseFloat(job?.couponDiscountAmount || 0);
     const taxable = base - coupon;
     const tax = taxable * 0.05; // GST — backend recomputes the authoritative weighted rate on submit
     return parseFloat((taxable + tax).toFixed(2));
   };
 
-  // Submit proposed changes to backend → customer approves
-  const handleSubmitChanges = async () => {
+  const visibleServices = services.filter(s => !s._removed);
+  const displayTotal = recalcTotal(services);
+
+  // Diff against the last-saved baseline to build the API payload
+  const pendingAdds = services.filter(s => s._origIndex == null && !s._removed);
+  const pendingRemoveIndices = services.filter(s => s._origIndex != null && s._removed).map(s => s._origIndex);
+  const pendingQtyChanges = services.filter(s => {
+    if (s._origIndex == null || s._removed) return false;
+    const original = parseServices(job?.services)[s._origIndex];
+    return original && Number(original.qty || 1) !== Number(s.qty || 1);
+  }).map(s => ({index: s._origIndex, qty: s.qty}));
+  const hasChanges = pendingAdds.length > 0 || pendingRemoveIndices.length > 0 || pendingQtyChanges.length > 0;
+
+  // Save changes immediately — no customer approval, applies straight to the booking.
+  const handleSaveChanges = async () => {
     if (!job?.id) return;
-    setSubmitting(true);
+    setSaving(true);
     try {
-      const res = await api.patch(endpoints.PARTNER_PROPOSE_CHANGES(String(job.id)), {services});
+      const servicesPayload = pendingAdds.map(item =>
+        item.isAddOn
+          ? {isAddOn: true, name: item.name, price: item.price, qty: item.qty || 1}
+          : {id: item.serviceId, qty: item.qty || 1}
+      );
+      const res = await api.patch(endpoints.PARTNER_EXTRA_SERVICES(String(job.id)), {
+        services: servicesPayload,
+        removeIndices: pendingRemoveIndices,
+        updateQty: pendingQtyChanges,
+      });
       if (res.data?.status) {
-        const newTotal = recalcTotal(services);
-        setTotalAmount(newTotal);
-        setPendingProposedServices([...services]);
-        setPendingTotal(newTotal);
-        setApprovalStatus('pending');
+        const updated = res.data.data;
+        const freshServices = parseServices(updated.services);
+        setServices(tagWithOrigIndex(freshServices));
+        setTotalAmount(parseFloat(updated.totalAmount ?? 0));
+        setJob((prev: any) => ({...prev, services: updated.services, totalAmount: updated.totalAmount}));
       }
     } catch (e: any) {
-      showAlert('Error', e.response?.data?.message ?? 'Failed to send changes.');
+      showAlert('Error', e.response?.data?.message ?? 'Failed to save changes.');
     }
-    setSubmitting(false);
+    setSaving(false);
   };
 
   // The booking only actually moves to "in_progress" here — once the partner has
   // reviewed/confirmed the checklist and is ready to start, not at "Arrived at Location".
   const handleStartService = async () => {
     if (!job?.id) {
-      navigation.navigate('ActiveJob', {job: {...job, services, totalAmount: displayTotal}});
+      navigation.navigate('ActiveJob', {job: {...job, services: visibleServices, totalAmount}});
       return;
     }
     setStarting(true);
     try {
       await api.patch(endpoints.PARTNER_BOOKING_STATUS(String(job.id)), {status: 'in_progress'});
-      navigation.navigate('ActiveJob', {job: {...job, services, totalAmount: displayTotal, status: 'in_progress'}});
+      navigation.navigate('ActiveJob', {job: {...job, services: visibleServices, totalAmount, status: 'in_progress'}});
     } catch (e: any) {
       showAlert('Error', e.response?.data?.message ?? 'Failed to start service. Please try again.');
     }
     setStarting(false);
   };
-
-  // Polls the single-booking endpoint (not the full list) and reads the explicit
-  // lastServiceUpdateDecision field set by the backend — no more guessing approve vs
-  // reject from comparing totals. `silent` suppresses alerts for background auto-checks.
-  const checkApprovalStatus = async (silent = false) => {
-    if (!job?.id) return;
-    if (!silent) setCheckingStatus(true);
-    try {
-      const res = await api.get(endpoints.PARTNER_BOOKING_DETAIL(String(job.id)));
-      const updated = res.data?.data;
-      if (updated && updated.serviceUpdatePending === false && updated.lastServiceUpdateDecision === 'approved') {
-        const approvedSvcs = parseServices(updated.services);
-        const updatedTotal = parseFloat(updated.totalAmount ?? 0);
-        setApprovalStatus('approved');
-        setServices(approvedSvcs);
-        setTotalAmount(updatedTotal);
-        setJob((prev: any) => ({...prev, services: updated.services, totalAmount: updated.totalAmount}));
-      } else if (updated && updated.serviceUpdatePending === false && updated.lastServiceUpdateDecision === 'rejected') {
-        setApprovalStatus('rejected');
-      } else if (!silent) {
-        showAlert('Still Pending', 'The customer has not responded yet.');
-      }
-    } catch {
-      if (!silent) showAlert('Error', 'Could not check status. Please try again.');
-    }
-    if (!silent) setCheckingStatus(false);
-  };
-
-  // Auto-poll while waiting on the customer, so the partner doesn't have to keep
-  // tapping "Check Status" manually for the screen to update.
-  React.useEffect(() => {
-    if (approvalStatus !== 'pending') return;
-    const interval = setInterval(() => checkApprovalStatus(true), 6000);
-    return () => clearInterval(interval);
-  }, [approvalStatus, job?.id]);
 
   // Derived
   const orderId      = job?.bookingCode ?? `#${String(job?.id ?? '').slice(-8).toUpperCase()}`;
@@ -210,7 +211,6 @@ const JobChecklistScreen = ({navigation, route}: any) => {
     : '—';
   const earnings     = Number(job?.partnerEarning ?? totalAmount);
   const notes        = job?.notes ?? '';
-  const displayTotal = recalcTotal(services);
   const jobTaxAmount = Number(job?.taxAmount ?? 0);
   // What's left after the partner's share and GST (a pass-through, not part of the
   // admin/partner split) is the admin's commission — only meaningful against the
@@ -220,9 +220,10 @@ const JobChecklistScreen = ({navigation, route}: any) => {
   const filteredSvcs = allServices.filter(s =>
     !search || s.name?.toLowerCase().includes(search.toLowerCase()));
 
-  // Check if services differ from original
-  const originalServices = parseServices(route?.params?.job?.services);
-  const hasChanges = JSON.stringify(services) !== JSON.stringify(originalServices);
+  const commissionLine = (svc: any) =>
+    svc.adminPercent != null && svc.partnerPercent != null && svc.gstPercent != null
+      ? `Admin ${svc.adminPercent}% · Partner ${svc.partnerPercent}% · GST ${svc.gstPercent}%`
+      : null;
 
   return (
     <View style={[styles.root, {paddingBottom: insets.bottom}]}>
@@ -235,7 +236,7 @@ const JobChecklistScreen = ({navigation, route}: any) => {
         </TouchableOpacity>
         <View style={{flex: 1, marginLeft: sw(10)}}>
           <Text style={styles.headerTitle}>Review Order</Text>
-          <Text style={styles.headerSub}>{orderId} · Arrived at customer</Text>
+          <Text style={styles.headerSub}>{orderId}</Text>
         </View>
         <TouchableOpacity style={styles.addServiceBtn} onPress={openModal} activeOpacity={0.85}>
           <Ionicons name="add" size={sw(16)} color="#FDD77A" />
@@ -279,11 +280,11 @@ const JobChecklistScreen = ({navigation, route}: any) => {
           </View>
         </View>
 
-        {/* Services — editable */}
+        {/* Services — editable, applies immediately on Save (no customer approval) */}
         <View style={styles.card}>
           <View style={styles.cardHeaderRow}>
             <Text style={styles.sectionTitle}>
-              Services ({services.length})
+              Services ({visibleServices.length})
             </Text>
             <TouchableOpacity style={styles.addInlineBtn} onPress={openModal} activeOpacity={0.85}>
               <Ionicons name="add-circle-outline" size={sw(14)} color="#105641" />
@@ -291,19 +292,30 @@ const JobChecklistScreen = ({navigation, route}: any) => {
             </TouchableOpacity>
           </View>
 
-          {services.length === 0 && (
+          {visibleServices.length === 0 && (
             <Text style={styles.emptyServices}>No services. Tap Add to include services.</Text>
           )}
 
           {services.map((svc: any, idx: number) => {
+            if (svc._removed) return null;
             const imgUri = resolveImageUrl(svc.image) ?? FALLBACK_IMG;
             const isFree = svc.addedByOffer || svc.price === 0;
+            const commission = commissionLine(svc);
             return (
               <View key={idx} style={[styles.svcRow, idx > 0 && styles.svcBorder]}>
-                <Image source={{uri: imgUri}} style={styles.svcImg} resizeMode="cover" />
+                {svc.isAddOn ? (
+                  <View style={[styles.svcImg, styles.addonIconBox]}>
+                    <Ionicons name="pricetag-outline" size={sw(20)} color="#C87B1A" />
+                  </View>
+                ) : (
+                  <Image source={{uri: imgUri}} style={styles.svcImg} resizeMode="cover" />
+                )}
                 <View style={{flex: 1}}>
                   <View style={styles.svcNameRow}>
                     <Text style={styles.svcName} numberOfLines={1}>{svc.name}</Text>
+                    {svc.isAddOn && (
+                      <View style={styles.addonBadge}><Text style={styles.addonBadgeText}>Add-on</Text></View>
+                    )}
                     {svc.addedByPartner && (
                       <View style={styles.addedBadge}><Text style={styles.addedBadgeText}>Added</Text></View>
                     )}
@@ -311,6 +323,7 @@ const JobChecklistScreen = ({navigation, route}: any) => {
                       <View style={styles.freeBadge}><Text style={styles.freeBadgeText}>FREE</Text></View>
                     )}
                   </View>
+                  {commission && <Text style={styles.commissionText}>{commission}</Text>}
                   {/* Qty stepper */}
                   {!isFree && (
                     <View style={styles.qtyStepper}>
@@ -337,17 +350,14 @@ const JobChecklistScreen = ({navigation, route}: any) => {
           })}
 
           <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>New Total</Text>
+            <Text style={styles.totalLabel}>{hasChanges ? 'New Total' : 'Total'}</Text>
             <Text style={[styles.totalValue, hasChanges && {color: '#C87B1A'}]}>
               ₹{displayTotal.toLocaleString('en-IN')}
               {hasChanges && ' *'}
             </Text>
           </View>
-          {hasChanges && approvalStatus === 'idle' && (
-            <Text style={styles.changesNote}>* Unsent changes. Tap "Send for Approval" below.</Text>
-          )}
-          {approvalStatus === 'pending' && (
-            <Text style={[styles.changesNote, {color: '#C87B1A'}]}>Changes sent — awaiting customer approval.</Text>
+          {hasChanges && (
+            <Text style={styles.changesNote}>* Unsaved changes. Tap "Save Changes" below.</Text>
           )}
         </View>
 
@@ -381,72 +391,6 @@ const JobChecklistScreen = ({navigation, route}: any) => {
           )}
         </LinearGradient>
 
-        {/* Approval status card */}
-        {approvalStatus === 'pending' && (
-          <View style={styles.approvalCard}>
-            <View style={styles.approvalHeader}>
-              <Ionicons name="time-outline" size={sw(18)} color="#C87B1A" />
-              <Text style={styles.approvalTitle}>Awaiting Customer Approval</Text>
-            </View>
-            <Text style={styles.approvalSub}>The following changes have been sent to the customer:</Text>
-            {pendingProposedServices.map((svc: any, idx: number) => (
-              <View key={idx} style={styles.approvalSvcRow}>
-                <Text style={styles.approvalSvcName} numberOfLines={1}>
-                  {svc.name}{svc.qty > 1 ? ` ×${svc.qty}` : ''}
-                  {svc.addedByPartner ? '  (Added)' : ''}
-                </Text>
-                <Text style={styles.approvalSvcPrice}>₹{Number((svc.price || 0) * (svc.qty || 1)).toLocaleString('en-IN')}</Text>
-              </View>
-            ))}
-            <View style={styles.approvalTotalRow}>
-              <Text style={styles.approvalTotalLabel}>Proposed Total</Text>
-              <Text style={styles.approvalTotalVal}>₹{pendingTotal.toLocaleString('en-IN')}</Text>
-            </View>
-            <TouchableOpacity
-              style={[styles.refreshBtn, checkingStatus && {opacity: 0.6}]}
-              onPress={() => checkApprovalStatus()}
-              disabled={checkingStatus}
-              activeOpacity={0.8}>
-              {checkingStatus
-                ? <ActivityIndicator size="small" color="#C87B1A" />
-                : <><Ionicons name="refresh-outline" size={sw(14)} color="#C87B1A" /><Text style={styles.refreshBtnText}>Check Status</Text></>
-              }
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {approvalStatus === 'approved' && (
-          <View style={[styles.approvalCard, styles.approvalCardGreen]}>
-            <View style={styles.approvalHeader}>
-              <Ionicons name="checkmark-circle" size={sw(18)} color="#16a34a" />
-              <Text style={[styles.approvalTitle, {color: '#16a34a'}]}>Customer Approved!</Text>
-            </View>
-            <Text style={[styles.approvalSub, {color: '#166534'}]}>The customer approved your service changes.</Text>
-            {services.map((svc: any, idx: number) => (
-              <View key={idx} style={styles.approvalSvcRow}>
-                <Text style={[styles.approvalSvcName, {color: '#14532d'}]} numberOfLines={1}>
-                  {svc.name}{svc.qty > 1 ? ` ×${svc.qty}` : ''}
-                </Text>
-                <Text style={[styles.approvalSvcPrice, {color: '#16a34a'}]}>₹{Number((svc.price || 0) * (svc.qty || 1)).toLocaleString('en-IN')}</Text>
-              </View>
-            ))}
-            <View style={styles.approvalTotalRow}>
-              <Text style={styles.approvalTotalLabel}>Approved Total</Text>
-              <Text style={[styles.approvalTotalVal, {color: '#16a34a'}]}>₹{totalAmount.toLocaleString('en-IN')}</Text>
-            </View>
-          </View>
-        )}
-
-        {approvalStatus === 'rejected' && (
-          <View style={[styles.approvalCard, styles.approvalCardRed]}>
-            <View style={styles.approvalHeader}>
-              <Ionicons name="close-circle" size={sw(18)} color="#dc2626" />
-              <Text style={[styles.approvalTitle, {color: '#dc2626'}]}>Changes Rejected</Text>
-            </View>
-            <Text style={[styles.approvalSub, {color: '#7f1d1d'}]}>The customer rejected your proposed changes. You can edit and resend.</Text>
-          </View>
-        )}
-
         {/* Notes */}
         {!!notes && (
           <View style={styles.card}>
@@ -466,22 +410,12 @@ const JobChecklistScreen = ({navigation, route}: any) => {
 
       {/* Bottom bar */}
       <View style={[styles.footer, {paddingBottom: insets.bottom + sw(8)}]}>
-        {approvalStatus === 'pending' ? (
-          <TouchableOpacity style={[styles.btn, styles.btnWarning, {opacity: 0.65}]}
-            onPress={() => checkApprovalStatus()} disabled={checkingStatus} activeOpacity={0.88}>
-            {checkingStatus ? <ActivityIndicator color="#FFFFFF" /> : (
-              <><Ionicons name="time-outline" size={sw(18)} color="#FFFFFF" />
-              <Text style={styles.btnText}>Waiting for Customer · Tap to Refresh</Text></>
-            )}
-          </TouchableOpacity>
-        ) : hasChanges && approvalStatus !== 'approved' ? (
-          <TouchableOpacity style={[styles.btn, styles.btnWarning, submitting && {opacity: 0.6}]}
-            onPress={handleSubmitChanges} disabled={submitting} activeOpacity={0.88}>
-            {submitting ? <ActivityIndicator color="#FFFFFF" /> : (
-              <><Ionicons name="send-outline" size={sw(18)} color="#FFFFFF" />
-              <Text style={styles.btnText}>
-                {approvalStatus === 'rejected' ? 'Resend for Approval' : 'Send for Approval'}
-              </Text></>
+        {hasChanges ? (
+          <TouchableOpacity style={[styles.btn, styles.btnWarning, saving && {opacity: 0.6}]}
+            onPress={handleSaveChanges} disabled={saving} activeOpacity={0.88}>
+            {saving ? <ActivityIndicator color="#FFFFFF" /> : (
+              <><Ionicons name="checkmark-circle-outline" size={sw(18)} color="#FFFFFF" />
+              <Text style={styles.btnText}>Save Changes</Text></>
             )}
           </TouchableOpacity>
         ) : (
@@ -508,63 +442,125 @@ const JobChecklistScreen = ({navigation, route}: any) => {
         <View style={[styles.sheet, {paddingBottom: insets.bottom + sw(16)}]}>
           <View style={styles.handle} />
           <Text style={styles.sheetTitle}>Add a Service</Text>
-          <View style={styles.searchWrap}>
-            <Ionicons name="search-outline" size={sw(16)} color="#9CA3AF" />
-            <TextInput style={styles.searchInput} placeholder="Search services…"
-              placeholderTextColor="#9CA3AF" value={search} onChangeText={setSearch} />
+
+          <View style={styles.modeToggle}>
+            <TouchableOpacity
+              style={[styles.modeToggleBtn, addMode === 'catalog' && styles.modeToggleBtnActive]}
+              onPress={() => setAddMode('catalog')} activeOpacity={0.85}>
+              <Text style={[styles.modeToggleText, addMode === 'catalog' && styles.modeToggleTextActive]}>From Catalog</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.modeToggleBtn, addMode === 'addon' && styles.modeToggleBtnActive]}
+              onPress={() => setAddMode('addon')} activeOpacity={0.85}>
+              <Text style={[styles.modeToggleText, addMode === 'addon' && styles.modeToggleTextActive]}>Custom Add-on</Text>
+            </TouchableOpacity>
           </View>
-          {loadingSvcs ? (
-            <ActivityIndicator color="#105641" style={{marginVertical: sw(24)}} />
-          ) : (
-            <FlatList
-              data={filteredSvcs}
-              keyExtractor={item => String(item.id)}
-              style={{maxHeight: sw(260)}}
-              showsVerticalScrollIndicator={false}
-              renderItem={({item}) => {
-                const imgUri = resolveImageUrl(item.image) ?? FALLBACK_IMG;
-                const isSelected = selectedSvc?.id === item.id;
-                return (
-                  <TouchableOpacity style={[styles.svcPickRow, isSelected && styles.svcPickRowSel]}
-                    onPress={() => setSelectedSvc(item)} activeOpacity={0.8}>
-                    <Image source={{uri: imgUri}} style={styles.pickImg} resizeMode="cover" />
-                    <View style={{flex: 1}}>
-                      <Text style={styles.pickName}>{item.name}</Text>
-                      <Text style={styles.pickMeta}>
-                        {item.duration ? `${item.duration} min  ·  ` : ''}₹{Number(item.basePrice).toLocaleString('en-IN')}
-                      </Text>
-                    </View>
-                    {isSelected && <Ionicons name="checkmark-circle" size={sw(22)} color="#105641" />}
-                  </TouchableOpacity>
-                );
-              }}
-              ListEmptyComponent={<Text style={styles.emptyPick}>No services found</Text>}
-            />
-          )}
-          {selectedSvc && (
-            <View style={styles.qtyRow}>
-              <Text style={styles.qtyLabel}>Quantity</Text>
-              <View style={styles.qtyStepper}>
-                <TouchableOpacity onPress={() => setAddQty(q => Math.max(1, q - 1))} style={styles.qtyBtn}>
-                  <Ionicons name="remove" size={sw(16)} color="#105641" />
-                </TouchableOpacity>
-                <Text style={styles.qtyVal}>{addQty}</Text>
-                <TouchableOpacity onPress={() => setAddQty(q => q + 1)} style={styles.qtyBtn}>
-                  <Ionicons name="add" size={sw(16)} color="#105641" />
-                </TouchableOpacity>
+
+          {addMode === 'catalog' ? (
+            <>
+              <View style={styles.searchWrap}>
+                <Ionicons name="search-outline" size={sw(16)} color="#9CA3AF" />
+                <TextInput style={styles.searchInput} placeholder="Search services…"
+                  placeholderTextColor="#9CA3AF" value={search} onChangeText={setSearch} />
               </View>
-              <Text style={styles.qtyTotal}>₹{(Number(selectedSvc.basePrice) * addQty).toLocaleString('en-IN')}</Text>
-            </View>
+              {loadingSvcs ? (
+                <ActivityIndicator color="#105641" style={{marginVertical: sw(24)}} />
+              ) : (
+                <FlatList
+                  data={filteredSvcs}
+                  keyExtractor={item => String(item.id)}
+                  style={{maxHeight: sw(260)}}
+                  showsVerticalScrollIndicator={false}
+                  renderItem={({item}) => {
+                    const imgUri = resolveImageUrl(item.image) ?? FALLBACK_IMG;
+                    const isSelected = selectedSvc?.id === item.id;
+                    const commission = commissionLine(item.category ?? {});
+                    return (
+                      <TouchableOpacity style={[styles.svcPickRow, isSelected && styles.svcPickRowSel]}
+                        onPress={() => setSelectedSvc(item)} activeOpacity={0.8}>
+                        <Image source={{uri: imgUri}} style={styles.pickImg} resizeMode="cover" />
+                        <View style={{flex: 1}}>
+                          <Text style={styles.pickName}>{item.name}</Text>
+                          <Text style={styles.pickMeta}>
+                            {item.duration ? `${item.duration} min  ·  ` : ''}₹{Number(item.basePrice).toLocaleString('en-IN')}
+                          </Text>
+                          {commission && <Text style={styles.pickCommission}>{commission}</Text>}
+                        </View>
+                        {isSelected && <Ionicons name="checkmark-circle" size={sw(22)} color="#105641" />}
+                      </TouchableOpacity>
+                    );
+                  }}
+                  ListEmptyComponent={<Text style={styles.emptyPick}>No services found</Text>}
+                />
+              )}
+              {selectedSvc && (
+                <View style={styles.qtyRow}>
+                  <Text style={styles.qtyLabel}>Quantity</Text>
+                  <View style={styles.qtyStepper}>
+                    <TouchableOpacity onPress={() => setAddQty(q => Math.max(1, q - 1))} style={styles.qtyBtn}>
+                      <Ionicons name="remove" size={sw(16)} color="#105641" />
+                    </TouchableOpacity>
+                    <Text style={styles.qtyVal}>{addQty}</Text>
+                    <TouchableOpacity onPress={() => setAddQty(q => q + 1)} style={styles.qtyBtn}>
+                      <Ionicons name="add" size={sw(16)} color="#105641" />
+                    </TouchableOpacity>
+                  </View>
+                  <Text style={styles.qtyTotal}>₹{(Number(selectedSvc.basePrice) * addQty).toLocaleString('en-IN')}</Text>
+                </View>
+              )}
+              <TouchableOpacity style={[styles.confirmBtn, !selectedSvc && {opacity: 0.5}]}
+                disabled={!selectedSvc} onPress={handleAddService} activeOpacity={0.88}>
+                <Ionicons name="add-circle-outline" size={sw(18)} color="#FFFFFF" />
+                <Text style={styles.confirmBtnText}>
+                  {selectedSvc ? `Add "${selectedSvc.name}"` : 'Select a service'}
+                </Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              <View style={styles.addonFieldWrap}>
+                <Text style={styles.addonFieldLabel}>Label</Text>
+                <TextInput
+                  style={styles.addonInput}
+                  placeholder="e.g. Extra stain removal"
+                  placeholderTextColor="#9CA3AF"
+                  value={addonName}
+                  onChangeText={setAddonName}
+                />
+              </View>
+              <View style={styles.addonFieldWrap}>
+                <Text style={styles.addonFieldLabel}>Amount (₹)</Text>
+                <TextInput
+                  style={styles.addonInput}
+                  placeholder="0"
+                  placeholderTextColor="#9CA3AF"
+                  keyboardType="numeric"
+                  value={addonPrice}
+                  onChangeText={setAddonPrice}
+                />
+              </View>
+              <View style={styles.qtyRow}>
+                <Text style={styles.qtyLabel}>Quantity</Text>
+                <View style={styles.qtyStepper}>
+                  <TouchableOpacity onPress={() => setAddQty(q => Math.max(1, q - 1))} style={styles.qtyBtn}>
+                    <Ionicons name="remove" size={sw(16)} color="#105641" />
+                  </TouchableOpacity>
+                  <Text style={styles.qtyVal}>{addQty}</Text>
+                  <TouchableOpacity onPress={() => setAddQty(q => q + 1)} style={styles.qtyBtn}>
+                    <Ionicons name="add" size={sw(16)} color="#105641" />
+                  </TouchableOpacity>
+                </View>
+                <Text style={styles.qtyTotal}>₹{((parseFloat(addonPrice) || 0) * addQty).toLocaleString('en-IN')}</Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.confirmBtn, (!addonName.trim() || !(parseFloat(addonPrice) >= 0)) && {opacity: 0.5}]}
+                disabled={!addonName.trim() || !(parseFloat(addonPrice) >= 0)}
+                onPress={handleAddAddon} activeOpacity={0.88}>
+                <Ionicons name="add-circle-outline" size={sw(18)} color="#FFFFFF" />
+                <Text style={styles.confirmBtnText}>Add Add-on</Text>
+              </TouchableOpacity>
+            </>
           )}
-          <TouchableOpacity style={[styles.confirmBtn, (!selectedSvc || adding) && {opacity: 0.5}]}
-            disabled={!selectedSvc || adding} onPress={handleAddService} activeOpacity={0.88}>
-            {adding ? <ActivityIndicator color="#FFFFFF" /> : (
-              <><Ionicons name="add-circle-outline" size={sw(18)} color="#FFFFFF" />
-              <Text style={styles.confirmBtnText}>
-                {selectedSvc ? `Add "${selectedSvc.name}"` : 'Select a service'}
-              </Text></>
-            )}
-          </TouchableOpacity>
         </View>
       </Modal>
 
@@ -601,12 +597,16 @@ const styles = StyleSheet.create({
   svcRow: {flexDirection: 'row', alignItems: 'center', gap: sw(12), paddingVertical: sw(8)},
   svcBorder: {borderTopWidth: 1, borderTopColor: '#F5F5F5'},
   svcImg: {width: sw(52), height: sw(52), borderRadius: sw(10), backgroundColor: '#E5E5E5', flexShrink: 0},
+  addonIconBox: {alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFF3E4'},
   svcNameRow: {flexDirection: 'row', alignItems: 'center', gap: sw(6), flexWrap: 'wrap'},
   svcName: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#171816', fontWeight: '600'},
   addedBadge: {backgroundColor: '#FEF3C7', borderRadius: sw(4), paddingHorizontal: sw(6), paddingVertical: sw(2)},
   addedBadgeText: {fontFamily: fonts.textFont, fontSize: sw(9), color: '#92400E', fontWeight: '700'},
+  addonBadge: {backgroundColor: '#FFF3E4', borderRadius: sw(4), paddingHorizontal: sw(6), paddingVertical: sw(2)},
+  addonBadgeText: {fontFamily: fonts.textFont, fontSize: sw(9), color: '#C87B1A', fontWeight: '700'},
   freeBadge: {backgroundColor: '#EAF5F0', borderRadius: sw(4), paddingHorizontal: sw(6), paddingVertical: sw(2)},
   freeBadgeText: {fontFamily: fonts.textFont, fontSize: sw(9), color: '#105641', fontWeight: '700'},
+  commissionText: {fontFamily: fonts.textFont, fontSize: sw(10), color: '#9CA3AF', marginTop: sw(2)},
   qtyStepper: {flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#E5E5E5', borderRadius: sw(20), overflow: 'hidden', alignSelf: 'flex-start', marginTop: sw(6)},
   qtyBtn: {width: sw(28), height: sw(28), alignItems: 'center', justifyContent: 'center'},
   qtyVal: {fontFamily: fonts.title, fontSize: sw(13), fontWeight: '700', color: '#105641', minWidth: sw(24), textAlign: 'center'},
@@ -627,24 +627,6 @@ const styles = StyleSheet.create({
   earningsBreakdownLabel: {fontFamily: fonts.textFont, fontSize: sw(11), color: 'rgba(255,255,255,0.65)'},
   earningsBreakdownVal: {fontFamily: fonts.textFont, fontSize: sw(11), color: 'rgba(255,255,255,0.9)', fontWeight: '600'},
 
-  approvalCard: {
-    borderRadius: sw(14), padding: sw(14), gap: sw(8),
-    backgroundColor: '#FFFBF0', borderWidth: 1.5, borderColor: '#F5C842',
-  },
-  approvalCardGreen: {backgroundColor: '#F0FDF4', borderColor: '#86efac'},
-  approvalCardRed:   {backgroundColor: '#FFF1F1', borderColor: '#fca5a5'},
-  approvalHeader: {flexDirection: 'row', alignItems: 'center', gap: sw(8)},
-  approvalTitle: {fontFamily: fonts.title, fontSize: sw(14), fontWeight: '700', color: '#C87B1A'},
-  approvalSub: {fontFamily: fonts.textFont, fontSize: sw(12), color: '#78350f', lineHeight: sw(17)},
-  approvalSvcRow: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: sw(4), borderTopWidth: 1, borderTopColor: 'rgba(0,0,0,0.06)'},
-  approvalSvcName: {fontFamily: fonts.textFont, fontSize: sw(12), color: '#292524', flex: 1, marginRight: sw(8)},
-  approvalSvcPrice: {fontFamily: fonts.title, fontSize: sw(12), fontWeight: '700', color: '#C87B1A'},
-  approvalTotalRow: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: sw(6), marginTop: sw(2), borderTopWidth: 1.5, borderTopColor: 'rgba(0,0,0,0.1)'},
-  approvalTotalLabel: {fontFamily: fonts.title, fontSize: sw(12), fontWeight: '700', color: '#292524'},
-  approvalTotalVal: {fontFamily: fonts.title, fontSize: sw(14), fontWeight: '800', color: '#C87B1A'},
-  refreshBtn: {flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: sw(6), borderWidth: 1, borderColor: '#C87B1A', borderRadius: sw(8), paddingVertical: sw(7), marginTop: sw(4)},
-  refreshBtnText: {fontFamily: fonts.title, fontSize: sw(12), fontWeight: '700', color: '#C87B1A'},
-
   footer: {backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#EEEDED', paddingHorizontal: sw(16), paddingTop: sw(12)},
   btn: {borderRadius: sw(14), overflow: 'hidden'},
   btnGradient: {height: sw(56), flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: sw(10)},
@@ -655,6 +637,11 @@ const styles = StyleSheet.create({
   sheet: {backgroundColor: '#FFFFFF', borderTopLeftRadius: sw(20), borderTopRightRadius: sw(20), paddingHorizontal: sw(16), paddingTop: sw(12), maxHeight: '85%'},
   handle: {width: sw(40), height: sw(4), borderRadius: sw(2), backgroundColor: '#D0D0D0', alignSelf: 'center', marginBottom: sw(14)},
   sheetTitle: {fontFamily: fonts.title, fontSize: sw(17), fontWeight: '700', color: '#171816', marginBottom: sw(14)},
+  modeToggle: {flexDirection: 'row', backgroundColor: '#F5F5F5', borderRadius: sw(12), padding: sw(4), marginBottom: sw(14)},
+  modeToggleBtn: {flex: 1, alignItems: 'center', paddingVertical: sw(9), borderRadius: sw(9)},
+  modeToggleBtnActive: {backgroundColor: '#FFFFFF', elevation: 1, shadowColor: '#000', shadowOffset: {width: 0, height: 1}, shadowOpacity: 0.08, shadowRadius: 3},
+  modeToggleText: {fontFamily: fonts.textFont, fontSize: sw(12), fontWeight: '600', color: '#9CA3AF'},
+  modeToggleTextActive: {color: '#105641'},
   searchWrap: {flexDirection: 'row', alignItems: 'center', gap: sw(8), backgroundColor: '#F5F5F5', borderRadius: sw(10), paddingHorizontal: sw(12), marginBottom: sw(10), height: sw(42)},
   searchInput: {flex: 1, fontFamily: fonts.textFont, fontSize: sw(13), color: '#171816'},
   svcPickRow: {flexDirection: 'row', alignItems: 'center', gap: sw(10), paddingVertical: sw(10), borderBottomWidth: 1, borderBottomColor: '#F5F5F5'},
@@ -662,12 +649,16 @@ const styles = StyleSheet.create({
   pickImg: {width: sw(44), height: sw(44), borderRadius: sw(8), backgroundColor: '#E5E5E5'},
   pickName: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#171816', fontWeight: '600'},
   pickMeta: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#9CA3AF', marginTop: sw(2)},
+  pickCommission: {fontFamily: fonts.textFont, fontSize: sw(10), color: '#9CA3AF', marginTop: sw(2)},
   emptyPick: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#9CA3AF', textAlign: 'center', padding: sw(24)},
   qtyRow: {flexDirection: 'row', alignItems: 'center', gap: sw(12), backgroundColor: '#F9F9F9', borderRadius: sw(10), padding: sw(12), marginTop: sw(10)},
   qtyLabel: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#5C5C5C', flex: 1},
   qtyTotal: {fontFamily: fonts.title, fontSize: sw(15), fontWeight: '700', color: '#012823'},
   confirmBtn: {flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: sw(8), backgroundColor: '#105641', borderRadius: sw(12), height: sw(50), marginTop: sw(14)},
   confirmBtnText: {fontFamily: fonts.title, fontSize: sw(14), fontWeight: '700', color: '#FFFFFF'},
+  addonFieldWrap: {marginBottom: sw(12)},
+  addonFieldLabel: {fontFamily: fonts.textFont, fontSize: sw(12), color: '#5C5C5C', marginBottom: sw(6), fontWeight: '600'},
+  addonInput: {backgroundColor: '#F5F5F5', borderRadius: sw(10), paddingHorizontal: sw(12), height: sw(44), fontFamily: fonts.textFont, fontSize: sw(14), color: '#171816'},
 });
 
 export default JobChecklistScreen;

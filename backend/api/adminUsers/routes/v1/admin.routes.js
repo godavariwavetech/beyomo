@@ -22,9 +22,9 @@ const upload = multer({
   }),
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    /^image\/(jpeg|jpg|png|webp)$/.test(file.mimetype)
+    (/^image\/(jpeg|jpg|png|webp)$/.test(file.mimetype) || file.mimetype === "application/pdf")
       ? cb(null, true)
-      : cb(new Error("Only JPEG, PNG, WebP images allowed"));
+      : cb(new Error("Only JPEG, PNG, WebP images or PDF files allowed"));
   },
 });
 
@@ -47,7 +47,7 @@ const {
   listZones, createZone, updateZone, deleteZone,
   listCities, createCity, updateCity, deleteCity,
   listUsers, getUserById, updateUserStatus, deleteUser, createUser,
-  listPartners, getPartnerById, updatePartnerStatus, createPartner,
+  listPartners, getPartnerById, updatePartnerStatus, createPartner, updatePartner,
   listCategories, createCategory, updateCategory, deleteCategory,
   listServices, createService, updateService, deleteService, patchService, patchServiceCity,
   listBookings, getBookingDetail, assignPartner, cancelBooking, rescheduleBooking, editBookingServices,
@@ -96,6 +96,7 @@ router.get("/partners", adminAuthenticate(), listPartners);
 router.post("/partners", adminAuthenticate(["super_admin", "admin", "manager"]), createPartner);
 router.get("/partners/:id", adminAuthenticate(), getPartnerById);
 router.patch("/partners/:id/status", adminAuthenticate(["super_admin", "admin"]), updatePartnerStatus);
+router.patch("/partners/:id", adminAuthenticate(["super_admin", "admin", "manager"]), updatePartner);
 
 // Service Categories
 router.get("/services/categories", adminAuthenticate(), listCategories);

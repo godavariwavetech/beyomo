@@ -3,6 +3,7 @@ import { Search, Wallet, ArrowDownCircle, ArrowUpCircle, XCircle } from 'lucide-
 import { useSettlements } from '../hooks/useSettlements';
 import { useAuth } from '../context/AuthContext';
 import { useCityFilter } from '../context/CityContext';
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { Badge } from '../components/common/Badge';
 import Modal from '../components/common/Modal';
 import api from '../services/api';
@@ -31,8 +32,8 @@ export default function Settlements() {
   const [settleNote, setSettleNote] = useState('');
   const [settling, setSettling] = useState(false);
 
-  const loadPartners = () => {
-    setPageLoading(true);
+  const loadPartners = (silent = false) => {
+    if (!silent) setPageLoading(true);
     const params = cityParam ? { cityIds: cityParam, limit: 1000 } : { limit: 1000 };
     fetchList(params).then(res => {
       if (res.ok) setPartners(res.data?.data ?? []);
@@ -41,6 +42,7 @@ export default function Settlements() {
   };
 
   useEffect(() => { loadPartners(); }, [cityParam]);
+  useAutoRefresh(() => loadPartners(true));
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();

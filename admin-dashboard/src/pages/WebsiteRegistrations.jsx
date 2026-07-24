@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Search, Eye, ShieldCheck, XCircle, Clock, Phone, Mail, MapPin, Briefcase, Tag } from 'lucide-react';
 import { usePartners } from '../hooks/usePartners';
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { Badge } from '../components/common/Badge';
@@ -29,7 +30,7 @@ export default function WebsiteRegistrations() {
   const [categories, setCategories] = useState([]);
   const [pageLoading, setPageLoading] = useState(true);
 
-  useEffect(() => {
+  const loadLeads = () => {
     Promise.all([
       fetchList({ source: 'website', limit: 200 }),
       action('get', '/api/v1/admin/services/categories'),
@@ -38,7 +39,10 @@ export default function WebsiteRegistrations() {
       if (catsRes.ok) setCategories(catsRes.data?.data ?? []);
       setPageLoading(false);
     });
-  }, []);
+  };
+
+  useEffect(() => { loadLeads(); }, []);
+  useAutoRefresh(loadLeads);
 
   const categoryName = (id) => categories.find(c => c.id === id)?.name ?? `#${id}`;
 

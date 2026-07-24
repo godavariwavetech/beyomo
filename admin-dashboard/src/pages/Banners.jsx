@@ -4,6 +4,7 @@ import Modal from '../components/common/Modal';
 import ImageUploader from '../components/common/ImageUploader';
 import { useAuth } from '../context/AuthContext';
 import { useBanners } from '../hooks/useBanners';
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
 
 const TYPE_CONFIG = {
   top:   { label: 'Top Banner',   desc: 'Large promotional card at the top of the home screen', icon: <Monitor size={16}/> },
@@ -24,9 +25,12 @@ export default function Banners() {
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
 
-  useEffect(() => {
+  const loadBanners = () => {
     fetchList().then(res => { if (res.ok) setBanners(res.data?.data ?? []); });
-  }, []);
+  };
+
+  useEffect(() => { loadBanners(); }, []);
+  useAutoRefresh(loadBanners);
 
   const f = (k, v) => setForm(p => ({ ...p, [k]: v }));
 

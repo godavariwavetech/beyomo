@@ -20,7 +20,12 @@ const Notification = require("../../../notifications/models/notification.model")
 const AppFeedback = require("../../../feedback/models/feedback.model");
 const { signToken } = require("../../../../utils/jwtUtils");
 const { sendPushNotification } = require("../../../../utils/firebaseUtils");
-const { resolveRatesForBooking } = require("../../../../utils/revenueSplit");
+const {
+  resolveRatesForBooking,
+  DEFAULT_ADMIN_PERCENT,
+  DEFAULT_PARTNER_PERCENT,
+  DEFAULT_GST_PERCENT,
+} = require("../../../../utils/revenueSplit");
 const AppError = require("../../../../utils/errorHandlers/appError");
 
 // ==================== AUTH ====================
@@ -125,8 +130,48 @@ const createPartner = async (data) => {
     email: data.email || null,
     locationCity: data.city || null,
     experience: parseInt(data.experience) || 0,
+    gender: data.gender || null,
+    professions: data.professions || [],
+    serviceCategoryIds: data.categories || [],
+    profilePicture: data.profilePicture || null,
+    aadharUrl: data.aadharUrl || null,
+    agreementUrl: data.agreementUrl || null,
+    bankAccountNo: data.bankAccountNo || null,
+    bankIfsc: data.bankIfsc || null,
+    bankName: data.bankName || null,
+    bankHolderName: data.bankHolderName || null,
     status: "pending",
   });
+};
+
+const updatePartner = async (partnerId, data) => {
+  const partner = await Partner.findByPk(partnerId);
+  if (!partner) throw new AppError("Partner not found", 404);
+
+  if (data.phone && data.phone !== partner.phone) {
+    const existing = await Partner.findOne({ where: { phone: data.phone } });
+    if (existing) throw new AppError("A partner with this phone number already exists", 400);
+  }
+
+  const updates = {};
+  if (data.name !== undefined) updates.name = data.name;
+  if (data.phone !== undefined) updates.phone = data.phone;
+  if (data.email !== undefined) updates.email = data.email || null;
+  if (data.city !== undefined) updates.locationCity = data.city || null;
+  if (data.experience !== undefined) updates.experience = parseInt(data.experience) || 0;
+  if (data.gender !== undefined) updates.gender = data.gender || null;
+  if (data.professions !== undefined) updates.professions = data.professions || [];
+  if (data.categories !== undefined) updates.serviceCategoryIds = data.categories || [];
+  if (data.profilePicture !== undefined) updates.profilePicture = data.profilePicture || null;
+  if (data.aadharUrl !== undefined) updates.aadharUrl = data.aadharUrl || null;
+  if (data.agreementUrl !== undefined) updates.agreementUrl = data.agreementUrl || null;
+  if (data.bankAccountNo !== undefined) updates.bankAccountNo = data.bankAccountNo || null;
+  if (data.bankIfsc !== undefined) updates.bankIfsc = data.bankIfsc || null;
+  if (data.bankName !== undefined) updates.bankName = data.bankName || null;
+  if (data.bankHolderName !== undefined) updates.bankHolderName = data.bankHolderName || null;
+
+  await partner.update(updates);
+  return partner;
 };
 
 const updatePartnerStatus = async (partnerId, status) => {
@@ -221,7 +266,7 @@ const listServices = async ({ categoryId, search, cityId, page = 1, limit = 20 }
     offset,
     limit,
     include: [
-      { model: ServiceCategory, as: "category", attributes: ["name"] },
+      { model: ServiceCategory, as: "category", attributes: ["name", "adminPercent", "partnerPercent", "gstPercent"] },
       { model: ServiceCityMap, as: "cityMappings", required: false },
     ],
   });
@@ -392,18 +437,39 @@ const editBookingServices = async (bookingId, serviceItems = [], removeIndices =
     }
   });
 
-  // Add new services
-  if (serviceItems.length > 0) {
-    const serviceIds = serviceItems.map(s => parseInt(s.id));
-    const foundServices = await Service.findAll({ where: { id: serviceIds, isActive: true } });
+  // Add new services — catalog references ({id, qty}) and free-form add-ons ({isAddOn, name, price, qty})
+  const catalogItems = serviceItems.filter(s => !s.isAddOn);
+  const addOnItems = serviceItems.filter(s => s.isAddOn);
+
+  if (catalogItems.length > 0) {
+    const serviceIds = catalogItems.map(s => parseInt(s.id));
+    const foundServices = await Service.findAll({
+      where: { id: serviceIds, isActive: true },
+      include: [{ model: ServiceCategory, as: "category", attributes: ["adminPercent", "partnerPercent", "gstPercent"] }],
+    });
     if (foundServices.length !== serviceIds.length) throw new AppError("One or more services not found or unavailable", 404);
 
     const serviceMap = Object.fromEntries(foundServices.map(s => [s.id, s]));
-    const newEntries = serviceItems.map(item => {
+    const newEntries = catalogItems.map(item => {
       const svc = serviceMap[parseInt(item.id)];
-      return { serviceId: svc.id, name: svc.name, price: parseFloat(svc.basePrice), qty: item.qty || 1, duration: svc.duration || null, image: svc.image || null, addedByAdmin: true };
+      return {
+        serviceId: svc.id, name: svc.name, price: parseFloat(svc.basePrice), qty: item.qty || 1,
+        duration: svc.duration || null, image: svc.image || null, addedByAdmin: true,
+        adminPercent: svc.category ? parseFloat(svc.category.adminPercent) : DEFAULT_ADMIN_PERCENT,
+        partnerPercent: svc.category ? parseFloat(svc.category.partnerPercent) : DEFAULT_PARTNER_PERCENT,
+        gstPercent: svc.category ? parseFloat(svc.category.gstPercent) : DEFAULT_GST_PERCENT,
+      };
     });
     updatedServices = [...updatedServices, ...newEntries];
+  }
+
+  if (addOnItems.length > 0) {
+    const newAddOnEntries = addOnItems.map(item => ({
+      name: item.name, price: parseFloat(item.price) || 0, qty: item.qty || 1,
+      isAddOn: true, addedByAdmin: true,
+      adminPercent: DEFAULT_ADMIN_PERCENT, partnerPercent: DEFAULT_PARTNER_PERCENT, gstPercent: DEFAULT_GST_PERCENT,
+    }));
+    updatedServices = [...updatedServices, ...newAddOnEntries];
   }
 
   // Recalculate total from active (non-removed) services only
@@ -806,7 +872,7 @@ const deleteOffer  = (id)     => offersService.deleteOffer(id);
 module.exports = {
   adminLogin,
   listUsers, getUserById, updateUserStatus, deleteUser, createUser,
-  listPartners, getPartnerById, updatePartnerStatus, createPartner,
+  listPartners, getPartnerById, updatePartnerStatus, createPartner, updatePartner,
   listCategories, createCategory, updateCategory, deleteCategory,
   listServices, createService, updateService, deleteService, toggleServiceCityStatus,
   listBookings, getBookingDetail, assignPartner, cancelBooking, rescheduleBooking, editBookingServices,

@@ -296,14 +296,14 @@ ul { list-style: none; }
   background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23ffffff' fill-opacity='0.025'%3E%3Ccircle cx='30' cy='30' r='2'/%3E%3C/g%3E%3C/svg%3E");
 }
 .stats-banner-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 24px; position: relative; }
-.stat-item { text-align: center; padding: 28px 20px; border-radius: var(--r-xl); background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.07); transition: var(--transition); }
-.stat-item:hover { background: rgba(255,255,255,0.09); transform: translateY(-4px); }
+.stat-item { text-align: center; padding: 32px 22px; border-radius: 20px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.14); box-shadow: 0 8px 24px rgba(0,0,0,0.12); transition: var(--transition); }
+.stat-item:hover { background: rgba(255,255,255,0.12); transform: translateY(-4px); }
 .stat-val { font-size: clamp(34px,4vw,52px); font-weight: 800; color: var(--accent); }
 .stat-label { font-size: 14px; color: rgba(255,255,255,0.65); margin-top: 8px; letter-spacing: 0.2px; }
 
 /* ── Features ── */
 .features-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 24px; margin-top: 52px; }
-.feature-card { display: flex; gap: 22px; padding: 32px; border-radius: var(--r-xl); background: white; border: 1px solid var(--border); transition: var(--transition); }
+.feature-card { display: flex; gap: 22px; padding: 32px; border-radius: 20px; background: white; border: 1px solid var(--border); box-shadow: var(--shadow-sm); transition: var(--transition); }
 .feature-card:hover { transform: translateY(-5px); box-shadow: var(--shadow-xl); border-color: rgba(16,86,65,0.22); }
 .feature-icon { width: 56px; height: 56px; border-radius: var(--r-md); display: flex; align-items: center; justify-content: center; font-size: 26px; flex-shrink: 0; transition: transform 0.35s var(--ease-spring); }
 .feature-card:hover .feature-icon { transform: scale(1.12) rotate(-5deg); }
@@ -369,16 +369,16 @@ ul { list-style: none; }
 /* ── Services We Offer (highlight cards) ── */
 .services-highlight-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 28px; margin-top: 52px; }
 .services-highlight-card {
-  background: white; border: 1px solid var(--border); border-radius: var(--r-xl);
+  background: white; border: 1px solid var(--border); border-radius: 20px; box-shadow: var(--shadow-sm);
   overflow: hidden; transition: var(--transition); cursor: pointer;
 }
-.services-highlight-card:hover { transform: translateY(-7px); box-shadow: var(--shadow-xl); border-color: rgba(2,176,232,0.35); }
+.services-highlight-card:hover { transform: translateY(-7px); box-shadow: var(--shadow-xl); border-color: rgba(16,86,65,0.32); }
 .services-highlight-img-wrap { position: relative; aspect-ratio: 1.3; overflow: hidden; }
 .services-highlight-img-wrap img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.5s var(--ease-spring); display: block; }
 .services-highlight-card:hover .services-highlight-img-wrap img { transform: scale(1.08); }
 .services-highlight-icon-badge {
   position: absolute; bottom: -22px; left: 24px; width: 52px; height: 52px; border-radius: 50%;
-  background: linear-gradient(135deg, var(--primary), var(--secondary)); display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, var(--primary), var(--teal)); display: flex; align-items: center; justify-content: center;
   box-shadow: 0 8px 20px rgba(16,86,65,0.32); border: 4px solid white; z-index: 1;
 }
 .services-highlight-body { padding: 36px 24px 28px; }
@@ -399,52 +399,6 @@ ul { list-style: none; }
 .city-pill:hover { border-color: var(--primary); color: var(--primary); background: rgba(16,86,65,0.04); transform: translateY(-2px); box-shadow: var(--shadow-md); }
 .city-pill.coming-soon { opacity: 0.45; cursor: default; }
 .city-pill.coming-soon:hover { border-color: var(--border); color: var(--text); background: white; transform: none; box-shadow: none; }
-
-/* ================================================
-   BANNER CAROUSEL (admin-managed, gradient slides)
-   ================================================ */
-.banner-carousel { position: relative; overflow: hidden; }
-.banner-track { display: flex; transition: transform 0.6s var(--ease-spring); }
-.banner-slide {
-  min-width: 100%; min-height: 280px; position: relative; overflow: hidden;
-  display: flex; flex-direction: column; justify-content: center; gap: 14px;
-  padding: 56px 64px; color: white;
-}
-.banner-slide-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0.22; mix-blend-mode: overlay; }
-/* Fully designed banner artwork (text/CTA baked into the image) — show as-is, full bleed, compact height */
-.banner-slide-image-only { height: auto; aspect-ratio: 1.89; max-height: 360px; min-height: 0; padding: 0; cursor: pointer; }
-@media (max-width: 640px) {
-  .banner-slide-image-only { max-height: none; }
-}
-.banner-slide-img-full { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
-.banner-slide-content { position: relative; z-index: 1; max-width: 560px; }
-.banner-slide-subtitle { font-size: 13px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; opacity: 0.85; margin-bottom: 8px; }
-.banner-slide-title { font-size: clamp(24px,3.2vw,38px); font-weight: 800; line-height: 1.18; margin-bottom: 10px; }
-.banner-slide-desc { font-size: 15px; line-height: 1.6; opacity: 0.88; margin-bottom: 22px; max-width: 460px; }
-.banner-slide-btn {
-  display: inline-flex; align-items: center; gap: 8px; align-self: flex-start;
-  background: white; color: var(--primary); padding: 12px 26px; border-radius: var(--r-full);
-  font-size: 14px; font-weight: 800; transition: var(--transition); text-decoration: none;
-}
-.banner-slide-btn:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(0,0,0,0.18); }
-.banner-arrow {
-  position: absolute; top: 50%; transform: translateY(-50%); z-index: 2;
-  width: 42px; height: 42px; border-radius: 50%; background: rgba(255,255,255,0.18);
-  backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.3); color: white;
-  display: flex; align-items: center; justify-content: center; font-size: 16px; cursor: pointer;
-  transition: var(--transition);
-}
-.banner-arrow:hover { background: rgba(255,255,255,0.32); }
-.banner-arrow-prev { left: 20px; }
-.banner-arrow-next { right: 20px; }
-.banner-dots { display: flex; justify-content: center; gap: 8px; margin-top: 18px; }
-.banner-dots-overlay {
-  position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 3;
-  margin-top: 0; background: rgba(0,0,0,0.28); backdrop-filter: blur(6px);
-  padding: 8px 12px; border-radius: 99px;
-}
-.banner-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border); cursor: pointer; transition: all 0.25s var(--ease-spring); border: none; padding: 0; }
-.banner-dot.active { width: 26px; border-radius: 99px; background: linear-gradient(90deg, var(--primary), var(--secondary)); }
 
 /* ================================================
    OFFERS & PACKAGES (admin-managed gradient cards)
@@ -517,34 +471,37 @@ ul { list-style: none; }
 
 @media (max-width: 1024px) {
   .packages-grid { grid-template-columns: repeat(2,1fr); }
-  .banner-slide:not(.banner-slide-image-only) { padding: 44px 36px; }
 }
 @media (max-width: 640px) {
   .packages-grid { grid-template-columns: 1fr; }
-  .banner-slide:not(.banner-slide-image-only) { padding: 36px 24px; min-height: 320px; }
-  .banner-arrow { width: 36px; height: 36px; }
 }
 
 /* ================================================
    GETLOOK-STYLE HOME SECTIONS
    ================================================ */
 
-/* ── Hero ── */
+/* ── Hero (fixed brand hero: photo left, cream text panel right) ── */
 .gl-hero { background: #fff; position: relative; padding-top: 78px; }
 .gl-hero-banner { padding: 0 0 22px; position: relative; }
-.gl-hero-banner-inner { position: relative; overflow: hidden; }
-.gl-hero-banner-inner img { width: 100%; height: 360px; object-fit: cover; display: block; }
-.gl-hero-overlay {
-  position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: flex-end;
-  padding: 0 56px; background: linear-gradient(90deg, rgba(15,15,15,0.05) 0%, rgba(15,15,15,0.55) 100%);
-  text-align: right;
+.gl-hero-fixed {
+  display: flex; min-height: 380px; border-radius: 20px; overflow: hidden;
+  box-shadow: var(--shadow-lg); margin: 0 24px;
 }
-.gl-hero-overlay h1 { color: #fff; font-size: clamp(22px,2.6vw,32px); font-weight: 700; margin-bottom: 4px; }
-.gl-hero-overlay p { color: rgba(255,255,255,0.92); font-size: 15px; margin-bottom: 18px; }
-.gl-hero-pills { display: flex; gap: 10px; margin-bottom: 18px; flex-wrap: wrap; justify-content: flex-end; }
-.gl-hero-pill { background: rgba(16,86,65,0.85); color: #fff; border-radius: 10px; padding: 10px 16px; font-size: 12px; font-weight: 600; text-align: center; min-width: 90px; }
-.gl-hero-overlay .gl-hero-availability { color: #fff; font-size: 13px; font-weight: 600; }
-.gl-hero-overlay .gl-hero-availability strong { color: var(--accent); }
+.gl-hero-fixed-photo { flex: 1.15; min-width: 0; }
+.gl-hero-fixed-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.gl-hero-fixed-panel {
+  flex: 1; min-width: 0; background: #EEE7D8; display: flex; flex-direction: column;
+  justify-content: center; align-items: center; text-align: center; padding: 40px 36px;
+}
+.gl-hero-serif { font-family: 'Playfair Display', Georgia, serif; font-size: clamp(26px,3vw,38px); font-weight: 700; color: #2F4A3A; margin: 0; }
+.gl-hero-rule { width: 56px; height: 2px; background: #2F4A3A; opacity: 0.35; margin: 14px 0; border-radius: 2px; }
+.gl-hero-fixed-sub { font-size: 15px; font-weight: 600; color: #2F4A3A; margin: 0 0 26px; }
+.gl-hero-pills-row { display: flex; width: 100%; border-radius: 12px; overflow: hidden; box-shadow: var(--shadow-sm); }
+.gl-hero-pill-block {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  padding: 14px 8px; background: var(--dark); color: #fff; font-size: 11px; font-weight: 700; line-height: 1.3;
+}
+.gl-hero-pill-block-alt { background: #A9C3A2; color: #1c3326; }
 .gl-hero-location-wrapper { display: flex; justify-content: center; position: relative; margin-top: -34px; z-index: 2; padding: 0 24px; }
 .gl-hero-location-section {
   background: #fff; border: 1px solid var(--border); border-radius: 16px;
@@ -556,33 +513,70 @@ ul { list-style: none; }
 .gl-location-pin { width: 36px; height: 36px; border-radius: 50%; background: var(--light); display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
 .gl-explore-btn { background: var(--primary); color: #fff; border: none; border-radius: 16px; height: 50px; padding: 0 28px; font-size: 15px; font-weight: 700; }
 
-/* ── Services icon grid (full-bleed photo cards, name overlaid on a gradient scrim) ── */
-.gl-services-wrapper { background: #fff; margin-top: 60px; padding: 0 80px; }
-.gl-services-grid { display: grid; grid-template-columns: repeat(6,1fr); gap: 16px; justify-content: space-between; margin-top: 32px; }
+/* ── Special Offers (admin-managed banners, horizontal row) ── */
+.gl-offers-wrapper { padding: 44px 80px 0; }
+.gl-offers-label { font-size: 13px; font-weight: 700; color: var(--muted); margin: 0 0 14px; }
+.gl-offers-row { display: flex; gap: 16px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: thin; }
+.gl-offer-card {
+  flex: 0 0 auto; width: 230px; aspect-ratio: 1.55; border-radius: var(--r-lg); overflow: hidden;
+  cursor: pointer; text-decoration: none; box-shadow: var(--shadow-sm); transition: var(--transition); display: block;
+}
+.gl-offer-card:hover { transform: translateY(-6px); box-shadow: var(--shadow-xl); }
+.gl-offer-card img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.gl-offer-card-fallback { width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; padding: 20px; color: #fff; }
+.gl-offer-card-sub { font-size: 12px; font-weight: 700; opacity: 0.85; white-space: pre-line; }
+.gl-offer-card-title { font-size: 20px; font-weight: 800; margin-top: 4px; }
+
+/* ── Services icon grid (photo card + solid white name plate underneath) ── */
+.gl-services-wrapper { background: #fff; margin-top: 48px; padding: 0 80px; }
+.gl-services-grid { display: grid; grid-template-columns: repeat(5,1fr); gap: 16px; justify-content: space-between; margin-top: 32px; align-items: stretch; }
+/* Precise rectangle, square corners: photo block flush top/left/right, solid white
+   name bar flush bottom — no radius, no gap, no padding between the two blocks. */
 .gl-service-icon-card {
-  position: relative; display: block; aspect-ratio: 1; border-radius: var(--r-xl); overflow: hidden;
-  cursor: pointer; text-decoration: none; box-shadow: var(--shadow-sm); transition: var(--transition);
+  display: flex; flex-direction: column; border-radius: 0; overflow: hidden;
+  aspect-ratio: 3 / 4; cursor: pointer; text-decoration: none; box-shadow: var(--shadow-sm);
+  transition: var(--transition); background: #fff;
 }
 .gl-service-icon-card:hover { transform: translateY(-7px); box-shadow: var(--shadow-xl); }
-/* Source images have a white canvas margin baked in around a rounded card — zoom in to crop it out */
-.gl-service-icon-card img { width: 100%; height: 100%; object-fit: cover; display: block; transform: scale(1.22); transition: transform 0.5s var(--ease-spring); }
-.gl-service-icon-card:hover img { transform: scale(1.32); }
-.gl-service-icon-card::after {
-  content: ''; position: absolute; inset: 0;
-  background: linear-gradient(to top, rgba(0,0,0,0.62) 0%, rgba(0,0,0,0.12) 45%, transparent 65%);
-}
+.gl-service-icon-img-wrap { flex: 2; min-height: 0; position: relative; overflow: hidden; }
+.gl-service-icon-img-wrap img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.5s var(--ease-spring); }
+.gl-service-icon-card:hover .gl-service-icon-img-wrap img { transform: scale(1.06); }
 .gl-service-icon-card p {
-  position: absolute; left: 0; right: 0; bottom: 0; z-index: 1; margin: 0;
-  padding: 12px; font-size: 13px; font-weight: 800; color: white; text-align: left;
-  text-shadow: 0 2px 8px rgba(0,0,0,0.25);
+  flex: 1; margin: 0; display: flex; align-items: center; justify-content: center;
+  padding: 0 8px; font-size: 13px; font-weight: 700; color: #12151a; text-align: center; background: #fff;
 }
 
-/* ── Why Beyomo checklist card ── */
-.gl-why-wrapper { background: #fff; margin-top: 88px; padding: 0 80px; }
+/* ── Promo tiles (pre-made poster graphics — Own Package / Combo Offers) — lead the grid,
+   each spanning 2 columns, stretched by the grid row to match the category cards' height ── */
+.gl-promo-tile {
+  grid-column: span 2; align-self: center; aspect-ratio: 570 / 274; display: block; border-radius: 0; overflow: hidden;
+  cursor: pointer; text-decoration: none; box-shadow: var(--shadow-sm); transition: var(--transition);
+}
+.gl-promo-tile:hover { transform: translateY(-7px); box-shadow: var(--shadow-xl); }
+.gl-promo-tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* ── Why Beyomo + 3 Easy Steps (combined two-column panel) ── */
+.gl-why-wrapper { background: #fff; margin-top: 60px; padding: 0 80px; }
 .gl-why-section { background: var(--light); border-radius: 16px; padding: 48px 56px; }
+.gl-why-combined { display: flex; gap: 56px; }
+.gl-why-col { flex: 1; min-width: 0; }
+.gl-why-divider { width: 1px; align-self: stretch; background: var(--border); }
 .gl-why-steps { display: flex; flex-direction: column; gap: 18px; margin-top: 28px; }
 .gl-why-step { display: flex; align-items: center; gap: 14px; }
 .gl-why-check { width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--primary); color: var(--primary); display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; }
+
+/* ── Brand strip ── */
+.gl-brand-strip { background: linear-gradient(135deg, var(--dark) 0%, var(--teal) 100%); padding: 56px 0; margin-top: 88px; }
+.gl-brand-row { display: flex; flex-wrap: wrap; gap: 14px; }
+.gl-brand-badge {
+  background: #fff; color: var(--dark); font-weight: 800; font-size: 13px; letter-spacing: 0.02em;
+  padding: 14px 24px; border-radius: var(--r-md); box-shadow: var(--shadow-sm);
+}
+
+/* ── Become Your Best Version ── */
+.gl-best-version { display: grid; grid-template-columns: 1fr 1fr; gap: 56px; align-items: center; background: var(--light); border-radius: 28px; padding: 56px; }
+.gl-best-version-img { border-radius: 20px; overflow: hidden; aspect-ratio: 1.15; box-shadow: var(--shadow-md); }
+.gl-best-version-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
 /* ── Cities ── */
 .gl-cities-section { background: var(--light); margin-top: 60px; }
@@ -590,22 +584,34 @@ ul { list-style: none; }
 .gl-cities-sub-section .gl-title { font-size: 16px; margin: 0; }
 .gl-cities-sub-section .gl-heading { font-size: 24px; font-weight: 700; margin: 0 0 16px; }
 .gl-cities-container { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-.gl-cities-container a { color: var(--text); font-size: 14px; text-decoration: none; }
-.gl-cities-container a:hover { color: var(--primary); }
-.gl-cities-container span.sep { color: var(--muted); }
 
 /* ── Responsive (degrade getlook's desktop-only grids gracefully) ── */
 @media (max-width: 1024px) {
-  .gl-services-wrapper, .gl-why-wrapper { padding: 0 32px; }
+  .gl-services-wrapper, .gl-why-wrapper, .gl-offers-wrapper { padding: 0 32px; }
+  .gl-offers-wrapper { padding-top: 36px; }
   .gl-services-grid { grid-template-columns: repeat(4,1fr); }
   .gl-why-section { padding: 36px 28px; }
+  .gl-best-version { padding: 40px; gap: 36px; }
+}
+@media (max-width: 768px) {
+  .gl-hero-fixed { flex-direction: column; min-height: 0; margin: 0 16px; }
+  .gl-hero-fixed-photo { height: 200px; }
+  .gl-hero-fixed-panel { padding: 28px 24px; }
+  .gl-why-combined { flex-direction: column; gap: 32px; }
+  .gl-why-divider { display: none; }
+  .gl-best-version { grid-template-columns: 1fr; }
+  .gl-best-version-img { order: -1; aspect-ratio: 1.6; }
 }
 @media (max-width: 640px) {
-  .gl-services-wrapper, .gl-why-wrapper { padding: 0 16px; }
+  .gl-services-wrapper, .gl-why-wrapper, .gl-offers-wrapper { padding: 0 16px; }
+  .gl-offers-wrapper { padding-top: 28px; }
   .gl-services-grid { grid-template-columns: repeat(3,1fr); column-gap: 12px; row-gap: 16px; }
+  .gl-promo-tile { grid-column: span 3; aspect-ratio: 570 / 274; }
   .gl-hero-location-section { flex-direction: column; padding: 16px; }
   .gl-explore-btn { width: 100%; margin: 0 8px 8px; }
   .gl-cities-sub-section { padding: 32px 20px; }
+  .gl-best-version { padding: 28px; border-radius: 20px; }
+  .gl-brand-strip { padding: 40px 0; margin-top: 56px; }
 }
 
 /* ── App Download ── */
@@ -711,7 +717,7 @@ textarea.form-input { resize: vertical; min-height: 120px; }
    FAQ ACCORDION
    ================================================ */
 
-.faq-item { border: 1px solid var(--border); border-radius: var(--r-lg); overflow: hidden; margin-bottom: 12px; transition: box-shadow 0.25s, border-color 0.25s; }
+.faq-item { border: 1px solid var(--border); border-radius: 18px; overflow: hidden; margin-bottom: 12px; box-shadow: var(--shadow-sm); transition: box-shadow 0.25s, border-color 0.25s; }
 .faq-item:hover { box-shadow: var(--shadow-md); }
 .faq-item.open { border-color: rgba(16,86,65,0.28); box-shadow: 0 4px 24px rgba(16,86,65,0.07); }
 .faq-question { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px; cursor: pointer; background: white; font-size: 15px; font-weight: 600; color: var(--text); transition: background 0.2s; gap: 16px; }

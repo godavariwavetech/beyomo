@@ -8,6 +8,7 @@ import { Badge } from '../components/common/Badge';
 import { useEarnings } from '../hooks/useEarnings';
 import { useReports } from '../hooks/useReports';
 import { useCityFilter } from '../context/CityContext';
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
 
 const exportCSV = (data, filename) => {
   const headers = ['Booking ID','Customer','Partner','Service','Amount','Commission','Partner Payout','Payment Method','Date'];
@@ -33,7 +34,7 @@ export default function Earnings() {
   const [serviceRevenue, setServiceRevenue]   = useState([]);
   const ITEMS = 8;
 
-  useEffect(() => {
+  const loadEarnings = () => {
     const params = cityParam ? { cityIds: cityParam } : {};
     fetchList(params).then(res => {
       if (res.ok && res.data?.data?.length) {
@@ -48,7 +49,10 @@ export default function Earnings() {
       const arr = res.data?.data?.topServices;
       if (res.ok && Array.isArray(arr) && arr.length) setServiceRevenue(arr);
     });
-  }, [cityParam]);
+  };
+
+  useEffect(() => { loadEarnings(); }, [cityParam]);
+  useAutoRefresh(loadEarnings);
 
   const transactions = allTransactions;
 

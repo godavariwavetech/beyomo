@@ -30,6 +30,9 @@ import AboutUsScreen from '../screens/Profile/AboutUsScreen';
 
 import CitySelectorScreen from '../screens/CitySelector/CitySelectorScreen';
 import PackageDetailScreen from '../screens/Packages/PackageDetailScreen';
+import PackageListingScreen from '../screens/Packages/PackageListingScreen';
+import CustomPackagesScreen from '../screens/Packages/CustomPackagesScreen';
+import SearchScreen from '../screens/Search/SearchScreen';
 import CustomTabBar from '../components/BottomTabBar/CustomTabBar';
 import {setupForegroundHandler, handleNotificationNavigation} from '../services/NotificationsService';
 
@@ -79,7 +82,10 @@ const AppNavigation = () => {
         <Stack.Screen name="Register" component={RegisterScreen} />
         <Stack.Screen name="Main" component={MainTabs} />
         <Stack.Screen name="ServiceListing" component={ServiceListingScreen} />
+        <Stack.Screen name="Search" component={SearchScreen} />
         <Stack.Screen name="PackageDetail" component={PackageDetailScreen} />
+        <Stack.Screen name="PackageListing" component={PackageListingScreen} />
+        <Stack.Screen name="CustomPackages" component={CustomPackagesScreen} />
         <Stack.Screen name="AddressPayment" component={AddressPaymentScreen} />
         <Stack.Screen name="OrderPlaced" component={OrderPlacedScreen} />
         <Stack.Screen name="ServiceCompleted" component={ServiceCompletedScreen} />

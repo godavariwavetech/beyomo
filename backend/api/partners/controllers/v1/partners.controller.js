@@ -11,11 +11,26 @@ const claimServicesSchema = Joi.object({
 
 const addExtraServicesSchema = Joi.object({
   services: Joi.array().items(
+    Joi.alternatives().try(
+      Joi.object({
+        id: Joi.alternatives().try(Joi.number(), Joi.string()).required(),
+        qty: Joi.number().integer().min(1).default(1),
+      }),
+      Joi.object({
+        isAddOn: Joi.boolean().valid(true).required(),
+        name: Joi.string().trim().min(1).max(120).required(),
+        price: Joi.number().min(0).required(),
+        qty: Joi.number().integer().min(1).default(1),
+      })
+    )
+  ).optional().default([]),
+  removeIndices: Joi.array().items(Joi.number().integer().min(0)).optional().default([]),
+  updateQty: Joi.array().items(
     Joi.object({
-      id: Joi.alternatives().try(Joi.number(), Joi.string()).required(),
-      qty: Joi.number().integer().min(1).default(1),
+      index: Joi.number().integer().min(0).required(),
+      qty: Joi.number().integer().min(1).required(),
     })
-  ).min(1).required(),
+  ).optional().default([]),
 });
 
 const updateProfileSchema = Joi.object({
@@ -231,17 +246,11 @@ const claimServices = catchAsync(async (req, res, next) => {
 const addExtraServices = catchAsync(async (req, res, next) => {
   const { error, value } = addExtraServicesSchema.validate(req.body);
   if (error) return next(new AppError(error.details[0].message, 400));
+  if (!value.services.length && !value.removeIndices.length && !value.updateQty.length)
+    return next(new AppError("Provide services to add, indices to remove, or quantities to update", 400));
 
-  const booking = await partnersService.addExtraServices(req.partner.userId, req.params.id, value.services);
-  res.status(200).json({ status: true, message: 'Extra services added to booking', data: booking });
-});
-
-const proposeServiceChanges = catchAsync(async (req, res, next) => {
-  const { services } = req.body;
-  if (!Array.isArray(services) || services.length === 0)
-    return next(new AppError("services array is required", 400));
-  const booking = await partnersService.proposeServiceChanges(req.partner.userId, req.params.id, services);
-  res.json({ status: true, message: "Service update sent to customer for approval", data: booking });
+  const booking = await partnersService.addExtraServices(req.partner.userId, req.params.id, value);
+  res.status(200).json({ status: true, message: 'Booking services updated', data: booking });
 });
 
 /**
@@ -264,7 +273,6 @@ module.exports = {
   getBookingById,
   getAvailableBookings,
   acceptBooking,
-  proposeServiceChanges,
   claimServices,
   updateBookingStatus,
   markArrived,
