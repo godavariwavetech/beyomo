@@ -10,8 +10,6 @@
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
 		2E8672F4E09995201BD877D5 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */; };
 		600E57B13011F372006797AB /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 600E57B03011F372006797AB /* GoogleService-Info.plist */; };
-		10DB06115C9D45CF8ACF04BA /* Ionicons.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 6125A545CFFE4FCAADBBA072 /* Ionicons.ttf */; };
-		EA6322488427485C8B4EC8C2 /* MaterialIcons.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 9DCA2960C46645D4AD481E48 /* MaterialIcons.ttf */; };
 		69DCBCD59D4B44BE9CD0A27B /* Poppins-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 11DD9185C7634A12B6E56D01 /* Poppins-Bold.ttf */; };
 		761780ED2CA45674006654EE /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780EC2CA45674006654EE /* AppDelegate.swift */; };
 		77416A0F798F1309B3150FD8 /* Pods_beyomo.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C26CDF797CF0D6C140793A5C /* Pods_beyomo.framework */; };
@@ -23,8 +21,6 @@
 
 /* Begin PBXFileReference section */
 		11DD9185C7634A12B6E56D01 /* Poppins-Bold.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = "Poppins-Bold.ttf"; path = "../src/config/fonts/Poppins-Bold.ttf"; sourceTree = "<group>"; };
-		6125A545CFFE4FCAADBBA072 /* Ionicons.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = "Ionicons.ttf"; path = "../src/config/fonts/Ionicons.ttf"; sourceTree = "<group>"; };
-		9DCA2960C46645D4AD481E48 /* MaterialIcons.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = "MaterialIcons.ttf"; path = "../src/config/fonts/MaterialIcons.ttf"; sourceTree = "<group>"; };
 		13B07F961A680F5B00A75B9A /* beyomo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = beyomo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = beyomo/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = beyomo/Info.plist; sourceTree = "<group>"; };
@@ -112,8 +108,6 @@
 				4ED668841FD446628F03109C /* Poppins-Medium.ttf */,
 				61A710834B424891AC980C44 /* Poppins-Regular.ttf */,
 				E8B1DBBB1C91492D8A0A3C09 /* Poppins-SemiBold.ttf */,
-				6125A545CFFE4FCAADBBA072 /* Ionicons.ttf */,
-				9DCA2960C46645D4AD481E48 /* MaterialIcons.ttf */,
 			);
 			name = Resources;
 			sourceTree = "<group>";
@@ -195,8 +189,6 @@
 				BB67474F6EF647AD83198F3C /* Poppins-Medium.ttf in Resources */,
 				B9BEDBBD46A54DDEB32F9FA4 /* Poppins-Regular.ttf in Resources */,
 				8D8BB88232CA42D6A921902E /* Poppins-SemiBold.ttf in Resources */,
-				10DB06115C9D45CF8ACF04BA /* Ionicons.ttf in Resources */,
-				EA6322488427485C8B4EC8C2 /* MaterialIcons.ttf in Resources */,
 				2E8672F4E09995201BD877D5 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -319,22 +311,28 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 5;
+				DEVELOPMENT_TEAM = 3387GM7U6B;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = beyomo/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Beyomo;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.lifestyle";
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
 					"-lc++",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "org.reactjs.native.example.$(PRODUCT_NAME:rfc1034identifier)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.beyomo;
 				PRODUCT_NAME = beyomo;
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
 				VERSIONING_SYSTEM = "apple-generic";
@@ -347,21 +345,27 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 5;
+				DEVELOPMENT_TEAM = 3387GM7U6B;
 				INFOPLIST_FILE = beyomo/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Beyomo;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.lifestyle";
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
 					"-lc++",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "org.reactjs.native.example.$(PRODUCT_NAME:rfc1034identifier)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.beyomo;
 				PRODUCT_NAME = beyomo;
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_VERSION = 5.0;
 				VERSIONING_SYSTEM = "apple-generic";
 			};

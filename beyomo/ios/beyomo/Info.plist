@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>beyomo</string>
+	<string>Beyomo</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -31,12 +31,25 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Beyomo needs your location to find available service areas near you and to auto-fill your delivery address.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Beyomo needs access to your camera to let you take photos.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Beyomo needs your location to find available service areas near you and to auto-fill your delivery address.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Beyomo needs your location to find available service areas near you and to auto-fill your delivery address.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Beyomo needs access to your microphone for audio recording.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Beyomo needs access to your photo library to let you upload and attach photos.</string>
+	<key>UIAppFonts</key>
+	<array>
+		<string>Poppins-Bold.ttf</string>
+		<string>Poppins-Medium.ttf</string>
+		<string>Poppins-Regular.ttf</string>
+		<string>Poppins-SemiBold.ttf</string>
+		<string>Ionicons.ttf</string>
+		<string>MaterialIcons.ttf</string>
+	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIRequiredDeviceCapabilities</key>
@@ -51,14 +64,5 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
-	<key>UIAppFonts</key>
-	<array>
-		<string>Poppins-Bold.ttf</string>
-		<string>Poppins-Medium.ttf</string>
-		<string>Poppins-Regular.ttf</string>
-		<string>Poppins-SemiBold.ttf</string>
-		<string>Ionicons.ttf</string>
-		<string>MaterialIcons.ttf</string>
-	</array>
 </dict>
 </plist>
