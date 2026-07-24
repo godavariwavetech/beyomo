@@ -5,6 +5,7 @@ import Modal from '../components/common/Modal';
 import { useAuth } from '../context/AuthContext';
 import { useFeedback } from '../hooks/useFeedback';
 import { useCityFilter } from '../context/CityContext';
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
 
 const ITEMS_PER_PAGE = 10;
 
@@ -33,10 +34,13 @@ export default function Feedback() {
   const [page, setPage]           = useState(1);
   const [selected, setSelected]   = useState(null);
 
-  useEffect(() => {
+  const loadFeedback = () => {
     const params = cityParam ? { cityIds: cityParam } : {};
     fetchList(params).then(res => { if (res.ok) setFeedback(res.data?.data ?? []); });
-  }, [cityParam]);
+  };
+
+  useEffect(() => { loadFeedback(); }, [cityParam]);
+  useAutoRefresh(loadFeedback);
 
   const filtered = useMemo(() => {
     return feedback.filter(f => {

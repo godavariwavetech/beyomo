@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, Edit2, Trash2, ChevronDown, ChevronRight, BookOpen, Tag } from 'lucide-react';
 import Modal from '../components/common/Modal';
 import api from '../services/api';
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
 
 const ADMIN_SKILLS_URL = '/api/v1/admin/skills';
 
@@ -26,8 +27,8 @@ export default function Skills() {
   const [skillActive, setSkillActive] = useState(true);
   const [skillSaving, setSkillSaving] = useState(false);
 
-  const fetchCategories = useCallback(async () => {
-    setLoading(true);
+  const fetchCategories = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const res = await api.get(`${ADMIN_SKILLS_URL}/categories`);
       setCategories(res.data?.data || []);
@@ -38,6 +39,7 @@ export default function Skills() {
   }, []);
 
   useEffect(() => { fetchCategories(); }, [fetchCategories]);
+  useAutoRefresh(() => fetchCategories(true));
 
   const toggleExpand = (id) => setExpanded(p => ({ ...p, [id]: !p[id] }));
 

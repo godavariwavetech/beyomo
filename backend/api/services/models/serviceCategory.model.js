@@ -9,6 +9,10 @@ const ServiceCategory = sequelize.define("ServiceCategory", {
   image: { type: DataTypes.TEXT, allowNull: true, defaultValue: null },
   isActive: { type: DataTypes.BOOLEAN, defaultValue: true },
   sortOrder: { type: DataTypes.INTEGER, defaultValue: 0 },
+  // Admin-selected categories to feature on the website home page / app header —
+  // not every category, only ones explicitly flagged here (e.g. ones with a
+  // consistent, on-brand photo).
+  showOnHome: { type: DataTypes.BOOLEAN, defaultValue: false },
   // Revenue split — adminPercent + partnerPercent should equal 100
   adminPercent:   { type: DataTypes.DECIMAL(5, 2), allowNull: false, defaultValue: 20.00 },
   partnerPercent: { type: DataTypes.DECIMAL(5, 2), allowNull: false, defaultValue: 80.00 },

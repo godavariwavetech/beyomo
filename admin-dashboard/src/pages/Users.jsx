@@ -5,6 +5,7 @@ import Modal from '../components/common/Modal';
 import { useAuth } from '../context/AuthContext';
 import { useUsers } from '../hooks/useUsers';
 import { useCityFilter } from '../context/CityContext';
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
 
 const exportCSV = (data, filename) => {
   const headers = ['ID','Name','Phone','Email','Joined','Bookings','Total Spent','Status'];
@@ -31,7 +32,7 @@ export default function Users() {
   const [adding, setAdding]       = useState(false);
   const [addForm, setAddForm]     = useState({});
 
-  useEffect(() => {
+  const loadUsers = () => {
     const params = cityParam ? { cityIds: cityParam } : {};
     fetchList(params).then(res => {
       if (res.ok) setUsers((res.data?.data ?? []).map(u => ({
@@ -48,7 +49,10 @@ export default function Users() {
       })));
       setPageLoading(false);
     });
-  }, [cityParam]);
+  };
+
+  useEffect(() => { loadUsers(); }, [cityParam]);
+  useAutoRefresh(loadUsers);
 
   const filtered = useMemo(() => {
     let list = users.filter(u => {
@@ -231,7 +235,7 @@ export default function Users() {
           </div>
           <div className="form-group">
             <label className="form-label">Phone Number *</label>
-            <input className="form-input" placeholder="+91 98765 43210" value={addForm.phone||''} onChange={e => setAddForm(f=>({...f,phone:e.target.value}))}/>
+            <input className="form-input" placeholder="9876543210" maxLength={10} value={addForm.phone||''} onChange={e => setAddForm(f=>({...f,phone:e.target.value.replace(/\D/g, '').slice(0, 10)}))}/>
           </div>
           <div className="form-group">
             <label className="form-label">Email Address</label>

@@ -29,14 +29,14 @@ export default function Checkout() {
   const [submitError, setSubmitError] = useState(null);
 
   useEffect(() => {
-    if (items.length === 0) navigate('/services');
-  }, [items, navigate]);
+    if (items.length === 0 && !submitting && !submitError) navigate('/services');
+  }, [items, navigate, submitting, submitError]);
 
   useEffect(() => {
     setLoginOpen(!isAuthenticated);
   }, [isAuthenticated]);
 
-  if (items.length === 0) return null;
+  if (items.length === 0 && !submitting && !submitError) return null;
 
   const discount = appliedCoupon?.discountAmount || 0;
   const total = Math.max(subtotal - discount, 0) + PLATFORM_FEE;
@@ -117,7 +117,6 @@ export default function Checkout() {
       rzp.open();
     } catch (err) {
       setSubmitError(err.message);
-    } finally {
       setSubmitting(false);
     }
   };

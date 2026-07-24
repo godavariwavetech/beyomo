@@ -30,6 +30,9 @@ const ServicePackage = sequelize.define("ServicePackage", {
     },
   },
   isActive: { type: DataTypes.BOOLEAN, defaultValue: true },
+  // Admin-selected packages/combos to feature in the app's home screen header carousel
+  // (alongside admin banners) — not every package, only ones explicitly flagged here.
+  showOnHome: { type: DataTypes.BOOLEAN, defaultValue: false },
   // array of city IDs this package is available in — null/[] means all cities
   cityIds: {
     type: DataTypes.JSON,

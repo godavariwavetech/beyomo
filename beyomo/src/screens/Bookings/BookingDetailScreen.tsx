@@ -24,7 +24,7 @@ import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {fonts} from '../../config/theme';
 import {useDispatch, useSelector} from 'react-redux';
 import {useFocusEffect} from '@react-navigation/native';
-import {fetchBookingById, cancelBooking, rescheduleBooking, respondServiceUpdate, addUserServices} from '../../redux/reducers/bookings';
+import {fetchBookingById, cancelBooking, rescheduleBooking, addUserServices} from '../../redux/reducers/bookings';
 import networkCall from '../../utils/networkCall';
 import {payWithRazorpay} from '../../utils/payments';
 import {resolveImageUrl} from '../../utils/utils';
@@ -230,32 +230,6 @@ const BookingDetailScreen = ({navigation, route}: any) => {
     }, [route?.params?.openReschedule, booking, autoOpenedReschedule]),
   );
 
-  const handleRespond = (action: 'approve' | 'reject') => {
-    const label = action === 'approve' ? 'Approve' : 'Reject';
-    const msg = action === 'approve'
-      ? 'Approve the partner\'s service changes? Your total will be updated.'
-      : 'Reject the partner\'s proposed changes? The booking will stay as-is.';
-    Alert.alert(`${label} Changes`, msg, [
-      {text: 'Cancel', style: 'cancel'},
-      {
-        text: label,
-        style: action === 'reject' ? 'destructive' : 'default',
-        onPress: async () => {
-          const result = await dispatch(respondServiceUpdate({bookingId: booking?.id ?? booking?._id, action}));
-          if (result.meta.requestStatus === 'fulfilled') {
-            Alert.alert(
-              action === 'approve' ? 'Changes Approved' : 'Changes Rejected',
-              action === 'approve'
-                ? 'The service changes have been approved and your total has been updated.'
-                : 'The partner\'s proposed changes have been rejected.',
-              [{text: 'OK'}],
-            );
-          }
-        },
-      },
-    ]);
-  };
-
   const handleCompletePayment = async () => {
     const bookingId = booking?.id ?? booking?._id;
     setPayingNow(true);
@@ -331,16 +305,6 @@ const BookingDetailScreen = ({navigation, route}: any) => {
 
   const statusInfo = STATUS_BANNER[booking.status?.toLowerCase() ?? ''] ?? STATUS_BANNER.pending;
 
-  const hasPendingUpdate = !!booking.serviceUpdatePending;
-  const pendingUpdate = (() => {
-    const p = booking.pendingServicesUpdate;
-    if (!p) return null;
-    if (typeof p === 'string') { try { return JSON.parse(p); } catch { return null; } }
-    return p;
-  })();
-  const pendingServices: any[] = pendingUpdate?.services ?? [];
-  const pendingTotal: number = pendingUpdate?.totalAmount ?? 0;
-
   return (
     <View style={styles.root}>
       <StatusBar barStyle="light-content" backgroundColor="#012823" />
@@ -383,51 +347,6 @@ const BookingDetailScreen = ({navigation, route}: any) => {
                 <Text style={styles.paymentDueBtnText}>Pay Now</Text>
               )}
             </TouchableOpacity>
-          </View>
-        )}
-
-        {hasPendingUpdate && (
-          <View style={styles.pendingCard}>
-            <View style={styles.pendingHeader}>
-              <Ionicons name="alert-circle" size={sw(20)} color="#C87B1A" />
-              <Text style={styles.pendingTitle}>Partner Updated Services</Text>
-            </View>
-            <Text style={styles.pendingSubtitle}>
-              Your partner has proposed changes. Review and approve or reject below.
-            </Text>
-
-            {pendingServices.map((svc: any, idx: number) => (
-              <View key={idx} style={[styles.pendingSvcRow, idx > 0 && {borderTopWidth: 1, borderTopColor: '#FDE9BF'}]}>
-                <Text style={styles.pendingSvcName} numberOfLines={1}>{svc.name}{svc.qty > 1 ? ` ×${svc.qty}` : ''}</Text>
-                <Text style={styles.pendingSvcPrice}>₹{Number((svc.price || 0) * (svc.qty || 1)).toLocaleString('en-IN')}</Text>
-              </View>
-            ))}
-
-            <View style={styles.pendingTotalRow}>
-              <Text style={styles.pendingTotalLabel}>New Total</Text>
-              <Text style={styles.pendingTotalVal}>₹{Number(pendingTotal).toLocaleString('en-IN')}</Text>
-            </View>
-
-            <View style={styles.pendingActions}>
-              <TouchableOpacity
-                style={[styles.rejectBtn, actionLoading && {opacity: 0.6}]}
-                disabled={actionLoading}
-                activeOpacity={0.8}
-                onPress={() => handleRespond('reject')}>
-                {actionLoading ? <ActivityIndicator size="small" color="#DB1919" /> : (
-                  <Text style={styles.rejectBtnText}>Reject</Text>
-                )}
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.approveBtn, actionLoading && {opacity: 0.6}]}
-                disabled={actionLoading}
-                activeOpacity={0.8}
-                onPress={() => handleRespond('approve')}>
-                {actionLoading ? <ActivityIndicator size="small" color="#FFFFFF" /> : (
-                  <Text style={styles.approveBtnText}>Approve</Text>
-                )}
-              </TouchableOpacity>
-            </View>
           </View>
         )}
 
@@ -983,42 +902,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   cancelBtnText: {fontFamily: fonts.title, fontSize: sw(13), fontWeight: '600', color: '#FB1616'},
-
-  pendingCard: {
-    backgroundColor: '#FFFBF0',
-    borderRadius: sw(12),
-    padding: sw(16),
-    borderWidth: 1.5,
-    borderColor: '#F5C842',
-    gap: sw(10),
-    elevation: 2,
-    shadowColor: '#C87B1A',
-    shadowOffset: {width: 0, height: 1},
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  pendingHeader: {flexDirection: 'row', alignItems: 'center', gap: sw(8)},
-  pendingTitle: {fontFamily: fonts.title, fontSize: sw(14), fontWeight: '700', color: '#C87B1A'},
-  pendingSubtitle: {fontFamily: fonts.textFont, fontSize: sw(12), color: '#6B4C0A', lineHeight: sw(17)},
-  pendingSvcRow: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: sw(6)},
-  pendingSvcName: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#171816', fontWeight: '500', flex: 1, marginRight: sw(8)},
-  pendingSvcPrice: {fontFamily: fonts.title, fontSize: sw(13), fontWeight: '700', color: '#105641'},
-  pendingTotalRow: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1.5, borderTopColor: '#F5C842', paddingTop: sw(10)},
-  pendingTotalLabel: {fontFamily: fonts.title, fontSize: sw(13), fontWeight: '700', color: '#171816'},
-  pendingTotalVal: {fontFamily: fonts.title, fontSize: sw(16), fontWeight: '800', color: '#C87B1A'},
-  pendingActions: {flexDirection: 'row', gap: sw(10), marginTop: sw(4)},
-  rejectBtn: {
-    flex: 1, height: sw(44), borderRadius: sw(10),
-    borderWidth: 1.5, borderColor: '#DB1919',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  rejectBtnText: {fontFamily: fonts.title, fontSize: sw(13), fontWeight: '700', color: '#DB1919'},
-  approveBtn: {
-    flex: 1, height: sw(44), borderRadius: sw(10),
-    backgroundColor: '#105641',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  approveBtnText: {fontFamily: fonts.title, fontSize: sw(13), fontWeight: '700', color: '#FFFFFF'},
 });
 
 export default BookingDetailScreen;

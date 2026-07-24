@@ -5,6 +5,7 @@ import Modal from '../components/common/Modal';
 import { useAuth } from '../context/AuthContext';
 import { useCityFilter } from '../context/CityContext';
 import { useCoupons, useReferral } from '../hooks/useCoupons';
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
 
 const couponStatus = (c) => {
   const now = new Date();
@@ -149,10 +150,18 @@ export default function Coupons() {
   const [managingRef, setManagingRef] = useState(false);
   const [refForm, setRefForm]         = useState({ rewardAmount: 100, minOrder: 400, maxReferrals: 9999, active: true });
 
-  useEffect(() => {
+  const loadCoupons = () => {
     fetchList().then(res => { if (res.ok) setCoupons((res.data?.data ?? []).map(normalizeCoupon)); });
+  };
+
+  useEffect(() => {
+    loadCoupons();
+    // Referral settings are only loaded once on mount, not on auto-refresh — refreshing
+    // it periodically would silently overwrite whatever the admin is mid-editing in the
+    // "Manage Referral Program" modal, since its inputs are bound directly to refForm.
     fetchReferral().then(res => { if (res.ok && res.data?.data) setRefForm(res.data.data); });
   }, []);
+  useAutoRefresh(loadCoupons);
 
   const filtered = coupons.filter(c =>
     (!search || c.code.toLowerCase().includes(search.toLowerCase()) || c.description.toLowerCase().includes(search.toLowerCase()))

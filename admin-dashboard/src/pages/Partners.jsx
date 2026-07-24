@@ -1,11 +1,13 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Search, UserPlus, Download, Eye, Ban, CheckCircle, ShieldCheck, Phone, Mail, MapPin, Star, Briefcase, XCircle, Clock, Check } from 'lucide-react';
+import { Search, UserPlus, Download, Eye, Ban, CheckCircle, ShieldCheck, Phone, Mail, MapPin, Star, Briefcase, XCircle, Clock, Check, Pencil, User, Tag } from 'lucide-react';
 import { usePartners } from '../hooks/usePartners';
 import { useAuth } from '../context/AuthContext';
 import { useCityFilter } from '../context/CityContext';
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import api from '../services/api';
 import { Badge, StarRating } from '../components/common/Badge';
 import Modal from '../components/common/Modal';
+import ImageUploader from '../components/common/ImageUploader';
 
 const exportCSV = (data, filename) => {
   const headers = ['ID','Name','Phone','Email','City','Services','Rating','Total Jobs','Monthly Earnings','Status'];
@@ -30,13 +32,25 @@ const normalizePartner = (p) => ({
   status: p.status === 'approved' ? 'active' : (p.status ?? 'pending'),
 });
 
-function StepBar({ current }) {
-  const steps = [{ n: 1, label: 'Basic Info' }, { n: 2, label: 'Categories' }, { n: 3, label: 'Skills' }];
+// Fixed profession list — matches the partner mobile app's registration screen exactly
+const PROFESSIONS = ['Beautician', 'Hairdresser', 'Makeup Artist', 'Mehendi', 'Spa Therapist', 'Aesthetician'];
+
+function StepBar({ current, onStepClick }) {
+  const steps = [
+    { n: 1, label: 'Basic Info' },
+    { n: 2, label: 'Profession' },
+    { n: 3, label: 'Skills' },
+    { n: 4, label: 'Documents' },
+    { n: 5, label: 'Bank Details' },
+  ];
   return (
     <div style={{ display: 'flex', alignItems: 'center', marginBottom: 24 }}>
       {steps.map(({ n, label }, i) => (
         <React.Fragment key={n}>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 64 }}>
+          <div
+            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 64, cursor: onStepClick ? 'pointer' : 'default' }}
+            onClick={() => onStepClick?.(n)}
+          >
             <div style={{
               width: 32, height: 32, borderRadius: '50%',
               background: current >= n ? 'var(--c-brand-primary)' : '#e2e8f0',
@@ -71,7 +85,7 @@ const ITEMS_PER_PAGE = 8;
 export default function Partners() {
   const { showToast } = useAuth();
   const { fetchList, action } = usePartners();
-  const { cityParam } = useCityFilter();
+  const { cityParam, cities } = useCityFilter();
   const [search, setSearch]       = useState('');
   const [statusFilter, setStatus] = useState('all');
   const [onlineFilter, setOnline] = useState('all');
@@ -84,83 +98,117 @@ export default function Partners() {
 
   // Wizard state
   const [addStep, setAddStep]         = useState(1);
-  const [addForm, setAddForm]         = useState({ name: '', phone: '', email: '', city: '', experience: '' });
-  const [selectedCats, setSelectedCats]     = useState([]);
-  const [selectedSkills, setSelectedSkills] = useState([]);
-  const [regCats, setRegCats]         = useState([]);
-  const [regServices, setRegServices] = useState([]);
-  const [regLoading, setRegLoading]   = useState(false);
+  const [addForm, setAddForm]         = useState({
+    name: '', phone: '', email: '', city: '', experience: '', gender: '',
+    profilePicture: '', aadharUrl: '', agreementUrl: '',
+    bankAccountNo: '', bankIfsc: '', bankName: '', bankHolderName: '',
+  });
+  const [selectedProfessions, setSelectedProfessions] = useState([]);
+  const [selectedCats, setSelectedCats] = useState([]);
+  const [regCats, setRegCats]       = useState([]);
+  const [regLoading, setRegLoading] = useState(false);
 
-  useEffect(() => {
+  // Edit Details state
+  const [editing, setEditing]   = useState(null);
+  const [editForm, setEditForm] = useState({ name: '', phone: '', email: '', city: '', experience: '', gender: '' });
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const loadPartners = () => {
     const params = { source: 'app', ...(cityParam ? { cityIds: cityParam } : {}) };
     fetchList(params).then(res => {
       if (res.ok) setPartners((res.data?.data ?? []).map(normalizePartner));
       setPageLoading(false);
     });
-  }, [cityParam]);
+  };
 
-  // Load categories + services when the wizard opens
+  useEffect(() => { loadPartners(); }, [cityParam]);
+  useAutoRefresh(loadPartners);
+
+  // Load service categories (for the optional Skills step) when the wizard opens
   useEffect(() => {
     if (!adding) return;
     setRegLoading(true);
-    Promise.all([
-      action('get', '/api/v1/admin/services/categories'),
-      action('get', '/api/v1/admin/services?limit=500'),
-    ]).then(([cRes, sRes]) => {
-      if (cRes.ok) setRegCats(cRes.data?.data ?? []);
-      if (sRes.ok) {
-        const raw = sRes.data?.data;
-        setRegServices(Array.isArray(raw) ? raw : (raw?.data ?? []));
-      }
+    action('get', '/api/v1/admin/services/categories').then(res => {
+      if (res.ok) setRegCats(res.data?.data ?? []);
       setRegLoading(false);
     });
   }, [adding]);
 
   const resetAdd = () => {
     setAddStep(1);
-    setAddForm({ name: '', phone: '', email: '', city: '', experience: '' });
+    setAddForm({
+      name: '', phone: '', email: '', city: '', experience: '', gender: '',
+      profilePicture: '', aadharUrl: '', agreementUrl: '',
+      bankAccountNo: '', bankIfsc: '', bankName: '', bankHolderName: '',
+    });
+    setSelectedProfessions([]);
     setSelectedCats([]);
-    setSelectedSkills([]);
   };
 
-  const toggleCat = (id) => setSelectedCats(p => p.includes(id) ? p.filter(c => c !== id) : [...p, id]);
-  const toggleSkill = (id) => setSelectedSkills(p => p.includes(id) ? p.filter(s => s !== id) : [...p, id]);
+  const openEdit = (p) => {
+    setEditForm({
+      name: p.name ?? '',
+      phone: p.phone ?? '',
+      email: p.email ?? '',
+      city: p.city && p.city !== '—' ? p.city : '',
+      experience: typeof p.experience === 'string' ? p.experience.replace(/\s*yrs$/, '') : (p.experience ?? ''),
+      gender: p.gender ?? '',
+    });
+    setEditing(p);
+  };
 
-  const nextStep = () => {
-    if (addStep === 1) {
-      if (!addForm.name?.trim() || !addForm.phone?.trim()) {
-        showToast('Name and phone are required.', 'danger');
-        return;
-      }
-      setAddStep(2);
-    } else if (addStep === 2) {
-      if (selectedCats.length === 0) {
-        showToast('Please select at least one category.', 'danger');
-        return;
-      }
-      // Prune skills that belong to removed categories
-      const validIds = new Set(
-        regServices.filter(s => selectedCats.includes(s.categoryId)).map(s => s.id)
-      );
-      setSelectedSkills(p => p.filter(id => validIds.has(id)));
-      setAddStep(3);
+  const saveEdit = async () => {
+    if (!editForm.name?.trim() || !editForm.phone?.trim()) {
+      showToast('Name and phone are required.', 'danger');
+      return;
+    }
+    setSavingEdit(true);
+    const res = await action('patch', `/api/v1/admin/partners/${editing.id}`, editForm);
+    setSavingEdit(false);
+    if (res.ok) {
+      const updated = normalizePartner(res.data?.data ?? { ...editing, ...editForm });
+      setPartners(prev => prev.map(p => p.id === editing.id ? { ...p, ...updated } : p));
+      if (selected?.id === editing.id) setSelected(prev => ({ ...prev, ...updated }));
+      showToast('Partner details updated.', 'success');
+      setEditing(null);
+    } else {
+      showToast(res.error ?? 'Failed to update partner.', 'danger');
     }
   };
 
+  const toggleProfession = (p) => setSelectedProfessions(prev => prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p]);
+  const toggleCat = (id) => setSelectedCats(prev => prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]);
+
+  const nextStep = () => {
+    if (addStep === 1 && (!addForm.name?.trim() || !addForm.phone?.trim())) {
+      showToast('Name and phone are required.', 'danger');
+      return;
+    }
+    setAddStep(s => s + 1);
+  };
+
   const addPartner = async () => {
+    // Jumping straight to a later step via the step bar can skip the Basic Info
+    // validation in nextStep() — re-check the required fields here before submitting.
+    if (!addForm.name?.trim() || !addForm.phone?.trim()) {
+      showToast('Name and phone are required.', 'danger');
+      setAddStep(1);
+      return;
+    }
     const res = await action('post', '/api/v1/admin/partners', {
       ...addForm,
+      professions: selectedProfessions,
       categories: selectedCats,
-      skills: selectedSkills,
     });
     if (res.ok) {
       fetchList().then(r => { if (r.ok) setPartners((r.data?.data ?? []).map(normalizePartner)); });
       showToast('Partner added! Pending verification.', 'success');
+      setAdding(false);
+      resetAdd();
     } else {
+      // Keep the modal open with the entered data so the admin doesn't have to redo everything
       showToast(res.error ?? 'Failed to add partner.', 'danger');
     }
-    setAdding(false);
-    resetAdd();
   };
 
   const filtered = useMemo(() => {
@@ -223,14 +271,45 @@ export default function Partners() {
 
   const pendingPartners = partners.filter(p => p.status === 'pending');
 
-  // Categories grid for step 2
-  const CatGrid = () => (
+  // Profession chips for step 2 — fixed list matching the partner app's registration screen
+  const ProfessionChips = () => (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+      {PROFESSIONS.map(p => {
+        const active = selectedProfessions.includes(p);
+        return (
+          <button
+            key={p}
+            type="button"
+            onClick={() => toggleProfession(p)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              border: `1.5px solid ${active ? 'var(--c-brand-primary)' : 'var(--c-border)'}`,
+              borderRadius: 20,
+              padding: '8px 16px',
+              background: active ? '#e8f0fe' : 'white',
+              cursor: 'pointer',
+              fontSize: 13,
+              fontWeight: active ? 700 : 500,
+              color: active ? 'var(--c-brand-primary)' : 'var(--c-text-primary)',
+              transition: 'all 0.15s',
+            }}
+          >
+            {active && <Check size={12} />}
+            {p}
+          </button>
+        );
+      })}
+    </div>
+  );
+
+  // Service category chips for step 3 (Skills) — optional, sourced from the Services catalog
+  const CategoryChips = () => (
     regLoading ? (
       <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--c-text-muted)', fontSize: 13 }}>Loading categories…</div>
     ) : regCats.length === 0 ? (
       <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--c-text-muted)', fontSize: 13 }}>No categories found. Add categories in the Services page first.</div>
     ) : (
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 10 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
         {regCats.map(cat => {
           const active = selectedCats.includes(cat.id);
           return (
@@ -239,95 +318,22 @@ export default function Partners() {
               type="button"
               onClick={() => toggleCat(cat.id)}
               style={{
-                border: `2px solid ${active ? 'var(--c-brand-primary)' : 'var(--c-border)'}`,
-                borderRadius: 10,
-                padding: '12px 8px',
-                textAlign: 'center',
+                display: 'flex', alignItems: 'center', gap: 6,
+                border: `1.5px solid ${active ? 'var(--c-brand-primary)' : 'var(--c-border)'}`,
+                borderRadius: 20,
+                padding: '8px 16px',
                 background: active ? '#e8f0fe' : 'white',
                 cursor: 'pointer',
+                fontSize: 13,
+                fontWeight: active ? 700 : 500,
+                color: active ? 'var(--c-brand-primary)' : 'var(--c-text-primary)',
                 transition: 'all 0.15s',
-                position: 'relative',
               }}
             >
-              {active && (
-                <div style={{
-                  position: 'absolute', top: 6, right: 6,
-                  width: 16, height: 16, borderRadius: '50%',
-                  background: 'var(--c-brand-primary)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}>
-                  <Check size={10} color="white" />
-                </div>
-              )}
-              {cat.icon && (
-                <div style={{ fontSize: 22, marginBottom: 6, lineHeight: 1 }}>{cat.icon}</div>
-              )}
-              <div style={{ fontSize: 12, fontWeight: active ? 700 : 500, color: active ? 'var(--c-brand-primary)' : 'var(--c-text-primary)', lineHeight: 1.3 }}>
-                {cat.name}
-              </div>
+              {active && <Check size={12} />}
+              {cat.icon && <span>{cat.icon}</span>}
+              {cat.name}
             </button>
-          );
-        })}
-      </div>
-    )
-  );
-
-  // Skills checkboxes for step 3, grouped by selected category
-  const SkillsGrid = () => (
-    regLoading ? (
-      <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--c-text-muted)', fontSize: 13 }}>Loading skills…</div>
-    ) : (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-        {selectedCats.map(catId => {
-          const cat = regCats.find(c => c.id === catId);
-          const catSvcs = regServices.filter(s => s.categoryId === catId || s.categoryId === Number(catId));
-          return (
-            <div key={catId}>
-              <div style={{
-                fontSize: 13, fontWeight: 700, marginBottom: 10,
-                color: 'var(--c-brand-primary)',
-                display: 'flex', alignItems: 'center', gap: 6,
-              }}>
-                {cat?.icon && <span>{cat.icon}</span>}
-                {cat?.name ?? `Category ${catId}`}
-              </div>
-              {catSvcs.length === 0 ? (
-                <p style={{ fontSize: 12, color: 'var(--c-text-muted)', fontStyle: 'italic', margin: 0 }}>No services in this category.</p>
-              ) : (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                  {catSvcs.map(svc => {
-                    const checked = selectedSkills.includes(svc.id);
-                    return (
-                      <label
-                        key={svc.id}
-                        style={{
-                          display: 'flex', alignItems: 'center', gap: 6,
-                          padding: '6px 12px',
-                          border: `1.5px solid ${checked ? 'var(--c-brand-primary)' : 'var(--c-border)'}`,
-                          borderRadius: 20,
-                          background: checked ? '#e8f0fe' : 'white',
-                          cursor: 'pointer',
-                          fontSize: 12,
-                          fontWeight: checked ? 600 : 400,
-                          color: checked ? 'var(--c-brand-primary)' : 'var(--c-text-primary)',
-                          transition: 'all 0.15s',
-                          userSelect: 'none',
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => toggleSkill(svc.id)}
-                          style={{ display: 'none' }}
-                        />
-                        {checked && <Check size={11} />}
-                        {svc.name}
-                      </label>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
           );
         })}
       </div>
@@ -345,7 +351,7 @@ export default function Partners() {
       >
         {addStep === 1 ? 'Cancel' : '← Back'}
       </button>
-      {addStep < 3 ? (
+      {addStep < 5 ? (
         <button className="btn btn-primary" onClick={nextStep}>Next →</button>
       ) : (
         <button className="btn btn-primary" onClick={addPartner}>Add Partner</button>
@@ -465,6 +471,7 @@ export default function Partners() {
                         const res = await action('get', `/api/v1/admin/partners/${p.id}`);
                         if (res.ok) setSelected(normalizePartner(res.data?.data ?? res.data));
                       }}><Eye size={15}/></button>
+                      <button className="btn btn-ghost btn-icon" title="Edit Details" onClick={() => openEdit(p)}><Pencil size={15}/></button>
                       {p.status === 'pending' && (<>
                         <button className="btn btn-ghost btn-icon" title="Approve" onClick={() => verifyPartner(p.id)} style={{ color:'var(--c-success)' }}><ShieldCheck size={15}/></button>
                         <button className="btn btn-ghost btn-icon" title="Reject" onClick={() => rejectPartner(p.id)} style={{ color:'var(--c-danger)' }}><XCircle size={15}/></button>
@@ -503,7 +510,7 @@ export default function Partners() {
         size="lg"
         footer={addWizardFooter}
       >
-        <StepBar current={addStep} />
+        <StepBar current={addStep} onStepClick={setAddStep} />
 
         {addStep === 1 && (
           <div className="form-grid">
@@ -513,7 +520,7 @@ export default function Partners() {
             </div>
             <div className="form-group">
               <label className="form-label">Phone Number *</label>
-              <input className="form-input" placeholder="+91 99000 11001" value={addForm.phone} onChange={e => setAddForm(f => ({...f, phone: e.target.value}))} />
+              <input className="form-input" placeholder="9900011001" maxLength={10} value={addForm.phone} onChange={e => setAddForm(f => ({...f, phone: e.target.value.replace(/\D/g, '').slice(0, 10)}))} />
             </div>
             <div className="form-group">
               <label className="form-label">Email Address</label>
@@ -522,12 +529,23 @@ export default function Partners() {
             <div className="form-grid form-grid-2" style={{ gap: 16 }}>
               <div className="form-group">
                 <label className="form-label">City</label>
-                <input className="form-input" placeholder="Mumbai" value={addForm.city} onChange={e => setAddForm(f => ({...f, city: e.target.value}))} />
+                <select className="form-input" value={addForm.city} onChange={e => setAddForm(f => ({...f, city: e.target.value}))}>
+                  <option value="">Select city</option>
+                  {cities.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                </select>
               </div>
               <div className="form-group">
                 <label className="form-label">Experience</label>
                 <input className="form-input" placeholder="3 yrs" value={addForm.experience} onChange={e => setAddForm(f => ({...f, experience: e.target.value}))} />
               </div>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Gender</label>
+              <select className="form-input" value={addForm.gender} onChange={e => setAddForm(f => ({...f, gender: e.target.value}))}>
+                <option value="">Select gender</option>
+                <option value="female">Female</option>
+                <option value="male">Male</option>
+              </select>
             </div>
           </div>
         )}
@@ -535,12 +553,12 @@ export default function Partners() {
         {addStep === 2 && (
           <div>
             <p style={{ fontSize: 13, color: 'var(--c-text-secondary)', marginBottom: 16 }}>
-              Select the service categories this partner specialises in.
+              What is Your Profession? <span style={{ color: 'var(--c-text-muted)' }}>(optional)</span>
             </p>
-            <CatGrid />
-            {selectedCats.length > 0 && (
+            <ProfessionChips />
+            {selectedProfessions.length > 0 && (
               <div style={{ marginTop: 12, fontSize: 12, color: 'var(--c-text-muted)' }}>
-                {selectedCats.length} categor{selectedCats.length === 1 ? 'y' : 'ies'} selected
+                {selectedProfessions.length} selected
               </div>
             )}
           </div>
@@ -549,14 +567,75 @@ export default function Partners() {
         {addStep === 3 && (
           <div>
             <p style={{ fontSize: 13, color: 'var(--c-text-secondary)', marginBottom: 16 }}>
-              Pick the specific skills this partner offers within the selected categories.
+              Which service categories does this partner specialise in? <span style={{ color: 'var(--c-text-muted)' }}>(optional)</span>
             </p>
-            <SkillsGrid />
-            {selectedSkills.length > 0 && (
+            <CategoryChips />
+            {selectedCats.length > 0 && (
               <div style={{ marginTop: 12, fontSize: 12, color: 'var(--c-text-muted)' }}>
-                {selectedSkills.length} skill{selectedSkills.length === 1 ? '' : 's'} selected
+                {selectedCats.length} selected
               </div>
             )}
+          </div>
+        )}
+
+        {addStep === 4 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <p style={{ fontSize: 13, color: 'var(--c-text-secondary)', margin: 0 }}>
+              Upload documents <span style={{ color: 'var(--c-text-muted)' }}>(optional)</span>
+            </p>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Profile Photo</div>
+              <ImageUploader
+                value={addForm.profilePicture}
+                onChange={url => setAddForm(f => ({...f, profilePicture: url}))}
+                width={64} height={64}
+                label="Upload Photo"
+              />
+            </div>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Aadhar Card</div>
+              <ImageUploader
+                value={addForm.aadharUrl}
+                onChange={url => setAddForm(f => ({...f, aadharUrl: url}))}
+                accept="image/jpeg,image/jpg,image/png,image/webp,application/pdf"
+                label="Upload Aadhar"
+              />
+            </div>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Signed Agreement</div>
+              <ImageUploader
+                value={addForm.agreementUrl}
+                onChange={url => setAddForm(f => ({...f, agreementUrl: url}))}
+                accept="image/jpeg,image/jpg,image/png,image/webp,application/pdf"
+                label="Upload Agreement"
+              />
+            </div>
+          </div>
+        )}
+
+        {addStep === 5 && (
+          <div className="form-grid">
+            <p style={{ fontSize: 13, color: 'var(--c-text-secondary)', margin: 0 }}>
+              Bank details for settlements <span style={{ color: 'var(--c-text-muted)' }}>(optional)</span>
+            </p>
+            <div className="form-group">
+              <label className="form-label">Account Holder Name</label>
+              <input className="form-input" value={addForm.bankHolderName} onChange={e => setAddForm(f => ({...f, bankHolderName: e.target.value}))} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Bank Name</label>
+              <input className="form-input" value={addForm.bankName} onChange={e => setAddForm(f => ({...f, bankName: e.target.value}))} />
+            </div>
+            <div className="form-grid form-grid-2" style={{ gap: 16 }}>
+              <div className="form-group">
+                <label className="form-label">Account Number</label>
+                <input className="form-input" value={addForm.bankAccountNo} onChange={e => setAddForm(f => ({...f, bankAccountNo: e.target.value}))} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">IFSC Code</label>
+                <input className="form-input" value={addForm.bankIfsc} onChange={e => setAddForm(f => ({...f, bankIfsc: e.target.value.toUpperCase()}))} />
+              </div>
+            </div>
           </div>
         )}
       </Modal>
@@ -566,6 +645,11 @@ export default function Partners() {
         footer={
           <>
             <button className="btn btn-outline" onClick={() => setSelected(null)}>Close</button>
+            {selected && (
+              <button className="btn btn-outline" style={{ display:'flex', alignItems:'center', gap:6 }} onClick={() => openEdit(selected)}>
+                <Pencil size={15}/> Edit Details
+              </button>
+            )}
             {selected?.status === 'pending' && (<>
               <button className="btn btn-danger" onClick={() => rejectPartner(selected.id)} style={{ display:'flex', alignItems:'center', gap:6 }}>
                 <XCircle size={15}/> Reject
@@ -613,6 +697,8 @@ export default function Partners() {
                     { icon:<Mail size={14}/>,      label:'Email',      value:selected.email },
                     { icon:<MapPin size={14}/>,    label:'City',       value:selected.city },
                     { icon:<Briefcase size={14}/>, label:'Experience', value:selected.experience },
+                    { icon:<User size={14}/>,      label:'Gender',     value:selected.gender ? (selected.gender.charAt(0).toUpperCase() + selected.gender.slice(1)) : '—' },
+                    { icon:<Tag size={14}/>,       label:'Profession', value:(selected.professions ?? []).join(', ') || '—' },
                     { icon:<Star size={14}/>,      label:'Services',   value:selected.services.join(', ') || '—' },
                     { icon:<ShieldCheck size={14}/>,label:'Verified',  value:selected.verifiedAt ? new Date(selected.verifiedAt).toLocaleDateString('en-IN') : 'Not Verified Yet' },
                   ].map(item => (
@@ -679,6 +765,57 @@ export default function Partners() {
             )}
           </div>
         )}
+      </Modal>
+
+      {/* ── Edit Partner Details Modal ── */}
+      <Modal
+        isOpen={!!editing}
+        onClose={() => setEditing(null)}
+        title="Edit Partner Details"
+        footer={
+          <>
+            <button className="btn btn-outline" onClick={() => setEditing(null)}>Cancel</button>
+            <button className="btn btn-primary" onClick={saveEdit} disabled={savingEdit}>
+              {savingEdit ? 'Saving…' : 'Save Changes'}
+            </button>
+          </>
+        }
+      >
+        <div className="form-grid">
+          <div className="form-group">
+            <label className="form-label">Full Name *</label>
+            <input className="form-input" value={editForm.name} onChange={e => setEditForm(f => ({...f, name: e.target.value}))} />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Phone Number *</label>
+            <input className="form-input" placeholder="9900011001" maxLength={10} value={editForm.phone} onChange={e => setEditForm(f => ({...f, phone: e.target.value.replace(/\D/g, '').slice(0, 10)}))} />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Email Address</label>
+            <input className="form-input" type="email" value={editForm.email} onChange={e => setEditForm(f => ({...f, email: e.target.value}))} />
+          </div>
+          <div className="form-grid form-grid-2" style={{ gap: 16 }}>
+            <div className="form-group">
+              <label className="form-label">City</label>
+              <select className="form-input" value={editForm.city} onChange={e => setEditForm(f => ({...f, city: e.target.value}))}>
+                <option value="">Select city</option>
+                {cities.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Experience</label>
+              <input className="form-input" value={editForm.experience} onChange={e => setEditForm(f => ({...f, experience: e.target.value}))} />
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Gender</label>
+            <select className="form-input" value={editForm.gender} onChange={e => setEditForm(f => ({...f, gender: e.target.value}))}>
+              <option value="">Select gender</option>
+              <option value="female">Female</option>
+              <option value="male">Male</option>
+            </select>
+          </div>
+        </div>
       </Modal>
     </div>
   );

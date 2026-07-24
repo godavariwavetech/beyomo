@@ -6,6 +6,7 @@ import {
 import { Download, TrendingUp, Users, UserCog, Star } from 'lucide-react';
 import { useReports } from '../hooks/useReports';
 import { useCityFilter } from '../context/CityContext';
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
 
 const exportCSV = (data, headers, filename) => {
   const csv = [headers, ...data.map(r => headers.map(h => `"${String(r[h]??'').replace(/"/g,'""')}"`))].map(r => Array.isArray(r) ? r.join(',') : r).join('\n');
@@ -47,7 +48,7 @@ export default function Reports() {
   const [partnerPerfData, setPartnerPerfData] = useState([]);
   const [serviceRevData, setServiceRevData] = useState([]);
 
-  useEffect(() => {
+  const loadReports = () => {
     const params = cityParam ? { cityIds: cityParam } : {};
     action('get', '/api/v1/admin/reports/revenue', null, params).then(res => {
       const arr = res.data?.data?.data;
@@ -61,7 +62,10 @@ export default function Reports() {
       const arr = res.data?.data?.topServices;
       if (res.ok && Array.isArray(arr) && arr.length) setServiceRevData(arr);
     });
-  }, [dateRange, cityParam]);
+  };
+
+  useEffect(() => { loadReports(); }, [dateRange, cityParam]);
+  useAutoRefresh(loadReports);
 
   const bookingsByMonth = revenueData.map(r => ({
     month: r.month,

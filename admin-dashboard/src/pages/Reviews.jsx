@@ -5,6 +5,7 @@ import Modal from '../components/common/Modal';
 import { useAuth } from '../context/AuthContext';
 import { useReviews } from '../hooks/useReviews';
 import { useCityFilter } from '../context/CityContext';
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
 
 const ITEMS_PER_PAGE = 8;
 
@@ -19,7 +20,7 @@ export default function Reviews() {
   const [page, setPage]       = useState(1);
   const [selected, setSelected] = useState(null);
 
-  useEffect(() => {
+  const loadReviews = () => {
     fetchList(cityId ? { cityId } : {}).then(res => {
       if (res.ok) setReviews((res.data?.data ?? []).map(r => ({
         ...r,
@@ -33,7 +34,10 @@ export default function Reviews() {
         status: r.status ?? 'visible',
       })));
     });
-  }, [cityId]);
+  };
+
+  useEffect(() => { loadReviews(); }, [cityId]);
+  useAutoRefresh(loadReviews);
 
   const filtered = useMemo(() => {
     return reviews.filter(r => {

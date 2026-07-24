@@ -17,7 +17,6 @@ const {
   updateDeviceToken,
   getEarnings,
   addExtraServices,
-  proposeServiceChanges,
   sendTestNotification,
   getWallet,
 } = require("../../controllers/v1/partners.controller");
@@ -46,7 +45,6 @@ router.post("/bookings/:id/claim-services", claimServices);
 router.patch("/bookings/:id/status", updateBookingStatus);
 router.patch("/bookings/:id/arrived", markArrived);
 router.patch("/bookings/:id/extra-services", addExtraServices);
-router.patch("/bookings/:id/propose-changes", proposeServiceChanges);
 router.patch("/device-token", updateDeviceToken);
 router.post("/test-notification", sendTestNotification);
 

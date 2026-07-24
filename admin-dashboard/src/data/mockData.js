@@ -1,6 +1,6 @@
 export const ROLE_PERMISSIONS = {
-  super_admin: ['dashboard','users','partners','bookings','services','skills','earnings','settlements','coupons','offers','packages','reviews','notifications','reports','analytics','settings','permissions','feedback','zones','cities','contacts'],
-  admin:       ['dashboard','users','partners','bookings','services','skills','earnings','settlements','coupons','offers','packages','reviews','notifications','reports','analytics','feedback','zones','cities','contacts'],
+  super_admin: ['dashboard','users','partners','bookings','services','skills','earnings','settlements','coupons','offers','packages','combos','reviews','notifications','reports','analytics','settings','permissions','feedback','zones','cities','contacts'],
+  admin:       ['dashboard','users','partners','bookings','services','skills','earnings','settlements','coupons','offers','packages','combos','reviews','notifications','reports','analytics','feedback','zones','cities','contacts'],
   manager:     ['dashboard','users','partners','bookings','skills','reviews','notifications','feedback','contacts'],
   analyst:     ['dashboard','reports','analytics'],
   support:     ['dashboard','users','bookings','reviews','contacts'],
@@ -24,21 +24,6 @@ export const ROLE_COLORS = {
 
 export const ADMIN_USERS = [
   { id: 1, name: 'Super Admin',  email: 'admin@beyomo.com', password: 'Admin@123', role: 'super_admin', avatar: 'SA', status: 'active', lastLogin: '2026-05-24T10:30:00', createdAt: '2024-01-01', customPermissions: null },
-];
-
-export const SERVICES = [
-  { id: 1,  name: 'Facial',        category: 'Skin Care',  basePrice: 500,  maxPrice: 2000,  partners: 15, totalBookings: 245, monthlyBookings: 42, status: 'active',   rating: 4.5, revenue: 122500, icon: '✨', color: '#FEF3C7' },
-  { id: 2,  name: 'Hair Spa',      category: 'Hair Care',  basePrice: 800,  maxPrice: 2500,  partners: 12, totalBookings: 189, monthlyBookings: 31, status: 'active',   rating: 4.3, revenue: 151200, icon: '💆', color: '#D1FAE5' },
-  { id: 3,  name: 'Makeup',        category: 'Beauty',     basePrice: 1200, maxPrice: 5000,  partners: 8,  totalBookings: 156, monthlyBookings: 28, status: 'active',   rating: 4.7, revenue: 187200, icon: '💄', color: '#FCE7F3' },
-  { id: 4,  name: 'Waxing',        category: 'Body Care',  basePrice: 300,  maxPrice: 1500,  partners: 20, totalBookings: 312, monthlyBookings: 58, status: 'active',   rating: 4.2, revenue: 93600,  icon: '🌸', color: '#FEE2E2' },
-  { id: 5,  name: 'Pedicure',      category: 'Nail Care',  basePrice: 400,  maxPrice: 1200,  partners: 18, totalBookings: 278, monthlyBookings: 45, status: 'active',   rating: 4.4, revenue: 111200, icon: '💅', color: '#EDE9FE' },
-  { id: 6,  name: 'Haircut',       category: 'Hair Care',  basePrice: 250,  maxPrice: 1000,  partners: 25, totalBookings: 398, monthlyBookings: 72, status: 'active',   rating: 4.1, revenue: 99500,  icon: '✂️', color: '#DBEAFE' },
-  { id: 7,  name: 'Bridal Makeup', category: 'Beauty',     basePrice: 5000, maxPrice: 15000, partners: 5,  totalBookings: 42,  monthlyBookings: 8,  status: 'active',   rating: 4.9, revenue: 210000, icon: '👰', color: '#FDF2F8' },
-  { id: 8,  name: 'Threading',     category: 'Body Care',  basePrice: 150,  maxPrice: 500,   partners: 30, totalBookings: 567, monthlyBookings: 98, status: 'active',   rating: 4.0, revenue: 85050,  icon: '🧵', color: '#F0FDF4' },
-  { id: 9,  name: 'Massage',       category: 'Wellness',   basePrice: 900,  maxPrice: 3000,  partners: 10, totalBookings: 134, monthlyBookings: 22, status: 'active',   rating: 4.6, revenue: 120600, icon: '🌿', color: '#ECFDF5' },
-  { id: 10, name: 'Manicure',      category: 'Nail Care',  basePrice: 350,  maxPrice: 1000,  partners: 22, totalBookings: 201, monthlyBookings: 35, status: 'active',   rating: 4.3, revenue: 70350,  icon: '💅', color: '#FEF9C3' },
-  { id: 11, name: 'Skin Care',     category: 'Skin Care',  basePrice: 650,  maxPrice: 2500,  partners: 14, totalBookings: 167, monthlyBookings: 28, status: 'active',   rating: 4.5, revenue: 108550, icon: '🌼', color: '#F0F9FF' },
-  { id: 12, name: 'Nail Art',      category: 'Nail Care',  basePrice: 600,  maxPrice: 2000,  partners: 9,  totalBookings: 89,  monthlyBookings: 0,  status: 'inactive', rating: 4.2, revenue: 53400,  icon: '🎨', color: '#FFF1F2' },
 ];
 
 export const USERS = [
@@ -200,7 +185,7 @@ export const DASHBOARD_STATS = {
   avgRating:       { value: 4.4,   change: 0.1,  changeType: 'up',   label: 'platform rating',  extra: 'Based on 2,847 reviews' },
 };
 
-export const ALL_MODULES = ['dashboard','users','partners','bookings','services','skills','earnings','settlements','coupons','offers','packages','reviews','notifications','reports','analytics','settings','permissions','feedback','banners','zones','cities'];
+export const ALL_MODULES = ['dashboard','users','partners','bookings','services','skills','earnings','settlements','coupons','offers','packages','combos','reviews','notifications','reports','analytics','settings','permissions','feedback','banners','zones','cities'];
 
 export const APP_FEEDBACK = [
   { id:'FBK001', userId:'USR0005', userName:'Meera Gupta',    type:'service',    rating:5, message:'Absolutely love the app! The booking process is seamless and the service quality is excellent. The beautician arrived on time and did a fantastic job.', submittedAt:'2026-05-23T10:30:00', status:'reviewed',  version:'2.1.0', serviceBooked:'Facial', category:'Service Quality' },

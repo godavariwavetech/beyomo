@@ -8,6 +8,7 @@ import { useNavigate } from 'react-router-dom';
 import { Badge } from '../components/common/Badge';
 import { useReports } from '../hooks/useReports';
 import { useCityFilter } from '../context/CityContext';
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
 
 const fmtCurrency = (v) => v >= 100000 ? `₹${(v/100000).toFixed(2)}L` : `₹${v.toLocaleString('en-IN')}`;
 const fmtNum = (v) => typeof v === 'number' && v % 1 !== 0 ? v.toFixed(1) : v?.toLocaleString('en-IN');
@@ -78,7 +79,7 @@ export default function Dashboard() {
   const [onlinePartners, setOP]         = useState([]);
   const [topServices, setTS]            = useState([]);
 
-  useEffect(() => {
+  const loadDashboard = () => {
     const qp = cityParam ? `?cityIds=${cityParam}` : '';
     action('get', `/api/v1/admin/reports/dashboard${qp}`).then(res => {
       if (!res.ok || !res.data?.data) return;
@@ -107,7 +108,10 @@ export default function Dashboard() {
     action('get', '/api/v1/admin/services?limit=7').then(res => {
       if (res.ok && Array.isArray(res.data?.data)) setTS(res.data.data);
     });
-  }, [cityParam]);
+  };
+
+  useEffect(() => { loadDashboard(); }, [cityParam]);
+  useAutoRefresh(loadDashboard);
 
   const s = stats;
 

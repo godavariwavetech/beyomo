@@ -5,6 +5,7 @@ import Modal from '../components/common/Modal';
 import { useAuth } from '../context/AuthContext';
 import { useNotificationsAdmin } from '../hooks/useNotificationsAdmin';
 import { useCityFilter } from '../context/CityContext';
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { messaging, getToken, VAPID_KEY } from '../firebase';
 
 const TEST_TARGETS = [
@@ -214,7 +215,7 @@ export default function Notifications() {
   const [history, setHistory] = useState([]);
   const [target, setTarget]   = useState('all_users');
 
-  useEffect(() => {
+  const loadHistory = () => {
     fetchList().then(res => {
       if (res.ok) setHistory((res.data?.data ?? []).map(n => ({
         ...n,
@@ -225,7 +226,10 @@ export default function Notifications() {
         target: n.target ?? '',
       })));
     });
-  }, []);
+  };
+
+  useEffect(() => { loadHistory(); }, []);
+  useAutoRefresh(loadHistory);
   const [title, setTitle]     = useState('');
   const [body, setBody]       = useState('');
   const [scheduleDate, setSDate] = useState('');

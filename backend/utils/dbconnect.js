@@ -78,6 +78,25 @@ const connectDB = async () => {
       SET cityIds = JSON_ARRAY(cityId)
       WHERE cityId IS NOT NULL AND (cityIds IS NULL OR JSON_LENGTH(cityIds) = 0)
     `).catch(() => {});
+    // Partner registration fields — profession/gender/skills/documents/bank details
+    // (added to the Partner model but sync() never alters an existing table, so these
+    // need explicit ALTER statements like everything else above)
+    await sequelize.query("ALTER TABLE partners ADD COLUMN IF NOT EXISTS gender ENUM('female','male') NULL").catch(() => {});
+    await sequelize.query("ALTER TABLE partners ADD COLUMN IF NOT EXISTS professions TEXT NULL").catch(() => {});
+    await sequelize.query("ALTER TABLE partners ADD COLUMN IF NOT EXISTS homeServicesConsent TINYINT(1) NULL DEFAULT 0").catch(() => {});
+    await sequelize.query("ALTER TABLE partners ADD COLUMN IF NOT EXISTS serviceCategoryIds TEXT NULL").catch(() => {});
+    await sequelize.query("ALTER TABLE partners ADD COLUMN IF NOT EXISTS profilePicture TEXT NULL").catch(() => {});
+    await sequelize.query("ALTER TABLE partners ADD COLUMN IF NOT EXISTS aadharUrl TEXT NULL").catch(() => {});
+    await sequelize.query("ALTER TABLE partners ADD COLUMN IF NOT EXISTS agreementUrl TEXT NULL").catch(() => {});
+    await sequelize.query("ALTER TABLE partners ADD COLUMN IF NOT EXISTS panUrl TEXT NULL").catch(() => {});
+    await sequelize.query("ALTER TABLE partners ADD COLUMN IF NOT EXISTS bankAccountNo VARCHAR(30) NULL").catch(() => {});
+    await sequelize.query("ALTER TABLE partners ADD COLUMN IF NOT EXISTS bankIfsc VARCHAR(20) NULL").catch(() => {});
+    await sequelize.query("ALTER TABLE partners ADD COLUMN IF NOT EXISTS bankName VARCHAR(100) NULL").catch(() => {});
+    await sequelize.query("ALTER TABLE partners ADD COLUMN IF NOT EXISTS bankHolderName VARCHAR(100) NULL").catch(() => {});
+    // Admin-selected packages/combos featured on the app's home screen header carousel
+    await sequelize.query("ALTER TABLE service_packages ADD COLUMN IF NOT EXISTS showOnHome TINYINT(1) NOT NULL DEFAULT 0").catch(() => {});
+    // Admin-selected categories featured on the app header / website home page
+    await sequelize.query("ALTER TABLE service_categories ADD COLUMN IF NOT EXISTS showOnHome TINYINT(1) NOT NULL DEFAULT 0").catch(() => {});
     logger.info("Column migrations applied");
 
     // Seed cities — INSERT IGNORE skips if name already exists (unique constraint)

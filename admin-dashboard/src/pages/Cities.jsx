@@ -5,6 +5,7 @@ import MapPicker from '../components/common/MapPicker';
 import { useAuth } from '../context/AuthContext';
 import { useCities } from '../hooks/useCities';
 import { useCityFilter } from '../context/CityContext';
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
 
 const EMPTY_FORM = { name: '', state: '', lat: '', lng: '', radius: 30, isActive: true };
 
@@ -51,9 +52,12 @@ export default function Cities() {
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
 
-  useEffect(() => {
+  const loadCities = () => {
     fetchList().then(res => { if (res.ok) setCities(res.data?.data ?? []); });
-  }, []);
+  };
+
+  useEffect(() => { loadCities(); }, []);
+  useAutoRefresh(loadCities);
 
   const f = (k, v) => setForm(p => ({ ...p, [k]: v }));
 

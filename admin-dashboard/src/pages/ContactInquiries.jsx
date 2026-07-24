@@ -3,6 +3,7 @@ import { Search, Mail, CheckCircle, Clock, MessageSquare } from 'lucide-react';
 import Modal from '../components/common/Modal';
 import { useAuth } from '../context/AuthContext';
 import { useContacts } from '../hooks/useContacts';
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
 
 const ITEMS_PER_PAGE = 15;
 
@@ -47,12 +48,15 @@ export default function ContactInquiries() {
   const [selected, setSelected]   = useState(null);
   const [notes, setNotes]         = useState('');
 
-  useEffect(() => {
+  const loadInquiries = () => {
     fetchList().then(res => {
       if (res.ok) setInquiries(res.data?.data ?? []);
       setLoading(false);
     });
-  }, []);
+  };
+
+  useEffect(() => { loadInquiries(); }, []);
+  useAutoRefresh(loadInquiries);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();

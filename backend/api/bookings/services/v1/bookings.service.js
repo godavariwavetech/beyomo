@@ -16,21 +16,13 @@ const { sendPushNotification } = require("../../../../utils/firebaseUtils");
 const { haversineKm } = require("../../../../utils/geoUtils");
 const { resolveRatesForBooking } = require("../../../../utils/revenueSplit");
 
-// TEMPORARY: no live Razorpay key is configured yet, so online payment is disabled at
-// the source — every booking is forced to Cash on Delivery regardless of what the
-// client requests. Revert by removing this flag (and the check below) once a real key
-// is in place.
-const ONLINE_PAYMENTS_ENABLED = false;
-
 const createBooking = async (userId, bookingData) => {
-  const { services: serviceItems, partnerId, address, scheduledAt, couponCode, offerId, packageId, paymentMode, notes } = bookingData;
+  const { services: serviceItems, extraServices = [], partnerId, address, scheduledAt, couponCode, offerId, packageId, paymentMode, notes } = bookingData;
 
-  if (!ONLINE_PAYMENTS_ENABLED && paymentMode === "online") {
-    throw new AppError("Online payment is currently unavailable. Please choose Cash on Delivery.", 400);
-  }
-
-  // Fetch all requested services
-  const serviceIds = serviceItems.map(s => parseInt(s.id));
+  // Fetch all requested services — the package/flexible-pick items and any extra
+  // individual services booked alongside them, validated together in one pass.
+  const allItems = [...serviceItems, ...extraServices];
+  const serviceIds = allItems.map(s => parseInt(s.id));
   const uniqueServiceIds = [...new Set(serviceIds)];
   const foundServices = await Service.findAll({ where: { id: uniqueServiceIds, isActive: true } });
   if (foundServices.length !== uniqueServiceIds.length) {
@@ -44,7 +36,7 @@ const createBooking = async (userId, bookingData) => {
 
   // Build enriched services list and calculate base amount
   const serviceMap = Object.fromEntries(foundServices.map(s => [s.id, s]));
-  const enrichedServices = serviceItems.map(item => {
+  const enrichItems = (items) => items.map(item => {
     const svc = serviceMap[parseInt(item.id)];
     const qty = item.qty || 1;
     return {
@@ -60,6 +52,9 @@ const createBooking = async (userId, bookingData) => {
     };
   });
 
+  let enrichedServices = enrichItems(serviceItems);
+  const enrichedExtraServices = enrichItems(extraServices);
+
   let baseAmount = enrichedServices.reduce((sum, s) => sum + s.price * s.qty, 0);
 
   // If booking via a package, override the base amount with the package price
@@ -71,6 +66,15 @@ const createBooking = async (userId, bookingData) => {
     appliedPackageId = appliedPackage.id;
     // Mark each service as part of a package (for display/tracking)
     enrichedServices.forEach(s => { s.addedByPackage = true; });
+  }
+
+  // Extra services booked alongside the package (or alongside a regular booking) are
+  // billed additively on top, at their normal catalog price — never folded into the
+  // package's fixed price.
+  if (enrichedExtraServices.length > 0) {
+    enrichedExtraServices.forEach(s => { s.addedByUser = true; });
+    baseAmount += enrichedExtraServices.reduce((sum, s) => sum + s.price * s.qty, 0);
+    enrichedServices = [...enrichedServices, ...enrichedExtraServices];
   }
 
   let couponDiscount = 0;
@@ -400,60 +404,6 @@ const submitReview = async (userId, bookingId, reviewData) => {
   return review;
 };
 
-const respondServiceUpdate = async (userId, bookingId, action) => {
-  const { sendPushNotification } = require("../../../../utils/firebaseUtils");
-
-  const booking = await Booking.findByPk(bookingId);
-  if (!booking) throw new AppError("Booking not found", 404);
-  if (String(booking.userId) !== String(userId)) throw new AppError("Not your booking", 403);
-  if (!booking.serviceUpdatePending) throw new AppError("No pending service update", 400);
-
-  const parseTv = (s) => { if (Array.isArray(s)) return s; if (typeof s === 'string') { try { return JSON.parse(s); } catch { return []; } } return []; };
-  const pending = (() => { const p = booking.pendingServicesUpdate; if (typeof p === 'string') { try { return JSON.parse(p); } catch { return null; } } return p; })();
-
-  if (action === "approve" && pending?.services) {
-    const svcs = parseTv(pending.services);
-    const newBase  = svcs.reduce((s, i) => s + (parseFloat(i.price) || 0) * (i.qty || 1), 0);
-    const couponDiscount = parseFloat(booking.couponDiscountAmount || 0);
-    const taxable  = newBase - couponDiscount;
-    const pkg = booking.packageId ? await ServicePackage.findByPk(booking.packageId) : null;
-    const { partnerPercent, gstPercent } = await resolveRatesForBooking({ serviceItems: svcs, package: pkg });
-    const tax = parseFloat((taxable * gstPercent / 100).toFixed(2));
-    const newTotal = parseFloat((taxable + tax).toFixed(2));
-    const partnerEarning = parseFloat((taxable * partnerPercent / 100).toFixed(2));
-    await booking.update({
-      services: svcs,
-      baseAmount: newBase,
-      taxAmount: tax,
-      totalAmount: newTotal,
-      partnerEarning,
-      serviceUpdatePending: false,
-      pendingServicesUpdate: null,
-      lastServiceUpdateDecision: "approved",
-    });
-  } else {
-    await booking.update({
-      serviceUpdatePending: false,
-      pendingServicesUpdate: null,
-      lastServiceUpdateDecision: "rejected",
-    });
-  }
-
-  // Notify partner
-  if (booking.partnerId) {
-    const partner = await Partner.findByPk(booking.partnerId, { attributes: ["fcmToken", "name"] });
-    const msg = action === "approve"
-      ? `Customer approved your service changes for booking ${booking.bookingCode}.`
-      : `Customer rejected your service changes for booking ${booking.bookingCode}.`;
-    if (partner?.fcmToken) {
-      await sendPushNotification([partner.fcmToken], action === "approve" ? "Changes Approved" : "Changes Rejected", msg,
-        { bookingId: String(booking.id), type: "service_update" }).catch(() => {});
-    }
-  }
-
-  return booking;
-};
-
 const addUserServices = async (userId, bookingId, serviceItems) => {
   const booking = await Booking.findOne({ where: { id: bookingId, userId } });
   if (!booking) throw new AppError("Booking not found", 404);
@@ -474,10 +424,19 @@ const addUserServices = async (userId, bookingId, serviceItems) => {
   const existing = (() => { const s = booking.services; if (Array.isArray(s)) return s; if (typeof s === 'string') { try { return JSON.parse(s); } catch { return []; } } return []; })();
   const updatedServices = [...existing, ...newEntries];
 
-  const newBase = updatedServices.reduce((sum, s) => sum + s.price * (s.qty || 1), 0);
+  // A package booking's total isn't the sum of its (real, undiscounted) per-service
+  // prices — its package-tagged items keep contributing the package's own fixed price,
+  // and only genuinely extra items add on top. Recomputing from raw prices here would
+  // silently erase the package discount the moment anything is added.
+  const pkg = booking.packageId ? await ServicePackage.findByPk(booking.packageId) : null;
+  const nonPackageAmount = updatedServices
+    .filter(s => !s.addedByPackage)
+    .reduce((sum, s) => sum + (parseFloat(s.price) || 0) * (s.qty || 1), 0);
+  const newBase = pkg
+    ? parseFloat(pkg.price) + nonPackageAmount
+    : updatedServices.reduce((sum, s) => sum + (parseFloat(s.price) || 0) * (s.qty || 1), 0);
   const couponDiscount = parseFloat(booking.couponDiscountAmount || 0);
   const taxable = newBase - couponDiscount;
-  const pkg = booking.packageId ? await ServicePackage.findByPk(booking.packageId) : null;
   const { partnerPercent, gstPercent } = await resolveRatesForBooking({ serviceItems: updatedServices, package: pkg });
   const tax = parseFloat((taxable * gstPercent / 100).toFixed(2));
   const total = parseFloat((taxable + tax).toFixed(2));
@@ -501,4 +460,4 @@ const addUserServices = async (userId, bookingId, serviceItems) => {
   return booking;
 };
 
-module.exports = { createBooking, getBookingById, cancelBooking, rescheduleBooking, submitReview, respondServiceUpdate, addUserServices };
+module.exports = { createBooking, getBookingById, cancelBooking, rescheduleBooking, submitReview, addUserServices };

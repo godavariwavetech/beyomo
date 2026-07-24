@@ -1,5 +1,5 @@
 // Android emulator: 10.0.2.2 | iOS simulator: localhost | Physical device: your machine IP
-export const BASE_URL = 'https://beyomo.in:3090';
+export const BASE_URL = 'http://192.168.0.101:3000';
 
 export const baseURL = BASE_URL;
 
@@ -24,7 +24,6 @@ export const endpoints = {
 
   // Bookings
   BOOKINGS: '/api/v1/bookings',
-  RESPOND_SERVICE_UPDATE: (id: string) => `/api/v1/bookings/${id}/respond-service-update`,
   USER_ADD_SERVICES: (id: string) => `/api/v1/bookings/${id}/add-services`,
 
   // Notifications
@@ -59,4 +58,7 @@ export const endpoints = {
 
   // Cities (public, no auth)
   CITIES: '/api/v1/cities/active',
+
+  // Global search (public, no auth)
+  SEARCH: '/api/v1/search',
 };

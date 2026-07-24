@@ -51,6 +51,15 @@ const GRID_GAP = sw(12);
 const GRID_ITEM_W = (width - sw(32) - GRID_GAP * (GRID_COLUMNS - 1)) / GRID_COLUMNS;
 const TOP_BANNER_H = TOP_BANNER_W / TOP_BANNER_ASPECT;
 
+// Packages & Combos CTA banners — pre-made poster graphics, cropped to their opaque
+// content (570×274px, no transparent margin). Sized in exact pixels (not aspectRatio +
+// percentage) to match how every other sized element in this file is computed, and to
+// avoid Yoga aspectRatio-in-flex quirks on Android.
+const CTA_CARD_ASPECT = 570 / 274;
+const CTA_CARD_GAP = sw(12);
+const CTA_CARD_W = (width - sw(32) - CTA_CARD_GAP) / 2;
+const CTA_CARD_H = CTA_CARD_W / CTA_CARD_ASPECT;
+
 const AUTO_SCROLL_OFFERS_MS = 4000;
 
 const chunkArray = <T,>(arr: T[], size: number): T[][] => {
@@ -66,7 +75,6 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
   const dispatch = useDispatch<AppDispatch>();
   const {categories, loading} = useSelector((state: RootState) => state.Services);
   const selectedCity = useSelector((state: RootState) => state.City?.selectedCity);
-  const [offers, setOffers] = useState<any[]>([]);
   const [packages, setPackages] = useState<any[]>([]);
   const [banners, setBanners] = useState<any[]>([]);
 
@@ -82,9 +90,6 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
     dispatch(fetchCategories());
     setLoadedServices(new Set());
     const cityParam = selectedCity?.id ? `?cityId=${selectedCity.id}` : '';
-    api.get(`${endpoints.OFFERS}${cityParam}`).then(res => {
-      if (res.data?.status) { setOffers(res.data.data ?? []); }
-    }).catch(() => {});
     api.get(`${endpoints.PACKAGES}${cityParam}`).then(res => {
       if (res.data?.status) { setPackages(res.data.data ?? []); }
     }).catch(() => {});
@@ -95,11 +100,12 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
     }).catch(() => {});
   }, [dispatch, selectedCity?.id]);
 
-  // Header carousel = admin banners + real fixed combo packages, all paging together
-  const fixedPackages = packages.filter(p => p.packageType === 'fixed');
+  // Header carousel = admin banners + whichever packages/combos the admin has explicitly
+  // flagged "Show on Home Screen" — not every package, only featured ones.
+  const featuredPackages = packages.filter(p => p.showOnHome);
   const headerSlides = [
     ...banners.map((b: any) => ({...b, __kind: 'banner' as const})),
-    ...fixedPackages.map((p: any) => ({...p, __kind: 'package' as const})),
+    ...featuredPackages.map((p: any) => ({...p, __kind: 'package' as const})),
   ];
 
   // Auto-scroll the top banner — pages full-width, wraps back to the first slide
@@ -157,21 +163,18 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
           resizeMode="contain"
         />
 
-        {/* ── Navigation row: city pill | logo | bell + whatsapp ── */}
+        {/* ── Navigation row: city pill | logo | search + whatsapp ── */}
         <View style={styles.headerRow}>
           <TouchableOpacity
             activeOpacity={0.7}
             style={styles.locationBtn}
             onPress={() => navigation.navigate('CitySelector', {returnToHome: true})}>
             <Ionicons name="location-sharp" size={sw(12)} color="#FDD77A" />
-            <View>
-              <Text style={styles.locationLabel}>Delivering to</Text>
-              <View style={styles.locationNameRow}>
-                <Text style={styles.locationName} numberOfLines={1}>
-                  {selectedCity?.name ?? 'Select City'}
-                </Text>
-                <Ionicons name="chevron-down-outline" size={sw(10)} color="#FDD77A" />
-              </View>
+            <View style={styles.locationNameRow}>
+              <Text style={styles.locationName} numberOfLines={1}>
+                {selectedCity?.name ?? 'Select City'}
+              </Text>
+              <Ionicons name="chevron-down-outline" size={sw(10)} color="#FDD77A" />
             </View>
           </TouchableOpacity>
 
@@ -182,9 +185,8 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
           />
 
           <View style={styles.iconsGroup}>
-            <TouchableOpacity activeOpacity={0.7} style={styles.bellBtn} onPress={() => navigation.navigate('Notifications')}>
-              <Ionicons name="notifications-outline" size={sw(24)} color="#FDD77A" />
-              <View style={styles.notifDot} />
+            <TouchableOpacity activeOpacity={0.7} style={styles.bellBtn} onPress={() => navigation.navigate('Search')}>
+              <Ionicons name="search-outline" size={sw(22)} color="#FDD77A" />
             </TouchableOpacity>
 
             <View style={styles.whatsappCol}>
@@ -345,29 +347,43 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
         </View>
 
         {/* ══════════════════════════════════
-            SPECIAL OFFERS — real admin-managed offers, same tile UI as before
+            PACKAGES & COMBOS — pick a flexible build-your-own package, or a
+            ready-made combo, same split the website offers ('flexible' vs 'fixed')
         ══════════════════════════════════ */}
-        {offers.length > 0 && (
-          <View style={styles.promoSection}>
-            {chunkArray(offers, 2).map((row: any[], ri: number) => (
-              <View key={ri} style={styles.promoRow}>
-                {row.map((offer: any) => (
-                  <TouchableOpacity
-                    key={offer.id}
-                    style={styles.promoCardImg}
-                    activeOpacity={0.88}
-                    onPress={() => navigation.navigate('ServiceListing', {offer})}>
-                    <Image
-                      source={{uri: offer.image}}
-                      style={styles.promoStaticImg}
-                      resizeMode="cover"
-                    />
-                  </TouchableOpacity>
-                ))}
-              </View>
-            ))}
+        <View style={styles.packagesCtaSection}>
+          <View style={styles.sectionHeaderBlock}>
+            <Text style={styles.sectionTitle}>Packages & Combos</Text>
+            <View style={styles.titleUnderline} />
           </View>
-        )}
+
+          <View style={styles.ctaRow}>
+            <TouchableOpacity
+              style={styles.ctaCardShadow}
+              activeOpacity={0.88}
+              onPress={() => navigation.navigate('CustomPackages')}>
+              <View style={styles.ctaCardImgWrap}>
+                <Image
+                  source={require('../../assets/custom_package_banner.png')}
+                  style={styles.ctaCardImg}
+                  resizeMode="cover"
+                />
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.ctaCardShadow}
+              activeOpacity={0.88}
+              onPress={() => navigation.navigate('PackageListing', {packageType: 'fixed', title: 'Combos'})}>
+              <View style={styles.ctaCardImgWrap}>
+                <Image
+                  source={require('../../assets/combo_banner.png')}
+                  style={styles.ctaCardImg}
+                  resizeMode="cover"
+                />
+              </View>
+            </TouchableOpacity>
+          </View>
+        </View>
 
         <View style={{height: sw(24)}} />
       </ScrollView>
@@ -467,26 +483,41 @@ const styles = StyleSheet.create({
     color: '#012823',
   },
 
-  /* ── New User Special promo cards ──────────────────────── */
-  promoSection: {
-    gap: sw(12),
+  /* ── Packages & Combos CTA cards ──────────────────────── */
+  packagesCtaSection: {
     paddingHorizontal: sw(16),
     paddingTop: sw(20),
-    paddingBottom: sw(4),
   },
-  promoRow: {
+  ctaRow: {
     flexDirection: 'row',
-    gap: sw(12),
+    gap: CTA_CARD_GAP,
   },
-  promoCardImg: {
-    flex: 1,
-    height: sw(139),
-    borderRadius: sw(12),
+  // Shadow lives on the outer wrapper and rounding+clipping on the inner one — RN clips
+  // shadows away on any view that also has overflow:hidden (needed here to round the image).
+  // A backgroundColor is required here too — Android's elevation shadow doesn't render on
+  // a transparent view.
+  ctaCardShadow: {
+    width: CTA_CARD_W,
+    height: CTA_CARD_H,
+    borderRadius: sw(14),
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 3},
+    shadowOpacity: 0.14,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  ctaCardImgWrap: {
+    width: CTA_CARD_W,
+    height: CTA_CARD_H,
+    borderRadius: sw(14),
     overflow: 'hidden',
   },
-  promoStaticImg: {
-    width: '100%',
-    height: '100%',
+  // Container is sized to the poster's exact aspect ratio (CTA_CARD_ASPECT), so
+  // plain "cover" already fills it edge-to-edge with no cropping needed.
+  ctaCardImg: {
+    width: CTA_CARD_W,
+    height: CTA_CARD_H,
   },
 
   /* ── Top section ──────────────────────── */
@@ -529,12 +560,6 @@ const styles = StyleSheet.create({
     gap: sw(3),
     maxWidth: sw(108),
   },
-  locationLabel: {
-    fontFamily: fonts.textFont,
-    fontSize: sw(9),
-    color: 'rgba(255,255,255,0.65)',
-    lineHeight: sw(11),
-  },
   locationNameRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -549,22 +574,13 @@ const styles = StyleSheet.create({
   iconsGroup: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: sw(4),
+    gap: sw(12),
   },
   bellBtn: {
     width: sw(28),
     height: sw(28),
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  notifDot: {
-    position: 'absolute',
-    width: sw(8),
-    height: sw(8),
-    borderRadius: sw(4),
-    backgroundColor: '#FF0000',
-    top: 0,
-    right: 0,
   },
   whatsappCol: {
     alignItems: 'center',
@@ -582,7 +598,6 @@ const styles = StyleSheet.create({
     fontFamily: fonts.textFont,
     lineHeight: sw(10),
   },
-
   /* ── Services section ──────────────────────── */
   servicesSection: {
     paddingHorizontal: sw(16),

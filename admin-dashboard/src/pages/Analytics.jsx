@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import api from '../services/api';
 import { useCityFilter } from '../context/CityContext';
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 const fmtRs   = v => `₹${Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
@@ -102,8 +103,8 @@ function CouponUsageTab() {
   const [search,     setSearch]     = useState('');
   const [inputVal,   setInputVal]   = useState('');
 
-  const load = useCallback((page = 1, q = '') => {
-    setLoading(true);
+  const load = useCallback((page = 1, q = '', silent = false) => {
+    if (!silent) setLoading(true);
     const params = { page, limit: 20, ...(q ? { search: q } : {}), ...(cityParam ? { cityIds: cityParam } : {}) };
     api.get('/api/v1/admin/reports/coupon-usage', { params })
       .then(res => {
@@ -121,6 +122,7 @@ function CouponUsageTab() {
   }, [cityParam]);
 
   useEffect(() => { load(1, ''); }, [load]);
+  useAutoRefresh(() => load(pagination.page, search, true));
 
   const handleSearch = e => {
     e.preventDefault();
@@ -260,8 +262,8 @@ function UserEngagementTab() {
   const [pagination, setPagination] = useState({ page: 1, totalPages: 1, total: 0 });
   const [loading,    setLoading]    = useState(false);
 
-  const load = useCallback((page = 1) => {
-    setLoading(true);
+  const load = useCallback((page = 1, silent = false) => {
+    if (!silent) setLoading(true);
     const params = { page, limit: 20, ...(cityParam ? { cityIds: cityParam } : {}) };
     api.get('/api/v1/admin/reports/user-engagement', { params })
       .then(res => {
@@ -279,6 +281,7 @@ function UserEngagementTab() {
   }, [cityParam]);
 
   useEffect(() => { load(1); }, [load]);
+  useAutoRefresh(() => load(pagination.page, true));
 
   const csvCols = [
     { key: 'name',              label: 'Name'             },

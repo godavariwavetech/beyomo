@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
-  Search, CalendarCheck, Sofa, ShieldCheck, CreditCard, Zap, MessageCircle, SprayCan,
+  CalendarCheck, ShieldCheck, CreditCard, Zap, MessageCircle, SprayCan,
   Star, Smartphone, Building2, Briefcase, MapPin, Check, Lock, Handshake, Sparkles, CheckCircle2,
-  Waves, Sun, ArrowRight,
+  Waves, Sun, ArrowRight, Home as HomeIcon, Package,
 } from 'lucide-react';
 import { useRevealAll } from '../hooks/useReveal';
 import { useCity } from '../context/CityContext';
@@ -33,22 +33,31 @@ function bannerGradient(index) {
 }
 
 /* ── Data ── */
+// Fallback tiles shown only until the real categories load from the API (or on fetch
+// failure) — kept in sync with the 16 live rate-card categories and their display order.
 const SERVICES = [
-  { title: 'Facial', img: 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=800&q=90&fit=crop' },
+  { title: 'Men Grooming', img: 'https://images.unsplash.com/photo-1560869713-7d0a29430803?w=800&q=90&fit=crop' },
+  { title: 'Haircut', img: 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=800&q=90&fit=crop' },
   { title: 'Hair Spa', img: 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=800&q=90&fit=crop' },
-  { title: 'Makeup', img: 'https://images.unsplash.com/photo-1487412947147-5cebf100ffc2?w=800&q=90&fit=crop' },
+  { title: 'Hair Colour', img: 'https://images.unsplash.com/photo-1605497788044-5a32c7078486?w=800&q=90&fit=crop' },
+  { title: 'Head Massage', img: 'https://images.unsplash.com/photo-1519823551278-64ac92734fb1?w=800&q=90&fit=crop' },
+  { title: 'Hair Treatments', img: 'https://images.unsplash.com/photo-1583795484071-3c453e3a7c71?w=800&q=90&fit=crop' },
+  { title: 'Threading', img: 'https://images.unsplash.com/photo-1598440947619-2c35fc9aa908?w=800&q=90&fit=crop' },
   { title: 'Waxing', img: 'https://images.unsplash.com/photo-1560750588-73207b1ef5b8?w=800&q=90&fit=crop' },
+  { title: 'De-Tan', img: 'https://images.unsplash.com/photo-1552693673-1bf958298935?w=800&q=90&fit=crop' },
+  { title: 'Facials', img: 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=800&q=90&fit=crop' },
+  { title: 'Peeloff Mask', img: 'https://images.unsplash.com/photo-1556228720-195a672e8a03?w=800&q=90&fit=crop' },
   { title: 'Pedicure', img: 'https://images.unsplash.com/photo-1604654894610-df63bc536371?w=800&q=90&fit=crop' },
-  { title: 'Bridal Makeup', img: 'https://images.unsplash.com/photo-1595476108010-b4d1f102b1b1?w=800&q=90&fit=crop' },
-  { title: 'Massage', img: 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?w=800&q=90&fit=crop' },
-  { title: 'Haircut', img: 'https://images.unsplash.com/photo-1560869713-7d0a29430803?w=800&q=90&fit=crop' },
+  { title: 'Manicure', img: 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=800&q=90&fit=crop' },
+  { title: 'Mehndi', img: 'https://images.unsplash.com/photo-1616394584738-fc6e612e71b9?w=800&q=90&fit=crop' },
+  { title: 'Nail Art', img: 'https://images.unsplash.com/photo-1607779097040-26e80aa78e66?w=800&q=90&fit=crop' },
+  { title: 'Bridal Services', img: 'https://images.unsplash.com/photo-1595476108010-b4d1f102b1b1?w=800&q=90&fit=crop' },
 ];
 
-const STEPS = [
-  { n: 1, icon: Search, title: 'Browse & Choose', desc: 'Explore our full menu of beauty and wellness services. Filter by category, price, or ratings to find your perfect match.' },
-  { n: 2, icon: CalendarCheck, title: 'Book Your Slot', desc: 'Pick a date and time that works for you. Our system instantly matches you with a verified professional nearby.' },
-  { n: 3, icon: Sofa, title: 'Relax at Home', desc: 'Your professional arrives fully equipped at your door. Sit back, enjoy, and pay securely via UPI or card.' },
-];
+const WHY_BEYOMO = ['Best brands in 1-time use packs', 'Trained, verified professionals', 'Mess-free service at your doorstep'];
+const THREE_STEPS = ['Pick Your Service', 'Book Instantly', 'Salon at Your Doorstep'];
+
+const BRANDS = ['SEYON', 'RICA', 'ÉLAN', "L'ORÉAL", 'O3+', 'SHAHNAZ HUSAIN', 'SEA SOUL', 'WELLA', 'LAKMÉ'];
 
 const FEATURES = [
   { bg: '#D1FAE5', color: '#059669', icon: ShieldCheck, title: 'Verified & Trained Professionals', desc: 'Every partner undergoes background verification, skill assessment, and hygiene training before being listed.' },
@@ -154,7 +163,6 @@ export default function Home() {
   const [moreAboutOpen, setMoreAboutOpen] = useState(false);
   const [openFaq, setOpenFaq] = useState(null);
   const [banners, setBanners] = useState([]);
-  const [bannerIndex, setBannerIndex] = useState(0);
   const [categories, setCategories] = useState([]);
 
   useEffect(() => {
@@ -164,12 +172,6 @@ export default function Home() {
   useEffect(() => {
     getCategories(city?.id).then(res => setCategories(res?.data || [])).catch(() => {});
   }, [city]);
-
-  useEffect(() => {
-    if (banners.length < 2) return;
-    const t = setInterval(() => setBannerIndex(i => (i + 1) % banners.length), 5000);
-    return () => clearInterval(t);
-  }, [banners.length]);
 
   const goToServices = () => {
     if (!city) {
@@ -193,57 +195,25 @@ export default function Home() {
 
   return (
     <div>
-      {/* ══ HERO (admin-managed banner carousel) ══ */}
+      {/* ══ HERO (fixed brand hero, matches the live site) ══ */}
       <section className="gl-hero">
         <h1 className="sr-only">Beyomo — Book beauty &amp; wellness services at Home</h1>
         <div className="gl-hero-banner">
-          {banners.length > 0 ? (
-            <div className="banner-carousel">
-              <div className="banner-track" style={{ transform: `translateX(-${bannerIndex * 100}%)` }}>
-                {banners.map((b, i) => (
-                  b.image ? (
-                    <div key={b.id} className="banner-slide banner-slide-image-only" onClick={goToServices} role="button" tabIndex={0}>
-                      <img src={b.image} alt={b.title} className="banner-slide-img-full" />
-                    </div>
-                  ) : (
-                    <div key={b.id} className="banner-slide" style={{ background: bannerGradient(i) }}>
-                      <div className="banner-slide-content">
-                        {b.subtitle && <div className="banner-slide-subtitle">{b.subtitle}</div>}
-                        <div className="banner-slide-title">{b.title}</div>
-                        {b.description && <p className="banner-slide-desc">{b.description}</p>}
-                        <a href="#services" className="banner-slide-btn" onClick={e => { e.preventDefault(); goToServices(); }}>{b.buttonText || 'Book Now'} →</a>
-                      </div>
-                    </div>
-                  )
-                ))}
-              </div>
-              {banners.length > 1 && (
-                <>
-                  <button type="button" className="banner-arrow banner-arrow-prev" onClick={() => setBannerIndex(i => (i - 1 + banners.length) % banners.length)} aria-label="Previous banner">‹</button>
-                  <button type="button" className="banner-arrow banner-arrow-next" onClick={() => setBannerIndex(i => (i + 1) % banners.length)} aria-label="Next banner">›</button>
-                  <div className="banner-dots banner-dots-overlay">
-                    {banners.map((b, i) => (
-                      <button key={b.id} type="button" className={`banner-dot${i === bannerIndex ? ' active' : ''}`} onClick={() => setBannerIndex(i)} aria-label={`Go to banner ${i + 1}`} />
-                    ))}
-                  </div>
-                </>
-              )}
+          <div className="gl-hero-fixed">
+            <div className="gl-hero-fixed-photo">
+              <img src="https://images.unsplash.com/photo-1544161515-4ab6ce6db874?w=1200&q=85&fit=crop" alt="Beyomo salon services at home" loading="eager" />
             </div>
-          ) : (
-            <div className="gl-hero-banner-inner">
-              <img src="https://images.unsplash.com/photo-1487412947147-5cebf100ffc2?w=1600&q=85&fit=crop" alt="Beyomo beauty services at home" loading="eager" />
-              <div className="gl-hero-overlay">
-                <h2>With Beyomo</h2>
-                <p>Book beauty &amp; wellness services at Home</p>
-                <div className="gl-hero-pills">
-                  <div className="gl-hero-pill">At Home<br />Service</div>
-                  <div className="gl-hero-pill">Verified<br />Professionals</div>
-                  <div className="gl-hero-pill">Affordable<br />Pricing</div>
-                </div>
-                <div className="gl-hero-availability">We are available in <strong>8+ cities</strong></div>
+            <div className="gl-hero-fixed-panel">
+              <h2 className="gl-hero-serif">Salon Comes Home</h2>
+              <div className="gl-hero-rule" />
+              <p className="gl-hero-fixed-sub">Book Salon Services at Home</p>
+              <div className="gl-hero-pills-row">
+                <div className="gl-hero-pill-block"><HomeIcon size={20} /><span>At Home<br />Salon</span></div>
+                <div className="gl-hero-pill-block gl-hero-pill-block-alt"><Package size={20} /><span>Variety of<br />Products</span></div>
+                <div className="gl-hero-pill-block"><Handshake size={20} /><span>Affordable<br />Services</span></div>
               </div>
             </div>
-          )}
+          </div>
           <div className="gl-hero-location-wrapper">
             <div className="gl-hero-location-section">
               <div className="gl-location-details">
@@ -259,15 +229,44 @@ export default function Home() {
         </div>
       </section>
 
+      {/* ══ SPECIAL OFFERS (admin-managed banners) ══ */}
+      {banners.length > 0 && (
+        <section className="gl-offers-wrapper">
+          <p className="gl-offers-label">Special Offers</p>
+          <div className="gl-offers-row">
+            {banners.map((b, i) => (
+              <a key={b.id} className="gl-offer-card" href="#services" onClick={e => { e.preventDefault(); goToServices(); }}>
+                {b.image ? (
+                  <img src={b.image} alt={b.title} loading="lazy" />
+                ) : (
+                  <div className="gl-offer-card-fallback" style={{ background: bannerGradient(i) }}>
+                    {b.subtitle && <span className="gl-offer-card-sub">{b.subtitle}</span>}
+                    <span className="gl-offer-card-title">{b.title}</span>
+                  </div>
+                )}
+              </a>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* ══ SERVICES ══ */}
       <section className="gl-services-wrapper" id="services">
         <span className="badge anim-fadeUp">Top Categories</span>
         <h2 className="section-title anim-fadeUp">Book our services at affordable price</h2>
         <p className="section-sub anim-fadeUp" style={{ margin: '14px 0 0' }}>Pick a category and get a verified professional at your doorstep, on your schedule.</p>
         <div className="gl-services-grid">
+          <a className="gl-promo-tile anim-fadeUp d-0" onClick={e => { e.preventDefault(); goToServices(); }} href="#services">
+            <img src="/promo/custom_package_banner.png" alt="Make Your Own Package" />
+          </a>
+          <a className="gl-promo-tile anim-fadeUp d-1" onClick={e => { e.preventDefault(); goToServices(); }} href="#services">
+            <img src="/promo/combo_banner.png" alt="Combo Offers" />
+          </a>
           {serviceTiles.map((s, i) => (
-            <a key={s.key} className={`gl-service-icon-card anim-fadeUp d-${Math.min(i, 9)}`} onClick={e => { e.preventDefault(); goToCategory(s.id); }} href="#services">
-              <img src={s.img} alt={s.title} loading="lazy" />
+            <a key={s.key} className={`gl-service-icon-card anim-fadeUp d-${Math.min(i + 2, 9)}`} onClick={e => { e.preventDefault(); goToCategory(s.id); }} href="#services">
+              <div className="gl-service-icon-img-wrap">
+                <img src={s.img} alt={s.title} loading="lazy" />
+              </div>
               <p>{s.title}</p>
             </a>
           ))}
@@ -277,39 +276,57 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ══ WHY BEYOMO (checklist) ══ */}
-      <section className="gl-why-wrapper">
-        <div className="gl-why-section">
-          <h2 className="section-title" style={{ fontSize: 28 }}>Why Beyomo?</h2>
-          <div className="gl-why-steps">
-            {['Best brands in 1-time use packs', 'Trained, verified professionals', 'Mess-free service at your doorstep'].map(t => (
-              <div className="gl-why-step" key={t}>
-                <span className="gl-why-check"><Check size={14} strokeWidth={3} /></span>
-                <p style={{ margin: 0, fontSize: 17, fontWeight: 500 }}>{t}</p>
-              </div>
-            ))}
+      {/* ══ WHY BEYOMO + 3 EASY STEPS (combined panel) ══ */}
+      <section className="gl-why-wrapper" id="how-it-works">
+        <div className="gl-why-section gl-why-combined">
+          <div className="gl-why-col">
+            <h2 className="section-title" style={{ fontSize: 28 }}>Why Beyomo?</h2>
+            <div className="gl-why-steps">
+              {WHY_BEYOMO.map(t => (
+                <div className="gl-why-step" key={t}>
+                  <span className="gl-why-check"><Check size={14} strokeWidth={3} /></span>
+                  <p style={{ margin: 0, fontSize: 17, fontWeight: 500 }}>{t}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="gl-why-divider" />
+          <div className="gl-why-col" ref={s2}>
+            <h2 className="section-title reveal" style={{ fontSize: 28 }}>Book in 3 Easy Steps</h2>
+            <div className="gl-why-steps reveal-stagger">
+              {THREE_STEPS.map(t => (
+                <div className="gl-why-step reveal" key={t}>
+                  <span className="gl-why-check"><Check size={14} strokeWidth={3} /></span>
+                  <p style={{ margin: 0, fontSize: 17, fontWeight: 500 }}>{t}</p>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </section>
 
-      {/* ══ HOW IT WORKS ══ */}
-      <section className="section section-alt" id="how-it-works" ref={s2}>
+      {/* ══ BRAND STRIP ══ */}
+      <section className="gl-brand-strip">
         <div className="container">
-          <div style={{ textAlign: 'center' }}>
-            <span className="badge reveal">Simple &amp; Fast</span>
-            <h2 className="section-title reveal">Book in 3 Easy Steps</h2>
-            <p className="section-sub reveal" style={{ margin: '14px auto 0' }}>Getting a professional home service has never been easier. No calls, no hassle — just tap, book, and relax.</p>
+          <span className="badge" style={{ background: 'rgba(255,255,255,0.14)', color: 'white' }}>Top Brands</span>
+          <h2 style={{ color: 'white', fontSize: 'clamp(20px,2.4vw,28px)', fontWeight: 800, margin: '14px 0 26px' }}>We use best Brands in 1-Time use packs</h2>
+          <div className="gl-brand-row">
+            {BRANDS.map(b => <span key={b} className="gl-brand-badge">{b}</span>)}
           </div>
-          <div className="steps-grid reveal-stagger">
-            {STEPS.map((s, i) => (
-              <div key={s.n} className="step-card reveal">
-                <div className="step-number">{s.n}</div>
-                <div className="step-icon" style={{ display: 'flex', justifyContent: 'center' }}><s.icon size={34} color="var(--primary)" /></div>
-                <div className="step-title">{s.title}</div>
-                <p className="step-desc">{s.desc}</p>
-                {i < STEPS.length - 1 && <div className="step-connector" />}
-              </div>
-            ))}
+        </div>
+      </section>
+
+      {/* ══ BECOME YOUR BEST VERSION ══ */}
+      <section className="section">
+        <div className="container gl-best-version">
+          <div>
+            <span className="badge">Join The Team</span>
+            <h2 className="section-title" style={{ margin: '14px 0 0' }}>Become Your <span style={{ color: 'var(--primary)' }}>Best Version</span></h2>
+            <p className="section-sub" style={{ margin: '14px 0 26px' }}>Expert care. Premium services. Because you deserve to shine every day.</p>
+            <Link to="/become-a-partner" className="btn btn-primary">Join Now</Link>
+          </div>
+          <div className="gl-best-version-img">
+            <img src="https://images.unsplash.com/photo-1595476108010-b4d1f102b1b1?w=800&q=85&fit=crop" alt="Beyomo professionals" loading="lazy" />
           </div>
         </div>
       </section>
@@ -410,17 +427,11 @@ export default function Home() {
           <p className="gl-title">Proudly Made in India</p>
           <p className="gl-heading">We Are Live In 8+ Cities</p>
           <div className="gl-cities-container">
-            {CITIES.map((c, i) => (
-              <React.Fragment key={c}>
-                <span role="button" onClick={() => setCityModalOpen(true)}>{c}</span>
-                {(i < CITIES.length - 1 || CITIES_SOON.length) ? <span className="sep">|</span> : null}
-              </React.Fragment>
+            {CITIES.map(c => (
+              <button key={c} type="button" className="city-pill" onClick={() => setCityModalOpen(true)}>{c}</button>
             ))}
-            {CITIES_SOON.map((c, i) => (
-              <React.Fragment key={c}>
-                <span style={{ opacity: 0.5 }}>{c} (Coming Soon)</span>
-                {i < CITIES_SOON.length - 1 ? <span className="sep">|</span> : null}
-              </React.Fragment>
+            {CITIES_SOON.map(c => (
+              <span key={c} className="city-pill" style={{ opacity: 0.55, cursor: 'default' }}>{c} · Soon</span>
             ))}
           </div>
         </div>

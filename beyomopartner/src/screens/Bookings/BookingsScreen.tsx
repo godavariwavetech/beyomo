@@ -145,14 +145,6 @@ const JobCard = ({
           )}
         </View>
 
-        {/* ── Pending service-change request ── */}
-        {!!job.serviceUpdatePending && (
-          <View style={styles.pendingChip}>
-            <Ionicons name="time-outline" size={sw(12)} color="#92400E" />
-            <Text style={styles.pendingChipText}>Service changes awaiting customer approval</Text>
-          </View>
-        )}
-
         {/* ── Rating (completed) ── */}
         {isCompleted && rating != null && (
           <View style={styles.ratingRow}>
@@ -455,12 +447,6 @@ const styles = StyleSheet.create({
   },
   ratingLabel: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#5C5C5C'},
   starsRow: {flexDirection: 'row', gap: sw(2)},
-  pendingChip: {
-    flexDirection: 'row', alignItems: 'center', gap: sw(6),
-    backgroundColor: '#FFFBEB', borderRadius: sw(8), borderWidth: 1, borderColor: '#FDE9BF',
-    paddingHorizontal: sw(10), paddingVertical: sw(7),
-  },
-  pendingChipText: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#92400E', fontWeight: '600'},
 
   /* Footer */
   cardFooter: {

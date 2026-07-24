@@ -10,6 +10,14 @@ const createBookingSchema = Joi.object({
       qty: Joi.number().integer().min(1).default(1),
     })
   ).min(1).required(),
+  // Extra individual services booked alongside a package/combo — billed additively on
+  // top of the package's fixed price, instead of being folded into it.
+  extraServices: Joi.array().items(
+    Joi.object({
+      id: Joi.alternatives().try(Joi.number(), Joi.string()).required(),
+      qty: Joi.number().integer().min(1).default(1),
+    })
+  ).optional().default([]),
   partnerId: Joi.alternatives().try(Joi.number(), Joi.string()).allow(null, ""),
   address: Joi.object({
     label: Joi.string().allow("", null),
@@ -111,14 +119,6 @@ const submitReview = catchAsync(async (req, res, next) => {
   res.status(201).json({ status: true, message: "Review submitted", data: review });
 });
 
-const respondServiceUpdate = catchAsync(async (req, res, next) => {
-  const { action } = req.body;
-  if (!['approve', 'reject'].includes(action))
-    return next(new AppError("action must be 'approve' or 'reject'", 400));
-  const booking = await bookingsService.respondServiceUpdate(req.user.userId, req.params.id, action);
-  res.json({ status: true, message: action === 'approve' ? 'Changes approved' : 'Changes rejected', data: booking });
-});
-
 const addServicesSchema = Joi.object({
   services: Joi.array().items(
     Joi.object({
@@ -135,4 +135,4 @@ const addUserServices = catchAsync(async (req, res, next) => {
   res.status(200).json({ status: true, message: 'Services added to booking', data: booking });
 });
 
-module.exports = { createBooking, getBookingById, cancelBooking, rescheduleBooking, submitReview, respondServiceUpdate, addUserServices };
+module.exports = { createBooking, getBookingById, cancelBooking, rescheduleBooking, submitReview, addUserServices };

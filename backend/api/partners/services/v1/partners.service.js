@@ -7,10 +7,16 @@ const PartnerService = require("../../models/partnerService.model");
 const PartnerSkillCategory = require("../../../skills/models/PartnerSkillCategory");
 const Booking = require("../../../bookings/models/booking.model");
 const Service = require("../../../services/models/service.model");
+const ServiceCategory = require("../../../services/models/serviceCategory.model");
 const User = require("../../../users/models/user.model");
 const ServicePackage = require("../../../packages/models/package.model");
 const settlementsService = require("../../../settlements/services/v1/settlements.service");
-const { resolveRatesForBooking } = require("../../../../utils/revenueSplit");
+const {
+  resolveRatesForBooking,
+  DEFAULT_ADMIN_PERCENT,
+  DEFAULT_PARTNER_PERCENT,
+  DEFAULT_GST_PERCENT,
+} = require("../../../../utils/revenueSplit");
 const AppError = require("../../../../utils/errorHandlers/appError");
 const logger = require("../../../../utils/logger");
 
@@ -530,46 +536,6 @@ const getAvailableBookings = async (partnerId) => {
   });
 };
 
-const proposeServiceChanges = async (partnerId, bookingId, proposedServices) => {
-  const { sendPushNotification } = require('../../../../utils/firebaseUtils');
-  const Notification = require('../../../notifications/models/notification.model');
-
-  const booking = await Booking.findOne({ where: { id: bookingId, status: ['confirmed', 'in_progress'] } });
-  if (!booking) throw new AppError('Booking not found or not in an active state', 404);
-
-  const parseSvc = (s) => { if (Array.isArray(s)) return s; if (typeof s === 'string') { try { return JSON.parse(s); } catch { return []; } } return []; };
-  const isAuthorised = String(booking.partnerId) === String(partnerId)
-    || parseSvc(booking.services).some(s => String(s.assignedPartnerId) === String(partnerId));
-  if (!isAuthorised) throw new AppError('Not authorised for this booking', 403);
-
-  const newBaseAmount = proposedServices.reduce((sum, s) => sum + (parseFloat(s.price) || 0) * (s.qty || 1), 0);
-  const couponDiscount = parseFloat(booking.couponDiscountAmount || 0);
-  const taxableAmount = newBaseAmount - couponDiscount;
-  const pkg = booking.packageId ? await ServicePackage.findByPk(booking.packageId) : null;
-  const { gstPercent } = await resolveRatesForBooking({ serviceItems: proposedServices, package: pkg });
-  const tax = parseFloat((taxableAmount * gstPercent / 100).toFixed(2));
-  const newTotal = parseFloat((taxableAmount + tax).toFixed(2));
-
-  await booking.update({
-    serviceUpdatePending: true,
-    pendingServicesUpdate: { services: proposedServices, totalAmount: newTotal, requestedAt: new Date() },
-    lastServiceUpdateDecision: null,
-  });
-
-  const user = await User.findByPk(booking.userId);
-  const oldTotal = parseFloat(booking.totalAmount || 0);
-  const msg = `Your partner has updated services for booking ${booking.bookingCode}. New total: ₹${newTotal.toLocaleString('en-IN')}. Please approve or reject the changes.`;
-
-  if (user?.fcmToken) {
-    await sendPushNotification([user.fcmToken], 'Service Update Request', msg,
-      { bookingId: String(booking.id), type: 'service_update' }, 'beyomo_booking').catch(() => {});
-  }
-  await Notification.create({ userId: booking.userId, title: 'Service Update Request', body: msg,
-    data: { bookingId: String(booking.id), type: 'service_update' }, type: 'booking' });
-
-  return booking;
-};
-
 const claimServices = async (partnerId, bookingId, serviceIndices) => {
   const Notification = require('../../../notifications/models/notification.model');
   const { sendPushNotification } = require('../../../../utils/firebaseUtils');
@@ -696,7 +662,13 @@ const acceptBooking = async (partnerId, bookingId) => {
   return claimServices(partnerId, bookingId, unassignedIndices);
 };
 
-const addExtraServices = async (partnerId, bookingId, serviceItems) => {
+/**
+ * Applies a partner's service edits to a booking immediately — no customer approval.
+ * `serviceItems` (to add) can each be either a catalog reference `{id, qty}` or a
+ * free-form add-on `{isAddOn: true, name, price, qty}`. `removeIndices` soft-removes
+ * existing entries; `updateQty` changes quantities on existing (non-removed) entries.
+ */
+const addExtraServices = async (partnerId, bookingId, { services: serviceItems = [], removeIndices = [], updateQty = [] } = {}) => {
   const Notification = require('../../../notifications/models/notification.model');
   const { sendPushNotification } = require('../../../../utils/firebaseUtils');
 
@@ -709,42 +681,83 @@ const addExtraServices = async (partnerId, bookingId, serviceItems) => {
     || svcs.some(s => String(s.assignedPartnerId) === String(partnerId));
   if (!isAuthorised) throw new AppError('Booking not found or not currently in progress', 404);
 
-  const serviceIds = serviceItems.map(s => parseInt(s.id));
-  const foundServices = await Service.findAll({ where: { id: serviceIds, isActive: true } });
-  if (foundServices.length !== serviceIds.length) {
-    throw new AppError('One or more services not found or unavailable', 404);
-  }
+  let updatedServices = [...svcs];
 
-  // Fetch partner name to stamp on each extra service (needed for earnings tracking)
+  // Qty changes on existing (non-removed) entries
+  updateQty.forEach(({ index, qty }) => {
+    if (index >= 0 && index < updatedServices.length && !updatedServices[index].removed) {
+      updatedServices[index] = { ...updatedServices[index], qty };
+    }
+  });
+
+  // Soft-remove by index
+  removeIndices.forEach(idx => {
+    if (idx >= 0 && idx < updatedServices.length && !updatedServices[idx].removed) {
+      updatedServices[idx] = { ...updatedServices[idx], removed: true };
+    }
+  });
+
+  // Fetch partner name to stamp on each new entry (needed for earnings tracking)
   const partnerRecord = await Partner.findByPk(partnerId, { attributes: ['name'] });
   const partnerName = partnerRecord?.name ?? null;
 
-  const serviceMap = Object.fromEntries(foundServices.map(s => [s.id, s]));
-  const newServices = serviceItems.map(item => {
-    const svc = serviceMap[parseInt(item.id)];
-    return {
-      serviceId: svc.id,
-      name: svc.name,
-      price: parseFloat(svc.basePrice),
-      qty: item.qty || 1,
-      duration: svc.duration || null,
-      image: svc.image || null,
-      addedByPartner: true,
-      // Edge case 6: stamp ownership so earnings and UI filter work correctly per partner
-      serviceStatus: 'claimed',
-      assignedPartnerId: parseInt(partnerId),
-      assignedPartnerName: partnerName,
-    };
-  });
+  const catalogItems = serviceItems.filter(s => !s.isAddOn);
+  const addOnItems = serviceItems.filter(s => s.isAddOn);
 
-  const existingServices = (() => { const s = booking.services; if (Array.isArray(s)) return s; if (typeof s === 'string') { try { return JSON.parse(s); } catch { return []; } } return []; })();
-  const updatedServices = [...existingServices, ...newServices];
+  let newCatalogEntries = [];
+  if (catalogItems.length > 0) {
+    const serviceIds = catalogItems.map(s => parseInt(s.id));
+    const foundServices = await Service.findAll({
+      where: { id: serviceIds, isActive: true },
+      include: [{ model: ServiceCategory, as: 'category', attributes: ['adminPercent', 'partnerPercent', 'gstPercent'] }],
+    });
+    if (foundServices.length !== serviceIds.length) {
+      throw new AppError('One or more services not found or unavailable', 404);
+    }
+    const serviceMap = Object.fromEntries(foundServices.map(s => [s.id, s]));
+    newCatalogEntries = catalogItems.map(item => {
+      const svc = serviceMap[parseInt(item.id)];
+      return {
+        serviceId: svc.id,
+        name: svc.name,
+        price: parseFloat(svc.basePrice),
+        qty: item.qty || 1,
+        duration: svc.duration || null,
+        image: svc.image || null,
+        addedByPartner: true,
+        // Edge case 6: stamp ownership so earnings and UI filter work correctly per partner
+        serviceStatus: 'claimed',
+        assignedPartnerId: parseInt(partnerId),
+        assignedPartnerName: partnerName,
+        adminPercent: svc.category ? parseFloat(svc.category.adminPercent) : DEFAULT_ADMIN_PERCENT,
+        partnerPercent: svc.category ? parseFloat(svc.category.partnerPercent) : DEFAULT_PARTNER_PERCENT,
+        gstPercent: svc.category ? parseFloat(svc.category.gstPercent) : DEFAULT_GST_PERCENT,
+      };
+    });
+  }
 
-  const newBaseAmount = updatedServices.reduce((sum, s) => sum + s.price * (s.qty || 1), 0);
+  const newAddOnEntries = addOnItems.map(item => ({
+    name: item.name,
+    price: parseFloat(item.price) || 0,
+    qty: item.qty || 1,
+    isAddOn: true,
+    addedByPartner: true,
+    serviceStatus: 'claimed',
+    assignedPartnerId: parseInt(partnerId),
+    assignedPartnerName: partnerName,
+    adminPercent: DEFAULT_ADMIN_PERCENT,
+    partnerPercent: DEFAULT_PARTNER_PERCENT,
+    gstPercent: DEFAULT_GST_PERCENT,
+  }));
+
+  updatedServices = [...updatedServices, ...newCatalogEntries, ...newAddOnEntries];
+
+  const activeServices = updatedServices.filter(s => !s.removed);
+  const newBaseAmount = activeServices.reduce((sum, s) => sum + (parseFloat(s.price) || 0) * (s.qty || 1), 0);
   const couponDiscount = parseFloat(booking.couponDiscountAmount || 0);
   const taxableAmount = newBaseAmount - couponDiscount;
   const pkg = booking.packageId ? await ServicePackage.findByPk(booking.packageId) : null;
-  const { partnerPercent, gstPercent } = await resolveRatesForBooking({ serviceItems: updatedServices, package: pkg });
+  const { partnerPercent, gstPercent } = await resolveRatesForBooking({ serviceItems: activeServices, package: pkg });
   const tax = parseFloat((taxableAmount * gstPercent / 100).toFixed(2));
   const total = parseFloat((taxableAmount + tax).toFixed(2));
   const partnerEarning = parseFloat((taxableAmount * partnerPercent / 100).toFixed(2));
@@ -758,19 +771,18 @@ const addExtraServices = async (partnerId, bookingId, serviceItems) => {
   });
 
   const user = await User.findByPk(booking.userId);
-  const addedNames = newServices.map(s => s.name).join(', ');
+  const addedNames = [...newCatalogEntries, ...newAddOnEntries].map(s => s.name).join(', ');
+  const changeMsg = addedNames
+    ? `Your partner updated booking ${booking.bookingCode}. Added: ${addedNames}. New total: ₹${total}`
+    : `Your partner updated services on booking ${booking.bookingCode}. New total: ₹${total}`;
   if (user?.fcmToken) {
-    await sendPushNotification(
-      [user.fcmToken],
-      'Services Added to Your Booking',
-      `Your partner added: ${addedNames}. New total: ₹${total}`,
-      { bookingId: String(booking.id), type: 'booking' }
-    );
+    await sendPushNotification([user.fcmToken], 'Booking Updated', changeMsg,
+      { bookingId: String(booking.id), type: 'booking' }).catch(() => {});
   }
   await Notification.create({
     userId: booking.userId,
-    title: 'Services Added',
-    body: `Your partner added extra services to booking ${booking.bookingCode}. New total: ₹${total}`,
+    title: 'Booking Updated',
+    body: changeMsg,
     data: { bookingId: String(booking.id) },
     type: 'booking',
   });
@@ -781,5 +793,5 @@ const addExtraServices = async (partnerId, bookingId, serviceItems) => {
 module.exports = {
   getProfile, updateProfile, updateDocuments,
   getDashboard, getBookings, getBookingById, getAvailableBookings, acceptBooking, claimServices, updateBookingStatus,
-  markArrived, updateDeviceToken, getEarnings, addExtraServices, proposeServiceChanges,
+  markArrived, updateDeviceToken, getEarnings, addExtraServices,
 };

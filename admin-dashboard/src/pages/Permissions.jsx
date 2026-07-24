@@ -6,18 +6,21 @@ import Modal from '../components/common/Modal';
 import { useAuth } from '../context/AuthContext';
 import { useAdminUsers } from '../hooks/useAdminUsers';
 import { useZones } from '../hooks/useZones';
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
 
 const MODULE_LABELS = {
   dashboard:'Dashboard', users:'Users', partners:'Partners', bookings:'Bookings',
   services:'Services', earnings:'Earnings', settlements:'Settlements', coupons:'Coupons', reviews:'Reviews',
   notifications:'Notifications', reports:'Reports', settings:'Settings',
   permissions:'Permissions', feedback:'App Feedback', zones:'Zones', cities:'Cities',
+  packages:'Packages', combos:'Combos',
 };
 
 const MODULE_ICONS = {
   dashboard:'📊', users:'👥', partners:'🤝', bookings:'📅', services:'✨',
   earnings:'💰', settlements:'💳', coupons:'🏷️', reviews:'⭐', notifications:'🔔', reports:'📈',
   settings:'⚙️', permissions:'🛡️', feedback:'💬', zones:'🗺️', cities:'🏙️',
+  packages:'📦', combos:'🎁',
 };
 
 const parseJSON = (val) => {
@@ -40,10 +43,13 @@ export default function Permissions() {
   const [allowAllZones, setAllowAllZones]   = useState(true);
   const [selectedZones, setSelectedZones]   = useState([]);
 
-  useEffect(() => {
+  const loadAdmins = () => {
     fetchList().then(res => { if (res.ok) setAdmins(res.data?.data ?? []); });
     fetchZones().then(res => { if (res.ok) setZones(res.data?.data ?? []); });
-  }, []);
+  };
+
+  useEffect(() => { loadAdmins(); }, []);
+  useAutoRefresh(loadAdmins);
 
   const isSuperAdmin = user?.role === 'super_admin';
 

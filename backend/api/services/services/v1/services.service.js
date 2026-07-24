@@ -44,7 +44,7 @@ const getServices = async (query, page = 1, limit = 20) => {
     offset,
     limit,
     include: [
-      { model: ServiceCategory, as: "category", attributes: ["name", "icon", "image"] },
+      { model: ServiceCategory, as: "category", attributes: ["name", "icon", "image", "adminPercent", "partnerPercent", "gstPercent"] },
       { model: ServiceCityMap, as: "cityMappings", required: false },
     ],
   });
@@ -70,7 +70,7 @@ const getServiceById = async (serviceId) => {
   const service = await Service.findOne({
     where: { id: serviceId, isActive: true },
     include: [
-      { model: ServiceCategory, as: "category", attributes: ["name", "icon", "image", "description"] },
+      { model: ServiceCategory, as: "category", attributes: ["name", "icon", "image", "description", "adminPercent", "partnerPercent", "gstPercent"] },
       { model: ServiceCityMap, as: "cityMappings", required: false },
     ],
   });

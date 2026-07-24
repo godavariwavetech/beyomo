@@ -6,6 +6,8 @@ import {
   ScrollView,
   TouchableOpacity,
   Modal,
+  TextInput,
+  FlatList,
   StyleSheet,
   Dimensions,
   StatusBar,
@@ -102,14 +104,19 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
   const [billExpanded, setBillExpanded] = useState(true);
   const [booking, setBooking] = useState(false);
   const [dateError, setDateError] = useState('');
-  // Online payment is temporarily disabled (no live Razorpay key configured yet) —
-  // default and lock to Cash on Delivery. Revert ONLINE_PAYMENTS_ENABLED once a real
-  // key is in place.
-  const ONLINE_PAYMENTS_ENABLED = false;
+  const ONLINE_PAYMENTS_ENABLED = true;
   const [paymentMode, setPaymentMode] = useState<'online' | 'cod'>(ONLINE_PAYMENTS_ENABLED ? 'online' : 'cod');
   const [selectedDate, setSelectedDate] = useState<Date>(getDefaultDate);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
+
+  // Add More Services modal — lets the customer book extra individual services
+  // alongside a package/combo (or any booking), billed additively on top.
+  const [showAddSvcModal, setShowAddSvcModal] = useState(false);
+  const [allServicesForAdd, setAllServicesForAdd] = useState<any[]>([]);
+  const [loadingAddSvcs, setLoadingAddSvcs] = useState(false);
+  const [addSvcSearch, setAddSvcSearch] = useState('');
+  const [addSvcCart, setAddSvcCart] = useState<{svc: any; qty: number}[]>([]);
 
   const [couponError, setCouponError] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState<{
@@ -154,10 +161,16 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
     }
   }, [addresses]);
 
+  // Package-tagged items keep the package's own fixed price; anything else (a regular
+  // booking's items, or extra services added on top of a package) bills at its own price.
+  const packageItems = services.filter((s: any) => s.isPackageItem);
+  const extraItems = services.filter((s: any) => !s.isPackageItem && !s.isFree);
+  const packageItemsIndividualSum = packageItems.reduce((sum, s) => sum + (parseFloat(String(s.price)) || 0) * s.qty, 0);
+  const extraItemsSubtotal = extraItems.reduce((sum, s) => sum + (parseFloat(String(s.price)) || 0) * s.qty, 0);
   const servicesSubtotal = services.reduce((sum, s) => sum + (parseFloat(String(s.price)) || 0) * s.qty, 0);
-  // When booking via a package, use the package price as the base instead of service sum
-  const subtotal = routePackagePrice != null ? routePackagePrice : servicesSubtotal;
-  const packageSavings = routePackagePrice != null ? Math.max(0, servicesSubtotal - routePackagePrice) : 0;
+  // When booking via a package, use the package price (plus any extras) as the base instead of the raw service sum
+  const subtotal = routePackagePrice != null ? routePackagePrice + extraItemsSubtotal : servicesSubtotal;
+  const packageSavings = routePackagePrice != null ? Math.max(0, packageItemsIndividualSum - routePackagePrice) : 0;
   const couponDiscount = appliedCoupon?.discountAmount ?? 0;
   const taxableAmount = Math.max(0, subtotal - couponDiscount);
   const tax = Math.round(taxableAmount * 0.05); // GST — backend recomputes the authoritative weighted rate on submit
@@ -170,6 +183,49 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
     setServices(prev =>
       prev.map(s => s.id === id ? {...s, qty: s.qty - 1} : s).filter(s => s.qty > 0),
     );
+
+  const openAddSvcModal = () => {
+    setAddSvcCart([]);
+    setAddSvcSearch('');
+    if (allServicesForAdd.length === 0) {
+      setLoadingAddSvcs(true);
+      api.get(`${endpoints.SERVICES}?limit=500`)
+        .then(res => { if (res.data?.status) setAllServicesForAdd(res.data.data ?? []); })
+        .catch(() => {})
+        .finally(() => setLoadingAddSvcs(false));
+    }
+    setShowAddSvcModal(true);
+  };
+
+  const filteredAddSvcs = allServicesForAdd.filter(s =>
+    !addSvcSearch || s.name?.toLowerCase().includes(addSvcSearch.toLowerCase()));
+  const addSvcCartTotal = addSvcCart.reduce((sum, item) => sum + (parseFloat(item.svc.basePrice) || 0) * item.qty, 0);
+
+  const handleConfirmAddServices = () => {
+    if (!addSvcCart.length) return;
+    setServices(prev => {
+      const merged = [...prev];
+      addSvcCart.forEach(item => {
+        const idx = merged.findIndex((s: any) =>
+          String(s.id) === String(item.svc.id) && !s.isPackageItem && !s.isFree);
+        if (idx >= 0) {
+          merged[idx] = {...merged[idx], qty: merged[idx].qty + item.qty};
+        } else {
+          merged.push({
+            id: item.svc.id,
+            name: item.svc.name,
+            price: parseFloat(item.svc.basePrice) || 0,
+            duration: item.svc.duration ? `${item.svc.duration} min` : undefined,
+            image: item.svc.image,
+            qty: item.qty,
+          });
+        }
+      });
+      return merged;
+    });
+    setAddSvcCart([]);
+    setShowAddSvcModal(false);
+  };
 
   const validateDate = (date: Date): string => {
     const now = Date.now();
@@ -279,8 +335,21 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
         }
       }
 
+      // Package-tagged items are what the package's fixed price covers; anything else
+      // (extras added on top, or the whole cart for a non-package booking) is billed
+      // additively as `extraServices` so the backend never folds it into the package price.
+      const packageItemsToSubmit = routePackageId
+        ? servicesToSubmit.filter((s: any) => s.isPackageItem)
+        : servicesToSubmit;
+      const extraServicesToSubmit = routePackageId
+        ? servicesToSubmit.filter((s: any) => !s.isPackageItem)
+        : [];
+
       const result = await api.post(endpoints.BOOKINGS, {
-        services: servicesToSubmit.map(s => ({id: String(s.id), qty: s.qty})),
+        services: packageItemsToSubmit.map(s => ({id: String(s.id), qty: s.qty})),
+        extraServices: extraServicesToSubmit.length
+          ? extraServicesToSubmit.map(s => ({id: String(s.id), qty: s.qty}))
+          : undefined,
         address: {
           label: addrLabel(selectedAddr),
           line1: addrLine(selectedAddr),
@@ -423,21 +492,21 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
               <Text style={styles.packageBannerPrice}>
                 ₹{Math.round(routePackagePrice ?? 0).toLocaleString('en-IN')}
               </Text>
-              {servicesSubtotal > (routePackagePrice ?? 0) && (
+              {packageItemsIndividualSum > (routePackagePrice ?? 0) && (
                 <Text style={styles.packageBannerOriginal}>
-                  ₹{Math.round(servicesSubtotal).toLocaleString('en-IN')}
+                  ₹{Math.round(packageItemsIndividualSum).toLocaleString('en-IN')}
                 </Text>
               )}
-              {servicesSubtotal > (routePackagePrice ?? 0) && (
+              {packageSavings > 0 && (
                 <View style={styles.packageSavingChip}>
                   <Text style={styles.packageSavingChipText}>
-                    Save ₹{Math.round(servicesSubtotal - (routePackagePrice ?? 0)).toLocaleString('en-IN')}
+                    Save ₹{Math.round(packageSavings).toLocaleString('en-IN')}
                   </Text>
                 </View>
               )}
             </View>
             <Text style={styles.packageBannerSub}>
-              {services.length} service{services.length !== 1 ? 's' : ''} included · Items cannot be modified
+              {packageItems.length} service{packageItems.length !== 1 ? 's' : ''} included in package · Add more services below
             </Text>
           </View>
         )}
@@ -455,7 +524,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
                 </View>
               ) : null}
               <View style={styles.serviceBottomRow}>
-                {routePackageId ? (
+                {(item as any).isPackageItem ? (
                   <>
                     <Text style={styles.priceTextStrikethrough}>
                       ₹{(item.price * item.qty).toLocaleString('en-IN')}
@@ -502,6 +571,12 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
             </View>
           </View>
         ))}
+
+        {/* ── Add more services ── */}
+        <TouchableOpacity style={styles.addMoreBtn} activeOpacity={0.8} onPress={openAddSvcModal}>
+          <Ionicons name="add-circle-outline" size={sw(18)} color="#105641" />
+          <Text style={styles.addMoreBtnText}>Add More Services</Text>
+        </TouchableOpacity>
 
         {/* ── Date & time ── */}
         <TouchableOpacity
@@ -666,9 +741,17 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
                   <View style={styles.billRow}>
                     <Text style={[styles.billLabel, {fontWeight: '600'}]}>Package Price</Text>
                     <Text style={[styles.billValue, {fontWeight: '600'}]}>
-                      ₹{subtotal.toLocaleString('en-IN')}
+                      ₹{(routePackagePrice ?? 0).toLocaleString('en-IN')}
                     </Text>
                   </View>
+                  {extraItemsSubtotal > 0 && (
+                    <View style={styles.billRow}>
+                      <Text style={[styles.billLabel, {fontWeight: '600'}]}>Extra Services</Text>
+                      <Text style={[styles.billValue, {fontWeight: '600'}]}>
+                        ₹{extraItemsSubtotal.toLocaleString('en-IN')}
+                      </Text>
+                    </View>
+                  )}
                   {packageSavings > 0 && (
                     <View style={styles.billRow}>
                       <Text style={[styles.billLabel, {color: '#105641'}]}>Package Savings</Text>
@@ -814,6 +897,105 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
               <Text style={styles.addNewAddrText}>Add New Address</Text>
             </TouchableOpacity>
           </ScrollView>
+        </View>
+      </Modal>
+
+      {/* ── Add More Services modal ── */}
+      <Modal
+        visible={showAddSvcModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowAddSvcModal(false)}>
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowAddSvcModal(false)}
+        />
+        <View style={[styles.addSvcSheet, {paddingBottom: insets.bottom + sw(16)}]}>
+          <View style={styles.modalHandle} />
+          <View style={styles.addSvcHeader}>
+            <Text style={styles.modalTitle}>Add More Services</Text>
+            <TouchableOpacity onPress={() => setShowAddSvcModal(false)} hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
+              <Ionicons name="close" size={sw(22)} color="#171816" />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.addSvcSearchWrap}>
+            <Ionicons name="search-outline" size={sw(16)} color="#888" />
+            <TextInput
+              style={styles.addSvcSearchInput}
+              placeholder="Search services…"
+              placeholderTextColor="#AAA"
+              value={addSvcSearch}
+              onChangeText={setAddSvcSearch}
+            />
+          </View>
+
+          {addSvcCart.length > 0 && (
+            <View style={styles.addSvcCartBar}>
+              <Text style={styles.addSvcCartText}>{addSvcCart.length} selected</Text>
+              <Text style={styles.addSvcCartPrice}>₹{addSvcCartTotal.toLocaleString('en-IN')}</Text>
+            </View>
+          )}
+
+          {loadingAddSvcs ? (
+            <ActivityIndicator color="#105641" size="large" style={{marginVertical: sw(40)}} />
+          ) : (
+            <FlatList
+              data={filteredAddSvcs}
+              keyExtractor={item => String(item.id)}
+              style={{flex: 1}}
+              contentContainerStyle={styles.addSvcListContent}
+              renderItem={({item}) => {
+                const cartItem = addSvcCart.find(c => c.svc.id === item.id);
+                const isSelected = !!cartItem;
+                return (
+                  <View style={[styles.addSvcItem, isSelected && styles.addSvcItemSelected]}>
+                    <TouchableOpacity
+                      style={{flex: 1}}
+                      activeOpacity={0.8}
+                      onPress={() => {
+                        if (isSelected) setAddSvcCart(prev => prev.filter(c => c.svc.id !== item.id));
+                        else setAddSvcCart(prev => [...prev, {svc: item, qty: 1}]);
+                      }}>
+                      <Text style={[styles.addSvcItemName, isSelected && styles.addSvcItemNameSelected]}>{item.name}</Text>
+                      <Text style={styles.addSvcItemMeta}>
+                        {item.duration ? `${item.duration} min  •  ` : ''}₹{parseFloat(item.basePrice ?? 0).toLocaleString('en-IN')}
+                      </Text>
+                    </TouchableOpacity>
+                    {isSelected ? (
+                      <View style={styles.addSvcInlineQty}>
+                        <TouchableOpacity onPress={() => setAddSvcCart(prev => prev.map(c => c.svc.id === item.id ? {...c, qty: Math.max(1, c.qty - 1)} : c))}>
+                          <Ionicons name="remove-circle" size={sw(22)} color="#105641" />
+                        </TouchableOpacity>
+                        <Text style={styles.addSvcInlineQtyNum}>{cartItem.qty}</Text>
+                        <TouchableOpacity onPress={() => setAddSvcCart(prev => prev.map(c => c.svc.id === item.id ? {...c, qty: c.qty + 1} : c))}>
+                          <Ionicons name="add-circle" size={sw(22)} color="#105641" />
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      <TouchableOpacity onPress={() => setAddSvcCart(prev => [...prev, {svc: item, qty: 1}])}>
+                        <Ionicons name="add-circle-outline" size={sw(22)} color="#CCCCCC" />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                );
+              }}
+              ListEmptyComponent={<Text style={styles.addSvcEmptyText}>No services found</Text>}
+            />
+          )}
+
+          <View style={styles.addSvcFooter}>
+            <TouchableOpacity style={styles.addSvcCancelBtn} onPress={() => setShowAddSvcModal(false)}>
+              <Text style={styles.addSvcCancelText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.addSvcConfirmBtn, !addSvcCart.length && styles.addSvcConfirmBtnDisabled]}
+              disabled={!addSvcCart.length}
+              onPress={handleConfirmAddServices}>
+              <Text style={styles.addSvcConfirmText}>Add {addSvcCart.length || ''} Service{addSvcCart.length !== 1 ? 's' : ''}</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </Modal>
 
@@ -1080,6 +1262,26 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
+  /* ── Add more services ── */
+  addMoreBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: sw(8),
+    backgroundColor: '#FFFFFF',
+    borderRadius: sw(12),
+    borderWidth: 1.5,
+    borderColor: '#105641',
+    borderStyle: 'dashed',
+    paddingVertical: sw(12),
+  },
+  addMoreBtnText: {
+    fontFamily: fonts.title,
+    fontSize: sw(13),
+    fontWeight: '700',
+    color: '#105641',
+  },
+
   /* ── Date ── */
   dateCard: {
     flexDirection: 'row',
@@ -1283,6 +1485,79 @@ const styles = StyleSheet.create({
     marginTop: sw(4),
   },
   addNewAddrText: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#105641', fontWeight: '600'},
+
+  /* ── Add More Services modal ── */
+  addSvcSheet: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: sw(20),
+    borderTopRightRadius: sw(20),
+    maxHeight: '85%',
+    flex: 1,
+    paddingBottom: sw(16),
+  },
+  addSvcHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: sw(16),
+    marginBottom: sw(10),
+  },
+  addSvcSearchWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: sw(8),
+    marginHorizontal: sw(16),
+    marginBottom: sw(10),
+    backgroundColor: '#F5F5F5',
+    borderRadius: sw(10),
+    paddingHorizontal: sw(12),
+    height: sw(40),
+  },
+  addSvcSearchInput: {flex: 1, fontFamily: fonts.textFont, fontSize: sw(13), color: '#171816', padding: 0},
+  addSvcCartBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginHorizontal: sw(16),
+    marginBottom: sw(6),
+    backgroundColor: 'rgba(16,86,65,0.07)',
+    borderRadius: sw(8),
+    paddingHorizontal: sw(12),
+    paddingVertical: sw(7),
+  },
+  addSvcCartText: {fontFamily: fonts.textFont, fontSize: sw(12), color: '#105641', fontWeight: '600'},
+  addSvcCartPrice: {fontFamily: fonts.title, fontSize: sw(13), fontWeight: '700', color: '#105641'},
+  addSvcListContent: {paddingHorizontal: sw(16), paddingTop: sw(4), paddingBottom: sw(8), gap: sw(8)},
+  addSvcItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F9F9F9',
+    borderRadius: sw(10),
+    padding: sw(12),
+    borderWidth: 1.5,
+    borderColor: 'transparent',
+    gap: sw(10),
+  },
+  addSvcItemSelected: {borderColor: '#105641', backgroundColor: 'rgba(16,86,65,0.05)'},
+  addSvcItemName: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#171816', fontWeight: '500', marginBottom: sw(2)},
+  addSvcItemNameSelected: {color: '#105641', fontWeight: '700'},
+  addSvcItemMeta: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#5C5C5C'},
+  addSvcInlineQty: {flexDirection: 'row', alignItems: 'center', gap: sw(6)},
+  addSvcInlineQtyNum: {fontFamily: fonts.title, fontSize: sw(14), fontWeight: '700', color: '#105641', minWidth: sw(20), textAlign: 'center'},
+  addSvcEmptyText: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#888', textAlign: 'center', paddingVertical: sw(32)},
+  addSvcFooter: {
+    flexDirection: 'row',
+    gap: sw(10),
+    paddingHorizontal: sw(16),
+    paddingTop: sw(12),
+    borderTopWidth: 1,
+    borderTopColor: '#EEEDED',
+  },
+  addSvcCancelBtn: {flex: 1, height: sw(46), borderRadius: sw(10), borderWidth: 1.5, borderColor: '#EEEDED', alignItems: 'center', justifyContent: 'center'},
+  addSvcCancelText: {fontFamily: fonts.textFont, fontSize: sw(13), fontWeight: '600', color: '#5C5C5C'},
+  addSvcConfirmBtn: {flex: 2, height: sw(46), borderRadius: sw(10), backgroundColor: '#105641', alignItems: 'center', justifyContent: 'center'},
+  addSvcConfirmBtnDisabled: {backgroundColor: '#AAAAAA'},
+  addSvcConfirmText: {fontFamily: fonts.title, fontSize: sw(14), fontWeight: '700', color: '#FFFFFF'},
 
   /* ── Bottom bar ── */
   bottomBar: {

@@ -9,6 +9,7 @@ import Modal from '../components/common/Modal';
 import { useAuth } from '../context/AuthContext';
 import { useAdminUsers } from '../hooks/useAdminUsers';
 import { useSettings } from '../hooks/useSettings';
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import api, { BASE_URL } from '../services/api';
 
 const SETTING_SECTIONS = [
@@ -127,9 +128,12 @@ export default function Settings() {
   const [editingAdmin, setEditingAdmin]= useState(null);
   const [adminForm, setAdminForm]   = useState({});
 
-  useEffect(() => {
+  const loadAdmins = () => {
     fetchList().then(res => { if (res.ok) setAdmins(res.data?.data ?? []); });
-  }, []);
+  };
+
+  useEffect(() => { loadAdmins(); }, []);
+  useAutoRefresh(loadAdmins);
   const [commission, setCommission] = useState(20);
   const NOTIF_ITEMS = [
     { label:'Booking Confirmation',  desc:'Notify users when booking is confirmed',             defaultOn:true },

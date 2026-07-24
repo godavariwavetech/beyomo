@@ -7,6 +7,7 @@ import Modal from '../components/common/Modal';
 import RevenueSplitFields from '../components/common/RevenueSplitFields';
 import ImageUploader from '../components/common/ImageUploader';
 import api from '../services/api';
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
 
 const TRIGGER_LABELS = {
   min_spend:          'Minimum Spend',
@@ -67,8 +68,8 @@ export default function Offers() {
       .catch(() => {});
   }, []);
 
-  const fetchOffers = () => {
-    setLoading(true);
+  const fetchOffers = (silent = false) => {
+    if (!silent) setLoading(true);
     const params = cityParam ? { cityIds: cityParam } : {};
     api.get('/api/v1/admin/offers', { params })
       .then(r => setOffers(r.data?.data?.data ?? r.data?.data ?? []))
@@ -77,6 +78,7 @@ export default function Offers() {
   };
 
   useEffect(() => { fetchOffers(); }, [cityParam]);
+  useAutoRefresh(() => fetchOffers(true));
 
   const openCreate = () => {
     setEditTarget(null);
