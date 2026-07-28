@@ -66,7 +66,7 @@ const {
 // File Upload
 router.post("/upload", adminAuthenticate(), upload.single("image"), (req, res) => {
   if (!req.file) return res.status(400).json({ status: false, message: "No file uploaded" });
-  res.status(200).json({ status: true, url: `${config.PUBLIC_BASE_URL}/uploads/${req.file.filename}` });
+  res.status(200).json({ status: true, url: `${config.PUBLIC_BASE_URL}/${req.file.filename}` });
 });
 
 // Agreement PDF upload/status
