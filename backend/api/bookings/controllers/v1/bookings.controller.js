@@ -58,6 +58,13 @@ const createBooking = catchAsync(async (req, res, next) => {
   if (scheduledMs > now + 30 * 24 * 60 * 60 * 1000) {
     return next(new AppError("Booking cannot be scheduled more than 1 month in advance", 400));
   }
+  // Compare against India time regardless of the server's own timezone.
+  const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+  const istDate = new Date(scheduledMs + IST_OFFSET_MS);
+  const istMinutesOfDay = istDate.getUTCHours() * 60 + istDate.getUTCMinutes();
+  if (istMinutesOfDay < 8 * 60 || istMinutesOfDay > 20 * 60) {
+    return next(new AppError("Bookings are only available between 8 AM and 8 PM. Please choose a slot in that window.", 400));
+  }
 
   const booking = await bookingsService.createBooking(req.user.userId, value);
   res.status(201).json({ status: true, message: "Booking created successfully", data: booking });
@@ -103,6 +110,12 @@ const rescheduleBooking = catchAsync(async (req, res, next) => {
   if (scheduledMs > now + 30 * 24 * 60 * 60 * 1000) {
     return next(new AppError("Booking cannot be scheduled more than 1 month in advance", 400));
   }
+  const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+  const istDate = new Date(scheduledMs + IST_OFFSET_MS);
+  const istMinutesOfDay = istDate.getUTCHours() * 60 + istDate.getUTCMinutes();
+  if (istMinutesOfDay < 8 * 60 || istMinutesOfDay > 20 * 60) {
+    return next(new AppError("Bookings are only available between 8 AM and 8 PM. Please choose a slot in that window.", 400));
+  }
 
   const booking = await bookingsService.rescheduleBooking(req.user.userId, req.params.id, value.scheduledAt, value.reason);
   res.status(200).json({ status: true, message: "Booking rescheduled", data: booking });
@@ -135,4 +148,32 @@ const addUserServices = catchAsync(async (req, res, next) => {
   res.status(200).json({ status: true, message: 'Services added to booking', data: booking });
 });
 
-module.exports = { createBooking, getBookingById, cancelBooking, rescheduleBooking, submitReview, addUserServices };
+const updateServiceQtySchema = Joi.object({
+  index: Joi.number().integer().min(0).required(),
+  qty: Joi.number().integer().min(1).required(),
+});
+
+const updateServiceQty = catchAsync(async (req, res, next) => {
+  const { error, value } = updateServiceQtySchema.validate(req.body);
+  if (error) return next(new AppError(error.details[0].message, 400));
+  const booking = await bookingsService.updateServiceQty(req.user.userId, req.params.id, value.index, value.qty);
+  res.status(200).json({ status: true, message: 'Service quantity updated', data: booking });
+});
+
+const removeServiceSchema = Joi.object({
+  index: Joi.number().integer().min(0).required(),
+});
+
+const removeService = catchAsync(async (req, res, next) => {
+  const { error, value } = removeServiceSchema.validate(req.body);
+  if (error) return next(new AppError(error.details[0].message, 400));
+  const booking = await bookingsService.removeService(req.user.userId, req.params.id, value.index);
+  res.status(200).json({ status: true, message: 'Service removed from booking', data: booking });
+});
+
+const removePackage = catchAsync(async (req, res, next) => {
+  const booking = await bookingsService.removePackage(req.user.userId, req.params.id);
+  res.status(200).json({ status: true, message: 'Package removed from booking', data: booking });
+});
+
+module.exports = { createBooking, getBookingById, cancelBooking, rescheduleBooking, submitReview, addUserServices, updateServiceQty, removeService, removePackage };

@@ -56,8 +56,8 @@ const verifyOtpSchema = Joi.object({
   phone: Joi.string()
     .pattern(/^[6-9]\d{9}$/)
     .required(),
-  otp: Joi.string().min(4).max(6).pattern(/^\d+$/).required().messages({
-    "string.min": "OTP must be at least 4 digits",
+  otp: Joi.string().length(4).pattern(/^\d+$/).required().messages({
+    "string.length": "OTP must be exactly 4 digits",
     "string.pattern.base": "OTP must contain only digits",
   }),
   userType: Joi.string().valid("user", "partner").default("user"),

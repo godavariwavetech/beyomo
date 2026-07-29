@@ -8,6 +8,9 @@ const {
   rescheduleBooking,
   submitReview,
   addUserServices,
+  updateServiceQty,
+  removeService,
+  removePackage,
 } = require("../../controllers/v1/bookings.controller");
 
 router.use(authenticate);
@@ -18,5 +21,8 @@ router.patch("/:id/cancel", cancelBooking);
 router.patch("/:id/reschedule", rescheduleBooking);
 router.post("/:id/review", submitReview);
 router.patch("/:id/add-services", addUserServices);
+router.patch("/:id/update-service", updateServiceQty);
+router.patch("/:id/remove-service", removeService);
+router.patch("/:id/remove-package", removePackage);
 
 module.exports = router;
