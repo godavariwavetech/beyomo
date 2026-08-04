@@ -145,6 +145,15 @@ const serviceSchema = Joi.object({
   cityMappings: Joi.array().items(cityMappingItem).default([]),
 });
 
+const reorderCategoriesSchema = Joi.object({
+  order: Joi.array().items(Joi.number().integer()).min(1).required(),
+});
+
+const reorderServicesSchema = Joi.object({
+  categoryId: Joi.number().integer().required(),
+  order: Joi.array().items(Joi.number().integer()).min(1).required(),
+});
+
 const serviceUpdateSchema = Joi.object({
   categoryId: Joi.alternatives().try(Joi.number(), Joi.string()),
   name: Joi.string().trim(),
@@ -156,6 +165,40 @@ const serviceUpdateSchema = Joi.object({
   isActive: Joi.boolean(),
   cityIds: Joi.array().items(Joi.number().integer()),
   cityMappings: Joi.array().items(cityMappingItem),
+});
+
+// Admin/support-created booking — same mixed catalog + free-form add-on item shape
+// as editBookingServicesSchema below, plus the target customer and their address.
+const adminCreateBookingSchema = Joi.object({
+  userId: Joi.number().integer().positive().required(),
+  services: Joi.array().items(
+    Joi.alternatives().try(
+      Joi.object({
+        id: Joi.alternatives().try(Joi.number(), Joi.string()).required(),
+        qty: Joi.number().integer().min(1).default(1),
+      }),
+      Joi.object({
+        isAddOn: Joi.boolean().valid(true).required(),
+        name: Joi.string().trim().min(1).max(120).required(),
+        price: Joi.number().min(0).required(),
+        qty: Joi.number().integer().min(1).default(1),
+      })
+    )
+  ).min(1).required(),
+  partnerId: Joi.alternatives().try(Joi.number(), Joi.string()).allow(null, ""),
+  address: Joi.object({
+    label: Joi.string().allow("", null),
+    line1: Joi.string().required(),
+    line2: Joi.string().allow("", null),
+    city: Joi.string().allow("", null).default(""),
+    state: Joi.string().allow("", null).default(""),
+    pincode: Joi.string().allow("", null).default(""),
+    lat: Joi.number().allow(null),
+    lng: Joi.number().allow(null),
+  }).required(),
+  scheduledAt: Joi.date().required(),
+  paymentMode: Joi.string().valid("online", "cod").default("cod"),
+  notes: Joi.string().trim().max(500).allow("", null),
 });
 
 const broadcastSchema = Joi.object({
@@ -312,6 +355,13 @@ const deleteCategory = catchAsync(async (req, res, next) => {
   res.status(200).json({ status: true, message: result.message });
 });
 
+const reorderCategories = catchAsync(async (req, res, next) => {
+  const { error, value } = reorderCategoriesSchema.validate(req.body);
+  if (error) return next(new AppError(error.details[0].message, 400));
+  await adminService.reorderCategories(value.order);
+  res.status(200).json({ status: true, message: "Category order updated" });
+});
+
 // ==================== SERVICES ====================
 
 const listServices = catchAsync(async (req, res, next) => {
@@ -344,6 +394,13 @@ const deleteService = catchAsync(async (req, res, next) => {
   res.status(200).json({ status: true, message: result.message });
 });
 
+const reorderServices = catchAsync(async (req, res, next) => {
+  const { error, value } = reorderServicesSchema.validate(req.body);
+  if (error) return next(new AppError(error.details[0].message, 400));
+  await adminService.reorderServices(value.categoryId, value.order);
+  res.status(200).json({ status: true, message: "Service order updated" });
+});
+
 const patchServiceCity = catchAsync(async (req, res, next) => {
   const { id, cityId } = req.params;
   const { isActive } = req.body;
@@ -353,6 +410,29 @@ const patchServiceCity = catchAsync(async (req, res, next) => {
 });
 
 // ==================== BOOKINGS ====================
+
+const createBookingForCustomer = catchAsync(async (req, res, next) => {
+  const { error, value } = adminCreateBookingSchema.validate(req.body);
+  if (error) return next(new AppError(error.details[0].message, 400));
+
+  const now = Date.now();
+  const scheduledMs = new Date(value.scheduledAt).getTime();
+  if (scheduledMs < now + 60 * 60 * 1000) {
+    return next(new AppError("Booking must be scheduled at least 1 hour from now", 400));
+  }
+  if (scheduledMs > now + 30 * 24 * 60 * 60 * 1000) {
+    return next(new AppError("Booking cannot be scheduled more than 1 month in advance", 400));
+  }
+  const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+  const istDate = new Date(scheduledMs + IST_OFFSET_MS);
+  const istMinutesOfDay = istDate.getUTCHours() * 60 + istDate.getUTCMinutes();
+  if (istMinutesOfDay < 8 * 60 || istMinutesOfDay > 20 * 60) {
+    return next(new AppError("Bookings are only available between 8 AM and 8 PM. Please choose a slot in that window.", 400));
+  }
+
+  const booking = await adminService.createBookingForCustomer(req.admin.userId, value);
+  res.status(201).json({ status: true, message: "Booking created successfully", data: booking });
+});
 
 const listBookings = catchAsync(async (req, res, next) => {
   let cityIds = parseCityIds(req.query.cityIds) ?? (req.query.cityId ? [parseInt(req.query.cityId)] : null);
@@ -905,8 +985,9 @@ module.exports = {
   login, logout, devAdminHints,
   listUsers, getUserById, updateUserStatus, deleteUser, createUser,
   listPartners, getPartnerById, updatePartnerStatus, createPartner, updatePartner,
-  listCategories, createCategory, updateCategory, deleteCategory,
-  listServices, createService, updateService, deleteService, patchService, patchServiceCity,
+  listCategories, createCategory, updateCategory, deleteCategory, reorderCategories,
+  listServices, createService, updateService, deleteService, patchService, patchServiceCity, reorderServices,
+  createBookingForCustomer,
   listBookings, getBookingDetail, assignPartner, cancelBooking, rescheduleBooking, editBookingServices,
   listPartnerBalances, getPartnerLedger, recordSettlement, voidLedgerEntry,
   listCoupons, createCoupon, updateCoupon, deleteCoupon, getReferral, updateReferral,

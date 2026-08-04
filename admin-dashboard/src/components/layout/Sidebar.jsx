@@ -31,7 +31,7 @@ const NAV_SECTIONS = [
     items: [
       { path: '/earnings',  label: 'Earnings',        icon: DollarSign,     perm: 'earnings' },
       { path: '/settlements', label: 'Settlements',   icon: Wallet,         perm: 'settlements' },
-      { path: '/coupons',   label: 'Coupons',         icon: Tag,            perm: 'coupons' },
+      // { path: '/coupons',   label: 'Coupons',         icon: Tag,            perm: 'coupons' }, // Coupons hidden from nav for now — route/permission stay intact, just not linked.
       { path: '/packages',  label: 'Packages',        icon: Package,        perm: 'packages' },
       { path: '/combos',    label: 'Combos',          icon: Boxes,          perm: 'combos' },
       // Offers module hidden from nav for now — route/permission stay intact, just not linked.

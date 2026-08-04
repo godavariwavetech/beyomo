@@ -20,10 +20,10 @@ const saveBase64 = (dataUri, prefix, allowPdf = false) => {
   const ext = imgMatch ? (imgMatch[1] === "jpeg" ? "jpg" : imgMatch[1]) : "pdf";
   const buf = Buffer.from(m[m.length - 1], "base64");
   const fname = `${prefix}-${Date.now()}.${ext}`;
-  const dir = path.join(__dirname, "../../../../uploads");
+  const dir = path.join(__dirname, "../../../../upload_files");
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, fname), buf);
-  return `/uploads/${fname}`;
+  return `/upload_files/${fname}`;
 };
 
 const partnerApplySchema = Joi.object({

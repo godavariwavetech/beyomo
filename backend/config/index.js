@@ -3,7 +3,7 @@ require("dotenv").config();
 module.exports = {
   NODE_ENV: process.env.NODE_ENV || "development",
   PORT: process.env.PORT || 3000,
-  PUBLIC_BASE_URL: process.env.PUBLIC_BASE_URL || "https://beyomo.in/upload_files",
+  PUBLIC_BASE_URL: process.env.PUBLIC_BASE_URL || "https://beyomo.com:3099/upload_files",
 
   // MySQL
   DB_HOST: process.env.DB_HOST || "localhost",
@@ -34,6 +34,7 @@ module.exports = {
   // Razorpay
   RAZORPAY_KEY_ID: process.env.RAZORPAY_KEY_ID || "",
   RAZORPAY_KEY_SECRET: process.env.RAZORPAY_KEY_SECRET || "",
+  RAZORPAY_WEBHOOK_SECRET: process.env.RAZORPAY_WEBHOOK_SECRET || "",
 
   // Logs
   LOGS_PATH: process.env.LOGS_PATH || "./logs/",

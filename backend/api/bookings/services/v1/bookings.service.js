@@ -17,7 +17,7 @@ const { haversineKm } = require("../../../../utils/geoUtils");
 const { resolveRatesForBooking } = require("../../../../utils/revenueSplit");
 
 const createBooking = async (userId, bookingData) => {
-  const { services: serviceItems, extraServices = [], partnerId, address, scheduledAt, couponCode, offerId, packageId, paymentMode, notes } = bookingData;
+  const { services: serviceItems, extraServices = [], partnerId, address, scheduledAt, couponCode, offerId, packageId, packageQty = 1, paymentMode, notes } = bookingData;
 
   // Fetch all requested services — the package/flexible-pick items and any extra
   // individual services booked alongside them, validated together in one pass.
@@ -62,7 +62,10 @@ const createBooking = async (userId, bookingData) => {
   let appliedPackage = null;
   if (packageId) {
     appliedPackage = await packagesService.validateForBooking(packageId);
-    baseAmount = parseFloat(appliedPackage.price);
+    // Each package-tagged service's qty already reflects packageQty copies (the client
+    // sends qty = packageQty per item), so the price must be multiplied the same way —
+    // otherwise ordering 2 packages would still only charge for 1.
+    baseAmount = parseFloat(appliedPackage.price) * packageQty;
     appliedPackageId = appliedPackage.id;
     // Mark each service as part of a package (for display/tracking)
     enrichedServices.forEach(s => { s.addedByPackage = true; });
@@ -192,6 +195,7 @@ const createBooking = async (userId, bookingData) => {
     couponId,
     offerId: appliedOfferId,
     packageId: appliedPackageId,
+    packageQty: appliedPackageId ? packageQty : 1,
     cityId,
     notes,
   });

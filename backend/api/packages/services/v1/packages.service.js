@@ -17,7 +17,23 @@ const activeWhere = () => ({
   }],
 });
 
-// Enrich a fixed package — resolve service details from DB
+// Enrich a fixed package — resolve service details from an already-fetched map of
+// {id: Service}, so callers doing this for many packages at once make one shared
+// lookup query instead of firing one query per package.
+const enrichFixedFromMap = (pkg, serviceMap) => {
+  const plain = pkg.get ? pkg.get({ plain: true }) : { ...pkg };
+  if (plain.packageType !== "fixed") return plain;
+  plain.services = (plain.services ?? []).map((s) => ({
+    ...s,
+    name: serviceMap[s.serviceId]?.name ?? s.name,
+    price: parseFloat(serviceMap[s.serviceId]?.basePrice ?? s.price ?? 0),
+    duration: serviceMap[s.serviceId]?.duration ?? s.duration,
+    image: serviceMap[s.serviceId]?.image ?? s.image,
+  }));
+  return plain;
+};
+
+// Single-package version (e.g. getById) — one query is fine when there's only one package.
 const enrichFixed = async (pkg) => {
   const plain = pkg.get ? pkg.get({ plain: true }) : { ...pkg };
   if (plain.packageType !== "fixed") return plain;
@@ -28,14 +44,7 @@ const enrichFixed = async (pkg) => {
     attributes: ["id", "name", "basePrice", "duration", "image"],
   });
   const map = Object.fromEntries(dbServices.map((s) => [s.id, s]));
-  plain.services = (plain.services ?? []).map((s) => ({
-    ...s,
-    name: map[s.serviceId]?.name ?? s.name,
-    price: parseFloat(map[s.serviceId]?.basePrice ?? s.price ?? 0),
-    duration: map[s.serviceId]?.duration ?? s.duration,
-    image: map[s.serviceId]?.image ?? s.image,
-  }));
-  return plain;
+  return enrichFixedFromMap(plain, map);
 };
 
 const listActive = async (cityId) => {
@@ -43,7 +52,22 @@ const listActive = async (cityId) => {
     where: activeWhere(),
     order: [["createdAt", "DESC"]],
   });
-  const all = await Promise.all(pkgs.map(enrichFixed));
+
+  // Batch-resolve every fixed package's service details in one query instead of
+  // one query per package (which was blowing through the DB connection pool).
+  const allServiceIds = [...new Set(
+    pkgs.flatMap((pkg) => {
+      const plain = pkg.get({ plain: true });
+      return plain.packageType === "fixed" ? (plain.services ?? []).map((s) => s.serviceId).filter(Boolean) : [];
+    })
+  )];
+  const dbServices = allServiceIds.length
+    ? await Service.findAll({ where: { id: allServiceIds }, attributes: ["id", "name", "basePrice", "duration", "image"] })
+    : [];
+  const serviceMap = Object.fromEntries(dbServices.map((s) => [s.id, s]));
+
+  const all = pkgs.map((pkg) => enrichFixedFromMap(pkg, serviceMap));
+
   // Filter client-side: package with empty/null cityIds is global; otherwise check if cityId is in the array
   if (!cityId) return all;
   const cid = Number(cityId);

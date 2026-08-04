@@ -80,7 +80,7 @@ interface Props {
 const AddressPaymentScreen = ({navigation, route}: Props) => {
   const insets = useSafeAreaInsets();
   const dispatch = useDispatch<any>();
-  const {profile} = useSelector((state: RootState) => state.User as any);
+  const {profile, error: profileError} = useSelector((state: RootState) => state.User as any);
   const addresses: SavedAddress[] = profile?.addresses ?? [];
 
   const [selectedAddr, setSelectedAddr] = useState<SavedAddress | null>(null);
@@ -127,7 +127,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
 
   const routeOfferId: number | null = route?.params?.offerId ?? null;
   const routePackageId: number | null = route?.params?.packageId ?? null;
-  const routePackagePrice: number | null = route?.params?.packagePrice ?? null;
+  const routePackagePrice: number | null = route?.params?.packagePrice ?? null; // per-unit package price
   const routePackageTitle: string | null = route?.params?.packageTitle ?? null;
 
   const [eligibleOffer, setEligibleOffer] = useState<{
@@ -165,12 +165,16 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
   // booking's items, or extra services added on top of a package) bills at its own price.
   const packageItems = services.filter((s: any) => s.isPackageItem);
   const extraItems = services.filter((s: any) => !s.isPackageItem && !s.isFree);
+  // All package-tagged items scale together as one unit — the package's own qty stepper
+  // (in the banner below) bumps every one of them in lockstep, mirroring how the website's
+  // cart lets you adjust a package's quantity directly at checkout.
+  const currentPackageQty = packageItems[0]?.qty ?? 1;
   const packageItemsIndividualSum = packageItems.reduce((sum, s) => sum + (parseFloat(String(s.price)) || 0) * s.qty, 0);
   const extraItemsSubtotal = extraItems.reduce((sum, s) => sum + (parseFloat(String(s.price)) || 0) * s.qty, 0);
   const servicesSubtotal = services.reduce((sum, s) => sum + (parseFloat(String(s.price)) || 0) * s.qty, 0);
-  // When booking via a package, use the package price (plus any extras) as the base instead of the raw service sum
-  const subtotal = routePackagePrice != null ? routePackagePrice + extraItemsSubtotal : servicesSubtotal;
-  const packageSavings = routePackagePrice != null ? Math.max(0, packageItemsIndividualSum - routePackagePrice) : 0;
+  // When booking via a package, use the package price × qty (plus any extras) as the base instead of the raw service sum
+  const subtotal = routePackagePrice != null ? routePackagePrice * currentPackageQty + extraItemsSubtotal : servicesSubtotal;
+  const packageSavings = routePackagePrice != null ? Math.max(0, packageItemsIndividualSum - routePackagePrice * currentPackageQty) : 0;
   const couponDiscount = appliedCoupon?.discountAmount ?? 0;
   const taxableAmount = Math.max(0, subtotal - couponDiscount);
   const tax = Math.round(taxableAmount * 0.05); // GST — backend recomputes the authoritative weighted rate on submit
@@ -183,6 +187,12 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
     setServices(prev =>
       prev.map(s => s.id === id ? {...s, qty: s.qty - 1} : s).filter(s => s.qty > 0),
     );
+
+  const incrementPackageQty = () =>
+    setServices(prev => prev.map(s => (s as any).isPackageItem ? {...s, qty: s.qty + 1} : s));
+
+  const decrementPackageQty = () =>
+    setServices(prev => prev.map(s => (s as any).isPackageItem && s.qty > 1 ? {...s, qty: s.qty - 1} : s));
 
   const openAddSvcModal = () => {
     setAddSvcCart([]);
@@ -365,9 +375,11 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
         couponCode: appliedCoupon?.code || undefined,
         offerId: offerIdToSubmit || undefined,
         packageId: routePackageId || undefined,
+        packageQty: routePackageId ? currentPackageQty : undefined,
         paymentMode,
       });
       const bk = result.data?.data;
+      let paymentPending = false;
 
       if (paymentMode === 'online') {
         const payResult = await payWithRazorpay({
@@ -378,6 +390,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
           email: profile?.email,
         });
         if (!payResult.success) {
+          paymentPending = true;
           Alert.alert(
             'Payment Pending',
             `Your booking ${bk?.bookingCode} is saved, but payment wasn't completed. You can finish payment anytime from My Bookings.`,
@@ -385,9 +398,18 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
         }
       }
 
-      navigation?.navigate('OrderPlaced', {
-        bookingCode: bk?.bookingCode,
-        bookingId: bk?.id,
+      // Reset (not navigate/push) so the cart/service-selection/checkout screens are
+      // dropped from history entirely — otherwise the back button from OrderPlaced (or
+      // from BookingDetail, which it auto-redirects to) would land back on stale checkout.
+      navigation?.reset({
+        index: 1,
+        routes: [
+          {name: 'Main'},
+          {
+            name: 'OrderPlaced',
+            params: {bookingCode: bk?.bookingCode, bookingId: bk?.id, paymentPending},
+          },
+        ],
       });
     } catch (err: any) {
       Alert.alert(
@@ -434,7 +456,20 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
             <Text style={styles.sectionTitle}>Delivery Address</Text>
           </View>
 
-          {!profile ? (
+          {!profile && profileError ? (
+            <View style={{alignItems: 'center', paddingVertical: sw(12), gap: sw(8)}}>
+              <Text style={{fontFamily: fonts.textFont, fontSize: sw(12), color: '#888'}}>
+                {profileError}
+              </Text>
+              <TouchableOpacity
+                style={styles.addAddrBtn}
+                activeOpacity={0.8}
+                onPress={() => dispatch(fetchProfile())}>
+                <Ionicons name="refresh-outline" size={sw(18)} color="#105641" />
+                <Text style={styles.addAddrText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          ) : !profile ? (
             <ActivityIndicator size="small" color="#105641" style={{marginVertical: sw(12)}} />
           ) : addresses.length === 0 ? (
             <TouchableOpacity
@@ -482,7 +517,9 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
             <View style={styles.packageBannerHeader}>
               <View style={styles.packageBadge}>
                 <Ionicons name="gift" size={sw(12)} color="#012823" />
-                <Text style={styles.packageBadgeText}>PACKAGE</Text>
+                <Text style={styles.packageBadgeText}>
+                  PACKAGE{currentPackageQty > 1 ? ` ×${currentPackageQty}` : ''}
+                </Text>
               </View>
               <Text style={styles.packageBannerTitle} numberOfLines={2}>
                 {routePackageTitle}
@@ -490,9 +527,9 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
             </View>
             <View style={styles.packagePriceRow}>
               <Text style={styles.packageBannerPrice}>
-                ₹{Math.round(routePackagePrice ?? 0).toLocaleString('en-IN')}
+                ₹{Math.round((routePackagePrice ?? 0) * currentPackageQty).toLocaleString('en-IN')}
               </Text>
-              {packageItemsIndividualSum > (routePackagePrice ?? 0) && (
+              {packageItemsIndividualSum > (routePackagePrice ?? 0) * currentPackageQty && (
                 <Text style={styles.packageBannerOriginal}>
                   ₹{Math.round(packageItemsIndividualSum).toLocaleString('en-IN')}
                 </Text>
@@ -505,9 +542,20 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
                 </View>
               )}
             </View>
-            <Text style={styles.packageBannerSub}>
-              {packageItems.length} service{packageItems.length !== 1 ? 's' : ''} included in package · Add more services below
-            </Text>
+            <View style={styles.packageQtyRow}>
+              <Text style={styles.packageBannerSub}>
+                {packageItems.length} service{packageItems.length !== 1 ? 's' : ''} included · Add more services below
+              </Text>
+              <View style={styles.packageStepper}>
+                <TouchableOpacity style={styles.stepBtn} activeOpacity={0.7} onPress={decrementPackageQty}>
+                  <Ionicons name="remove" size={sw(16)} color="#FDD77A" />
+                </TouchableOpacity>
+                <Text style={styles.packageStepCount}>{currentPackageQty}</Text>
+                <TouchableOpacity style={styles.stepBtn} activeOpacity={0.7} onPress={incrementPackageQty}>
+                  <Ionicons name="add" size={sw(16)} color="#FDD77A" />
+                </TouchableOpacity>
+              </View>
+            </View>
           </View>
         )}
 
@@ -666,7 +714,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
           </View>
         )}
 
-        {/* ── Coupon ── */}
+        {/* ── Coupon — hidden for now, state/logic stay intact, just not rendered.
         <View style={styles.couponCard}>
           <View style={styles.couponHeader}>
             <View style={styles.sectionIconBox}>
@@ -709,6 +757,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
           )}
           {!!couponError && <Text style={styles.couponErrorText}>{couponError}</Text>}
         </View>
+        */}
 
         {/* ── Bill Summary ── */}
         <View style={styles.billCard}>
@@ -1240,9 +1289,32 @@ const styles = StyleSheet.create({
     color: '#FDD77A',
   },
   packageBannerSub: {
+    flex: 1,
     fontFamily: fonts.textFont,
     fontSize: sw(11),
     color: 'rgba(255,255,255,0.55)',
+  },
+  packageQtyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: sw(10),
+  },
+  packageStepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#FDD77A',
+    borderRadius: sw(20),
+    overflow: 'hidden',
+    flexShrink: 0,
+  },
+  packageStepCount: {
+    fontFamily: fonts.title,
+    fontSize: sw(14),
+    fontWeight: '700',
+    color: '#FDD77A',
+    minWidth: sw(20),
+    textAlign: 'center',
   },
   stepper: {
     flexDirection: 'row',

@@ -62,6 +62,7 @@ const PackageDetailScreen = ({navigation, route}: {navigation: any; route: any})
   const [loading, setLoading] = useState(!pkg);
   const [allServices, setAllServices] = useState<PickableService[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [packageQty, setPackageQty] = useState(1);
 
   useEffect(() => {
     if (!fullPkg && route?.params?.packageId) {
@@ -134,7 +135,7 @@ const PackageDetailScreen = ({navigation, route}: {navigation: any; route: any})
         price: s.price,
         duration: s.duration,
         image: s.image,
-        qty: 1,
+        qty: packageQty,
         isPackageItem: true,
       }));
     } else {
@@ -150,7 +151,7 @@ const PackageDetailScreen = ({navigation, route}: {navigation: any; route: any})
           price: s.basePrice,
           duration: s.duration,
           image: s.image,
-          qty: 1,
+          qty: packageQty,
           isPackageItem: true,
         }));
     }
@@ -158,7 +159,7 @@ const PackageDetailScreen = ({navigation, route}: {navigation: any; route: any})
     navigation.navigate('AddressPayment', {
       services: servicesToBook,
       packageId: fullPkg.id,
-      packagePrice: fullPkg.price,
+      packagePrice: fullPkg.price, // per-unit — checkout scales it live by the package's qty stepper there
       packageTitle: fullPkg.title,
     });
   };
@@ -309,11 +310,31 @@ const PackageDetailScreen = ({navigation, route}: {navigation: any; route: any})
         </View>
       )}
 
+      {/* ── Quantity stepper — how many copies of this package/combo ── */}
+      <View style={styles.qtyBar}>
+        <Text style={styles.qtyLabel}>Quantity</Text>
+        <View style={styles.qtyStepper}>
+          <TouchableOpacity
+            style={styles.qtyStepBtn}
+            activeOpacity={0.7}
+            onPress={() => setPackageQty(q => Math.max(1, q - 1))}>
+            <Ionicons name="remove" size={sw(16)} color="#105641" />
+          </TouchableOpacity>
+          <Text style={styles.qtyCount}>{packageQty}</Text>
+          <TouchableOpacity
+            style={styles.qtyStepBtn}
+            activeOpacity={0.7}
+            onPress={() => setPackageQty(q => q + 1)}>
+            <Ionicons name="add" size={sw(16)} color="#105641" />
+          </TouchableOpacity>
+        </View>
+      </View>
+
       {/* ── Sticky Book Now button ── */}
       <View style={[styles.footer, {paddingBottom: insets.bottom + sw(12)}]}>
         <View style={styles.footerPriceSummary}>
           <Text style={styles.footerLabel}>Package Total</Text>
-          <Text style={styles.footerPrice}>₹{Math.round(fullPkg.price)}</Text>
+          <Text style={styles.footerPrice}>₹{Math.round(fullPkg.price * packageQty)}</Text>
         </View>
         <TouchableOpacity activeOpacity={0.88} onPress={handleBook} style={styles.bookBtn}>
           <LinearGradient colors={['#105641', '#012823']} style={styles.bookBtnGradient}>
@@ -524,14 +545,55 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
 
+  qtyBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: sw(16),
+    paddingTop: sw(12),
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#F0EDE8',
+  },
+  qtyLabel: {
+    fontFamily: fonts.title,
+    fontSize: sw(13),
+    fontWeight: '600',
+    color: '#171816',
+  },
+  qtyStepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: sw(14),
+    borderWidth: 1,
+    borderColor: '#E0DCD4',
+    borderRadius: sw(20),
+    paddingHorizontal: sw(6),
+    paddingVertical: sw(4),
+  },
+  qtyStepBtn: {
+    width: sw(26),
+    height: sw(26),
+    borderRadius: sw(13),
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(16,86,65,0.08)',
+  },
+  qtyCount: {
+    fontFamily: fonts.title,
+    fontSize: sw(14),
+    fontWeight: '700',
+    color: '#171816',
+    minWidth: sw(18),
+    textAlign: 'center',
+  },
+
   footer: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: sw(16),
     paddingTop: sw(12),
     backgroundColor: '#FFFFFF',
-    borderTopWidth: 1,
-    borderTopColor: '#F0EDE8',
     gap: sw(12),
   },
   footerPriceSummary: {flex: 1},

@@ -58,7 +58,10 @@ app.use((req, res, next) => {
 // ----- Body Parsers -----
 app.use(morgan("dev"));
 app.use(bodyParser.urlencoded({ extended: false, limit: "5mb" }));
-app.use(bodyParser.json({ limit: "5mb" }));
+// Capture the raw body alongside the parsed one — needed to verify the Razorpay
+// webhook's HMAC signature, which is computed over the exact bytes Razorpay sent
+// (re-serializing req.body could reorder/reformat and break the signature match).
+app.use(bodyParser.json({ limit: "5mb", verify: (req, res, buf) => { req.rawBody = buf; } }));
 app.use(express.json({ limit: "5mb" }));
 app.use(express.urlencoded({ extended: true, limit: "5mb" }));
 
@@ -144,6 +147,10 @@ app.get("/health", (req, res) => {
 });
 
 // ----- Static Files (uploaded images) -----
+// New uploads are written to upload_files/ (matches the live server's
+// public_html/upload_files path). uploads/ stays mounted read-only so links
+// already stored in the DB from before this rename keep resolving.
+app.use("/upload_files", express.static(path.join(__dirname, "upload_files")));
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // ----- API Routes -----

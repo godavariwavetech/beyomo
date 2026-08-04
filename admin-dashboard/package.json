@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@hello-pangea/dnd": "^17.0.0",
     "axios": "^1.16.1",
     "firebase": "^12.14.0",
     "leaflet": "^1.9.4",

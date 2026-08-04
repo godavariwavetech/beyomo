@@ -32,10 +32,10 @@ const saveBase64Image = (base64DataUri, partnerId) => {
   const ext = matches[1] === "jpeg" ? "jpg" : matches[1];
   const buffer = Buffer.from(matches[2], "base64");
   const filename = `partner-${partnerId}-${Date.now()}.${ext}`;
-  const uploadsDir = path.join(__dirname, "../../../../uploads");
+  const uploadsDir = path.join(__dirname, "../../../../upload_files");
   if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
   fs.writeFileSync(path.join(uploadsDir, filename), buffer);
-  return `/uploads/${filename}`;
+  return `/upload_files/${filename}`;
 };
 
 const updateProfile = async (partnerId, updateData) => {
@@ -98,10 +98,10 @@ const saveBase64Doc = (base64DataUri, partnerId, prefix, allowPdf = false) => {
   const ext = imgMatch ? (imgMatch[1] === "jpeg" ? "jpg" : imgMatch[1]) : "pdf";
   const buffer = Buffer.from(matches[matches.length - 1], "base64");
   const filename = `${prefix}-${partnerId}-${Date.now()}.${ext}`;
-  const uploadsDir = path.join(__dirname, "../../../../uploads");
+  const uploadsDir = path.join(__dirname, "../../../../upload_files");
   if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
   fs.writeFileSync(path.join(uploadsDir, filename), buffer);
-  return `/uploads/${filename}`;
+  return `/upload_files/${filename}`;
 };
 
 const updateDocuments = async (partnerId, documentData) => {
@@ -502,7 +502,13 @@ const getEarnings = async (partnerId, period = "month") => {
 
 const getAvailableBookings = async (partnerId) => {
   const partner = await Partner.findByPk(partnerId, { attributes: ['locationCity'] });
-  const where = { status: { [Op.in]: ['pending', 'confirmed'] } };
+  // Exclude online-payment bookings whose payment hasn't actually gone through yet
+  // (e.g. the customer cancelled Razorpay checkout) — those stay "pending" too, but
+  // a partner must never be offered a job that hasn't been paid for.
+  const where = {
+    status: { [Op.in]: ['pending', 'confirmed'] },
+    [Op.or]: [{ paymentMode: 'cod' }, { paymentStatus: 'paid' }],
+  };
   if (partner?.locationCity) where.addressCity = partner.locationCity;
 
   const bookings = await Booking.findAll({
@@ -551,7 +557,11 @@ const claimServices = async (partnerId, bookingId, serviceIndices) => {
   // Edge case 3: also allow in_progress bookings so partner B can claim when A already started.
   return sequelize.transaction(async (t) => {
     const booking = await Booking.findOne({
-      where: { id: bookingId, status: { [Op.in]: ['pending', 'confirmed', 'in_progress'] } },
+      where: {
+        id: bookingId,
+        status: { [Op.in]: ['pending', 'confirmed', 'in_progress'] },
+        [Op.or]: [{ paymentMode: 'cod' }, { paymentStatus: 'paid' }],
+      },
       lock: t.LOCK.UPDATE,
       transaction: t,
     });
@@ -630,7 +640,14 @@ const acceptBooking = async (partnerId, bookingId) => {
     const { sendPushNotification } = require('../../../../utils/firebaseUtils');
     const [updated] = await Booking.update(
       { partnerId, status: 'confirmed' },
-      { where: { id: bookingId, partnerId: null, status: 'pending' } }
+      {
+        where: {
+          id: bookingId,
+          partnerId: null,
+          status: 'pending',
+          [Op.or]: [{ paymentMode: 'cod' }, { paymentStatus: 'paid' }],
+        },
+      }
     );
     if (updated === 0) throw new AppError('Booking is no longer available', 409);
     const booking = await Booking.findByPk(bookingId, {

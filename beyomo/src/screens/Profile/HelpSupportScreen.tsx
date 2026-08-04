@@ -28,9 +28,9 @@ const FAQS: FAQ[] = [
 ];
 
 const CONTACT = [
-  {id: 'call', icon: 'call-outline', label: 'Call Us', value: '+91 9876543210', action: () => Linking.openURL('tel:+919876543210')},
+  {id: 'call', icon: 'call-outline', label: 'Call Us', value: '+91 98859 09192', action: () => Linking.openURL('tel:+919885909192')},
   {id: 'email', icon: 'mail-outline', label: 'Email Us', value: 'support@beyomo.com', action: () => Linking.openURL('mailto:support@beyomo.com')},
-  {id: 'whatsapp', icon: 'logo-whatsapp', label: 'WhatsApp', value: 'Chat with us', action: () => Linking.openURL('https://wa.me/919876543210')},
+  {id: 'whatsapp', icon: 'logo-whatsapp', label: 'WhatsApp', value: 'Chat with us', action: () => Linking.openURL('https://wa.me/919885909192')},
 ];
 
 const HelpSupportScreen = ({navigation}: any) => {

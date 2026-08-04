@@ -1,6 +1,5 @@
 const express = require("express");
 const router = express.Router();
-const authenticate = require("../../../../utils/authenticate");
 const adminAuthenticate = require("../../../../utils/adminAuthenticate");
 const {
   listPackages,
@@ -17,8 +16,9 @@ router.post("/admin", adminAuthenticate(["super_admin", "admin", "manager"]), ad
 router.put("/admin/:id", adminAuthenticate(["super_admin", "admin", "manager"]), adminUpdatePackage);
 router.delete("/admin/:id", adminAuthenticate(["super_admin", "admin"]), adminDeletePackage);
 
-// Public user app endpoints (auth required)
-router.get("/", authenticate, listPackages);
-router.get("/:id", authenticate, getPackage);
+// Public endpoints — no auth, same as services/categories, so the website (and the
+// app before login) can browse packages/combos.
+router.get("/", listPackages);
+router.get("/:id", getPackage);
 
 module.exports = router;

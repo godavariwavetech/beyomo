@@ -33,6 +33,7 @@ const createBookingSchema = Joi.object({
   couponCode: Joi.string().trim().uppercase().allow("", null),
   offerId:    Joi.number().integer().allow(null),
   packageId:  Joi.number().integer().positive().allow(null),
+  packageQty: Joi.number().integer().min(1).default(1),
   paymentMode: Joi.string().valid("online", "cod").default("online"),
   notes: Joi.string().trim().max(500).allow("", null),
 }).unknown(true);

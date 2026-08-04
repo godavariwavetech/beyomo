@@ -97,6 +97,13 @@ const connectDB = async () => {
     await sequelize.query("ALTER TABLE service_packages ADD COLUMN IF NOT EXISTS showOnHome TINYINT(1) NOT NULL DEFAULT 0").catch(() => {});
     // Admin-selected categories featured on the app header / website home page
     await sequelize.query("ALTER TABLE service_categories ADD COLUMN IF NOT EXISTS showOnHome TINYINT(1) NOT NULL DEFAULT 0").catch(() => {});
+    // Support/admin-created bookings (e.g. phone-in one-time service requests)
+    await sequelize.query("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS createdByAdminId INT NULL").catch(() => {});
+    await sequelize.query("ALTER TABLE bookings MODIFY COLUMN serviceId INT NULL").catch(() => {});
+    // Admin-configurable display order for services within a category
+    await sequelize.query("ALTER TABLE services ADD COLUMN IF NOT EXISTS sortOrder INT NOT NULL DEFAULT 0").catch(() => {});
+    // How many copies of a package/combo were booked (mirrors per-service qty)
+    await sequelize.query("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS packageQty INT NOT NULL DEFAULT 1").catch(() => {});
     logger.info("Column migrations applied");
 
     // Seed cities — INSERT IGNORE skips if name already exists (unique constraint)
