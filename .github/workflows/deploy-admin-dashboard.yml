@@ -1,0 +1,50 @@
+name: Deploy Admin Dashboard
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "admin-dashboard/**"
+      - ".github/workflows/deploy-admin-dashboard.yml"
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install and build
+        working-directory: admin-dashboard
+        run: |
+          npm ci
+          npm run build
+
+      - name: Set up SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      - name: Trust host key
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "${{ secrets.DEPLOY_SSH_PORT }}" -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
+
+      # --delete cleans out old hashed JS/CSS bundles from previous builds, but
+      # explicitly spares files that aren't part of the Vite build output:
+      # SPA routing config, push-notification service worker, and cPanel/ACME files.
+      - name: Deploy build to server
+        run: |
+          rsync -avz --delete \
+            -e "ssh -p ${{ secrets.DEPLOY_SSH_PORT }}" \
+            --exclude '.htaccess' \
+            --exclude 'firebase-messaging-sw.js' \
+            --exclude 'php.ini' \
+            --exclude '.user.ini' \
+            --exclude '.well-known' \
+            --exclude '*.zip' \
+            admin-dashboard/dist/ "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:~/public_html/admin.beyomo.com/"
