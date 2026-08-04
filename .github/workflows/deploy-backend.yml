@@ -22,7 +22,7 @@ jobs:
       - name: Trust host key
         run: |
           mkdir -p ~/.ssh
-          ssh-keyscan -p "${{ secrets.DEPLOY_SSH_PORT }}" -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
+          ssh-keyscan -p "${{ secrets.DEPLOY_PORT }}" -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
 
       # Never uses --delete: the remote ~/api/ directory also holds runtime
       # data (uploads/, upload_files/, ssl/, logs/, .env) that isn't part of
@@ -30,7 +30,7 @@ jobs:
       - name: Sync backend code
         run: |
           rsync -avz \
-            -e "ssh -p ${{ secrets.DEPLOY_SSH_PORT }}" \
+            -e "ssh -p ${{ secrets.DEPLOY_PORT }}" \
             --exclude 'node_modules' \
             --exclude 'uploads' \
             --exclude 'upload_files' \
@@ -46,7 +46,7 @@ jobs:
 
       - name: Install dependencies and restart
         run: |
-          ssh -p "${{ secrets.DEPLOY_SSH_PORT }}" "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" '
+          ssh -p "${{ secrets.DEPLOY_PORT }}" "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" '
             set -e
             cd ~/api
             npm install --omit=dev

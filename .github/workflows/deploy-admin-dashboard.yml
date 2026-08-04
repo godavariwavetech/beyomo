@@ -32,7 +32,7 @@ jobs:
       - name: Trust host key
         run: |
           mkdir -p ~/.ssh
-          ssh-keyscan -p "${{ secrets.DEPLOY_SSH_PORT }}" -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
+          ssh-keyscan -p "${{ secrets.DEPLOY_PORT }}" -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
 
       # --delete cleans out old hashed JS/CSS bundles from previous builds, but
       # explicitly spares files that aren't part of the Vite build output:
@@ -40,7 +40,7 @@ jobs:
       - name: Deploy build to server
         run: |
           rsync -avz --delete \
-            -e "ssh -p ${{ secrets.DEPLOY_SSH_PORT }}" \
+            -e "ssh -p ${{ secrets.DEPLOY_PORT }}" \
             --exclude '.htaccess' \
             --exclude 'firebase-messaging-sw.js' \
             --exclude 'php.ini' \
