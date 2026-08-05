@@ -7,6 +7,7 @@ import Modal from '../components/common/Modal';
 import RevenueSplitFields from '../components/common/RevenueSplitFields';
 import ImageUploader from '../components/common/ImageUploader';
 import ServiceTree from '../components/common/ServiceTree';
+import ReorderableServiceList from '../components/common/ReorderableServiceList';
 import api from '../services/api';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
 
@@ -186,6 +187,12 @@ export default function Combos() {
     return svcs;
   }, [allServices, selectedCityIds, svcSearch]);
 
+  // Selected services in selection/drag order (not catalog order) — this is
+  // what actually gets saved and shown to customers.
+  const orderedSelectedServices = selectedServiceIds
+    .map(id => allServices.find(s => Number(s.id) === id))
+    .filter(Boolean);
+
   const openCreate = () => {
     setEditTarget(null);
     setForm(emptyForm());
@@ -227,7 +234,7 @@ export default function Combos() {
     if (!form.price || isNaN(parseFloat(form.price))) return showToast('Combo price is required', 'warning');
     if (selectedServiceIds.length === 0) return showToast('Select at least one service for the combo', 'warning');
 
-    const selectedSvcs = allServices.filter(s => selectedServiceIds.includes(Number(s.id)));
+    const selectedSvcs = selectedServiceIds.map(id => allServices.find(s => Number(s.id) === id)).filter(Boolean);
     const payload = {
       title:         form.title.trim(),
       description:   form.description.trim() || null,
@@ -574,6 +581,15 @@ export default function Combos() {
               selectedIds={selectedServiceIds}
               onToggle={toggleService}
             />
+            {orderedSelectedServices.length > 1 && (
+              <div style={{ marginTop: 12 }}>
+                <ReorderableServiceList
+                  services={orderedSelectedServices}
+                  onReorder={setSelectedServiceIds}
+                  onRemove={toggleService}
+                />
+              </div>
+            )}
             {selectedServiceIds.length > 0 && (
               <div style={{ marginTop: 12 }}>
                 <AmountsSummary
