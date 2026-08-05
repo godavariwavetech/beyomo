@@ -41,6 +41,13 @@ const adminDeletePackage = catchAsync(async (req, res) => {
   res.json({ status: true, message: "Package deleted" });
 });
 
+// PATCH /api/v1/admin/packages/reorder — body: { packageType: 'fixed'|'flexible', order: [ids...] }
+const adminReorderPackages = catchAsync(async (req, res) => {
+  const { packageType, order } = req.body;
+  await packagesService.reorderPackages(packageType, order);
+  res.json({ status: true, message: "Order updated" });
+});
+
 module.exports = {
   listPackages,
   getPackage,
@@ -48,4 +55,5 @@ module.exports = {
   adminCreatePackage,
   adminUpdatePackage,
   adminDeletePackage,
+  adminReorderPackages,
 };

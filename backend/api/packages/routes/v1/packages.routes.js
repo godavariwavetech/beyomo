@@ -8,11 +8,13 @@ const {
   adminCreatePackage,
   adminUpdatePackage,
   adminDeletePackage,
+  adminReorderPackages,
 } = require("../../controllers/v1/packages.controller");
 
 // Admin endpoints — must be registered BEFORE /:id to avoid the wildcard swallowing /admin/*
 router.get("/admin/list", adminAuthenticate(), adminListPackages);
 router.post("/admin", adminAuthenticate(["super_admin", "admin", "manager"]), adminCreatePackage);
+router.patch("/admin/reorder", adminAuthenticate(["super_admin", "admin", "manager"]), adminReorderPackages);
 router.put("/admin/:id", adminAuthenticate(["super_admin", "admin", "manager"]), adminUpdatePackage);
 router.delete("/admin/:id", adminAuthenticate(["super_admin", "admin"]), adminDeletePackage);
 

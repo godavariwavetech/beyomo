@@ -1,4 +1,5 @@
 const { Op } = require("sequelize");
+const { sequelize } = require("../../../../utils/dbconnect");
 const ServicePackage = require("../../models/package.model");
 const Service = require("../../../services/models/service.model");
 const AppError = require("../../../../utils/errorHandlers/appError");
@@ -50,7 +51,7 @@ const enrichFixed = async (pkg) => {
 const listActive = async (cityId) => {
   const pkgs = await ServicePackage.findAll({
     where: activeWhere(),
-    order: [["createdAt", "DESC"]],
+    order: [["sortOrder", "ASC"], ["createdAt", "DESC"]],
   });
 
   // Batch-resolve every fixed package's service details in one query instead of
@@ -86,7 +87,7 @@ const getById = async (id) => {
 const listAll = async ({ page = 1, limit = 20, cityIds } = {}) => {
   // cityIds is a JSON array column (empty/null = available in all cities), so filtering
   // can't be a SQL where-clause — fetch all, filter, then paginate in application code.
-  const rows = await ServicePackage.findAll({ order: [["createdAt", "DESC"]] });
+  const rows = await ServicePackage.findAll({ order: [["sortOrder", "ASC"], ["createdAt", "DESC"]] });
   let data = rows.map((r) => r.get({ plain: true }));
 
   if (cityIds?.length) {
@@ -100,6 +101,20 @@ const listAll = async ({ page = 1, limit = 20, cityIds } = {}) => {
   const total = data.length;
   const offset = (page - 1) * limit;
   return { total, data: data.slice(offset, offset + limit) };
+};
+
+// Bulk-persist a new display order within a single packageType ('fixed' or
+// 'flexible' are ordered independently, matching how each is a separate admin
+// list). `orderedIds` is the full list of package IDs in the order they
+// should appear; index becomes sortOrder.
+const reorderPackages = async (packageType, orderedIds) => {
+  return sequelize.transaction(async (t) => {
+    await Promise.all(
+      orderedIds.map((id, index) =>
+        ServicePackage.update({ sortOrder: index }, { where: { id, packageType }, transaction: t })
+      )
+    );
+  });
 };
 
 const createPackage = async (data) => ServicePackage.create(data);
@@ -123,4 +138,4 @@ const validateForBooking = async (packageId) => {
   return pkg;
 };
 
-module.exports = { listActive, getById, listAll, createPackage, updatePackage, deletePackage, validateForBooking };
+module.exports = { listActive, getById, listAll, createPackage, updatePackage, deletePackage, validateForBooking, reorderPackages };

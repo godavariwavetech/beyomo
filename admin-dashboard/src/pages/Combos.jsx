@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Plus, Edit2, Trash2, Boxes, Search, MapPin } from 'lucide-react';
+import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
+import { Plus, Edit2, Trash2, Boxes, Search, MapPin, GripVertical } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useCityFilter } from '../context/CityContext';
 import Modal from '../components/common/Modal';
@@ -295,6 +296,27 @@ export default function Combos() {
     !search || (p.title ?? '').toLowerCase().includes(search.toLowerCase())
   );
 
+  const handleDragEnd = async (result) => {
+    if (!result.destination || result.destination.index === result.source.index) return;
+    const reorderedScoped = Array.from(filtered);
+    const [moved] = reorderedScoped.splice(result.source.index, 1);
+    reorderedScoped.splice(result.destination.index, 0, moved);
+
+    const scopedIds = new Set(filtered.map(p => p.id));
+    let i = 0;
+    setCombos(combos.map(p => (scopedIds.has(p.id) ? reorderedScoped[i++] : p)));
+
+    try {
+      await api.patch('/api/v1/admin/packages/reorder', {
+        packageType: 'fixed',
+        order: reorderedScoped.map(p => p.id),
+      });
+    } catch {
+      showToast('Failed to save combo order.', 'danger');
+      fetchCombos();
+    }
+  };
+
   const cityLabel = (combo) => {
     const ids = combo.cityIds ?? [];
     if (ids.length === 0) return 'All Cities';
@@ -335,9 +357,11 @@ export default function Combos() {
           </div>
         ) : (
           <div className="table-container">
+            <div className="form-hint" style={{ margin: '4px 0 8px' }}>Drag <GripVertical size={11} style={{ verticalAlign: -2 }} /> to reorder — this sets the display order on the website and app.</div>
             <table className="table">
               <thead>
                 <tr>
+                  <th></th>
                   <th>Combo</th>
                   <th>Locations</th>
                   <th>Services</th>
@@ -347,13 +371,21 @@ export default function Combos() {
                   <th>Actions</th>
                 </tr>
               </thead>
-              <tbody>
-                {filtered.map(combo => {
-                  const savings = combo.originalPrice && Number(combo.originalPrice) > Number(combo.price)
-                    ? Math.round(Number(combo.originalPrice) - Number(combo.price)) : null;
-                  return (
-                    <tr key={combo.id}>
-                      <td>
+              <DragDropContext onDragEnd={handleDragEnd}>
+                <Droppable droppableId="combos-reorder-list">
+                  {(dropProvided) => (
+                    <tbody ref={dropProvided.innerRef} {...dropProvided.droppableProps}>
+                      {filtered.map((combo, index) => {
+                        const savings = combo.originalPrice && Number(combo.originalPrice) > Number(combo.price)
+                          ? Math.round(Number(combo.originalPrice) - Number(combo.price)) : null;
+                        return (
+                          <Draggable key={combo.id} draggableId={String(combo.id)} index={index}>
+                            {(dragProvided, dragSnapshot) => (
+                            <tr ref={dragProvided.innerRef} {...dragProvided.draggableProps} style={{ background: dragSnapshot.isDragging ? 'var(--c-border-light)' : undefined, ...dragProvided.draggableProps.style }}>
+                              <td {...dragProvided.dragHandleProps} style={{ cursor: 'grab', color: 'var(--c-text-muted)', width: 24 }} title="Drag to reorder">
+                                <GripVertical size={16} />
+                              </td>
+                              <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                           {combo.image && <img src={combo.image} alt="" style={{ width: 40, height: 40, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }} />}
                           <div>
@@ -401,10 +433,16 @@ export default function Combos() {
                           <button className="btn btn-ghost btn-icon" title="Delete" style={{ color: 'var(--c-danger)' }} onClick={() => setDeleteTarget(combo)}><Trash2 size={14} /></button>
                         </div>
                       </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
+                            </tr>
+                            )}
+                          </Draggable>
+                        );
+                      })}
+                      {dropProvided.placeholder}
+                    </tbody>
+                  )}
+                </Droppable>
+              </DragDropContext>
             </table>
           </div>
         )}

@@ -30,6 +30,8 @@ const ServicePackage = sequelize.define("ServicePackage", {
     },
   },
   isActive: { type: DataTypes.BOOLEAN, defaultValue: true },
+  // Display order within its packageType (fixed vs flexible are ordered independently)
+  sortOrder: { type: DataTypes.INTEGER, defaultValue: 0 },
   // Admin-selected packages/combos to feature in the app's home screen header carousel
   // (alongside admin banners) — not every package, only ones explicitly flagged here.
   showOnHome: { type: DataTypes.BOOLEAN, defaultValue: false },
