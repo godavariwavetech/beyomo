@@ -258,7 +258,7 @@ export default function Packages() {
     setPackages(packages.map(p => (scopedIds.has(p.id) ? reorderedScoped[i++] : p)));
 
     try {
-      await api.patch('/api/v1/admin/packages/reorder', {
+      await api.patch('/api/v1/packages/admin/reorder', {
         packageType: 'flexible',
         order: reorderedScoped.map(p => p.id),
       });
