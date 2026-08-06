@@ -25,6 +25,7 @@ import Cities from './pages/Cities';
 import Offers from './pages/Offers';
 import Packages from './pages/Packages';
 import Combos from './pages/Combos';
+import Banners from './pages/Banners';
 import Analytics from './pages/Analytics';
 import Skills from './pages/Skills';
 import ContactInquiries from './pages/ContactInquiries';
@@ -74,6 +75,7 @@ function ProtectedRoutes() {
         <Route path="offers"        element={<PermissionGuard page="offers"><Offers /></PermissionGuard>} />
         <Route path="packages"      element={<PermissionGuard page="packages"><Packages /></PermissionGuard>} />
         <Route path="combos"        element={<PermissionGuard page="combos"><Combos /></PermissionGuard>} />
+        <Route path="banners"       element={<PermissionGuard page="banners"><Banners /></PermissionGuard>} />
         <Route path="analytics"     element={<PermissionGuard page="analytics"><Analytics /></PermissionGuard>} />
         <Route path="skills"             element={<PermissionGuard page="skills"><Skills /></PermissionGuard>} />
         <Route path="contact-inquiries" element={<PermissionGuard page="contacts"><ContactInquiries /></PermissionGuard>} />

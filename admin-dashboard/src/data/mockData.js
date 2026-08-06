@@ -1,6 +1,6 @@
 export const ROLE_PERMISSIONS = {
-  super_admin: ['dashboard','users','partners','bookings','services','skills','earnings','settlements','coupons','offers','packages','combos','reviews','notifications','reports','analytics','settings','permissions','feedback','zones','cities','contacts'],
-  admin:       ['dashboard','users','partners','bookings','services','skills','earnings','settlements','coupons','offers','packages','combos','reviews','notifications','reports','analytics','feedback','zones','cities','contacts'],
+  super_admin: ['dashboard','users','partners','bookings','services','skills','earnings','settlements','coupons','offers','packages','combos','banners','reviews','notifications','reports','analytics','settings','permissions','feedback','zones','cities','contacts'],
+  admin:       ['dashboard','users','partners','bookings','services','skills','earnings','settlements','coupons','offers','packages','combos','banners','reviews','notifications','reports','analytics','feedback','zones','cities','contacts'],
   manager:     ['dashboard','users','partners','bookings','skills','reviews','notifications','feedback','contacts'],
   analyst:     ['dashboard','reports','analytics'],
   support:     ['dashboard','users','bookings','reviews','contacts'],
