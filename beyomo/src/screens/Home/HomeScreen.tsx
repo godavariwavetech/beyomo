@@ -9,6 +9,7 @@ import {
   Dimensions,
   StatusBar,
   Linking,
+  RefreshControl,
 } from 'react-native';
 import {HomeScreenSkeleton, SkeletonBox} from '../../components/Skeleton/Skeleton';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -80,18 +81,36 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
   // Keyed by offer id / category id / image uri for promo cards.
   const [loadedBanners, setLoadedBanners] = useState<Set<string>>(new Set());
   const [loadedServices, setLoadedServices] = useState<Set<string>>(new Set());
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    dispatch(fetchCategories());
+  const loadHomeData = () => {
     setLoadedServices(new Set());
     const cityParam = selectedCity?.id ? `?cityId=${selectedCity.id}` : '';
-    api.get(`${endpoints.PACKAGES}${cityParam}`).then(res => {
+    const packagesPromise = api.get(`${endpoints.PACKAGES}${cityParam}`).then(res => {
       if (res.data?.status) { setPackages(res.data.data ?? []); setLoadedBanners(new Set()); }
     }).catch(() => {});
-    api.get(endpoints.BANNERS).then(res => {
+    const bannersPromise = api.get(endpoints.BANNERS).then(res => {
       if (res.data?.status) setBanners(res.data.data ?? []);
     }).catch(() => {});
+    return Promise.all([
+      dispatch(fetchCategories()),
+      packagesPromise,
+      bannersPromise,
+    ]);
+  };
+
+  useEffect(() => {
+    loadHomeData();
   }, [dispatch, selectedCity?.id]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await loadHomeData();
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   // The two "Packages & Combos" CTA cards are fixed nav targets (always go to
   // CustomPackages / Combos) — an admin can override just their artwork via the Banners
@@ -243,7 +262,10 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
       <ScrollView
         style={styles.scroll}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.contentContainer}>
+        contentContainerStyle={styles.contentContainer}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#105641']} tintColor="#105641" />
+        }>
 
         {/* ══════════════════════════════════
             OUR SERVICES
