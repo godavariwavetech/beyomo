@@ -61,9 +61,19 @@ type SavedAddress = {
 
 const PLATFORM_FEE = 30;
 
+// Service hours are 8 AM - 8 PM, matching the website's checkout.
+const BOOKING_WINDOW_START_HOUR = 8;
+const BOOKING_WINDOW_END_HOUR = 20;
+
 const getDefaultDate = () => {
   const d = new Date(Date.now() + 2 * 60 * 60 * 1000);
   d.setSeconds(0, 0);
+  // If the advance-time buffer pushes past closing, the earliest real slot is
+  // next day's opening instead of a same-day time outside business hours.
+  if (d.getHours() >= BOOKING_WINDOW_END_HOUR) {
+    d.setDate(d.getDate() + 1);
+    d.setHours(BOOKING_WINDOW_START_HOUR, 0, 0, 0);
+  }
   return d;
 };
 
@@ -314,6 +324,9 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
     const now = Date.now();
     if (date.getTime() < now + ONE_HOUR_MS) return 'Booking must be at least 1 hour from now.';
     if (date.getTime() > now + ONE_MONTH_MS) return 'Booking cannot be more than 1 month in advance.';
+    const hour = date.getHours();
+    if (hour >= BOOKING_WINDOW_END_HOUR) return 'The service is not available after 8 PM. Please choose a slot before 8 PM.';
+    if (hour < BOOKING_WINDOW_START_HOUR) return 'The service is not available before 8 AM. Please choose a slot after 8 AM.';
     return '';
   };
 
