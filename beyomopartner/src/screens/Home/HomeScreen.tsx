@@ -293,24 +293,6 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
           </View>
         </View>
 
-        {/* ── Rewards banner ── */}
-        <TouchableOpacity
-          activeOpacity={0.88}
-          style={styles.rewardsBanner}
-          onPress={() => navigation.navigate('Earnings')}>
-          <View style={styles.rewardsLeft}>
-            <Text style={styles.rewardsTrophy}>🏆</Text>
-            <View>
-              <Text style={styles.rewardsTop}>Complete more jobs</Text>
-              <Text style={styles.rewardsBottom}>Earn more rewards!</Text>
-            </View>
-          </View>
-          <View style={styles.rewardsBtn}>
-            <Text style={styles.rewardsBtnText}>View Rewards</Text>
-            <Ionicons name="chevron-forward" size={sw(14)} color="#FFFFFF" />
-          </View>
-        </TouchableOpacity>
-
       </ScrollView>
     </View>
   );
@@ -544,54 +526,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignSelf: 'flex-end',
     marginTop: sw(8),
-  },
-
-  /* Rewards banner */
-  rewardsBanner: {
-    marginHorizontal: sw(16),
-    marginTop: sw(14),
-    backgroundColor: '#FFF8E7',
-    borderRadius: sw(16),
-    paddingHorizontal: sw(14),
-    paddingVertical: sw(14),
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderWidth: 1,
-    borderColor: '#F5D98B',
-  },
-  rewardsLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: sw(10),
-    flex: 1,
-  },
-  rewardsTrophy: {fontSize: sw(32)},
-  rewardsTop: {
-    fontFamily: fonts.textFont,
-    fontSize: sw(12),
-    color: '#555555',
-  },
-  rewardsBottom: {
-    fontFamily: fonts.title,
-    fontSize: sw(14),
-    fontWeight: '700',
-    color: '#171816',
-  },
-  rewardsBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: sw(4),
-    backgroundColor: '#022723',
-    borderRadius: sw(20),
-    paddingHorizontal: sw(14),
-    paddingVertical: sw(9),
-  },
-  rewardsBtnText: {
-    fontFamily: fonts.textFont,
-    fontSize: sw(12),
-    fontWeight: '600',
-    color: '#FFFFFF',
   },
 });
 
