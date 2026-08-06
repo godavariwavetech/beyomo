@@ -2,6 +2,7 @@ import React, {useEffect, useRef, useState} from 'react';
 import {
   View,
   Text,
+  Image,
   ScrollView,
   TouchableOpacity,
   StyleSheet,
@@ -12,10 +13,12 @@ import {
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import {useSelector} from 'react-redux';
+import {useSelector, useDispatch} from 'react-redux';
 import {fonts} from '../../config/theme';
 import api from '../../utils/api';
 import {endpoints} from '../../config/config';
+import {addPackageToCart} from '../../redux/reducers/cart';
+import CartBar from '../../components/CartBar/CartBar';
 import type {RootState} from '../../redux/store';
 
 const {width} = Dimensions.get('window');
@@ -32,6 +35,7 @@ const categoryKey = (pkg: any): string => pkg.categoryId ? String(pkg.categoryId
 
 const CustomPackagesScreen = ({navigation}: Props) => {
   const insets = useSafeAreaInsets();
+  const dispatch = useDispatch<any>();
   const selectedCity = useSelector((state: RootState) => state.City?.selectedCity);
 
   const [packages, setPackages] = useState<any[]>([]);
@@ -52,11 +56,17 @@ const CustomPackagesScreen = ({navigation}: Props) => {
     const cityParam = selectedCity?.id ? `?cityId=${selectedCity.id}` : '';
     api.get(`${endpoints.PACKAGES}${cityParam}`).then(async res => {
       if (!res.data?.status) { setLoading(false); return; }
-      const flexible = (res.data.data ?? []).filter((p: any) => p.packageType === 'flexible');
+      const flexible = (res.data.data ?? [])
+        .filter((p: any) => p.packageType === 'flexible')
+        .sort((a: any, b: any) => (a.sortOrder || 0) - (b.sortOrder || 0));
       setPackages(flexible);
 
+      // Only packages the admin left with an empty "Eligible Services" list need a
+      // catalog fetch — everything else uses its own curated, ordered list directly
+      // (see getPackageServices below), matching what the admin actually configured.
+      const needsCatalog = flexible.filter((pkg: any) => !pkg.services || pkg.services.length === 0);
       const uniqueKeys: string[] = [];
-      flexible.forEach((pkg: any) => {
+      needsCatalog.forEach((pkg: any) => {
         const key = categoryKey(pkg);
         if (!uniqueKeys.includes(key)) uniqueKeys.push(key);
       });
@@ -74,6 +84,21 @@ const CustomPackagesScreen = ({navigation}: Props) => {
       setLoading(false);
     }).catch(() => setLoading(false));
   }, [selectedCity?.id]);
+
+  // Admin's curated "Eligible Services" list (in the order the admin set), when one
+  // was configured; an empty list is the admin's explicit "entire catalog" choice.
+  const getPackageServices = (pkg: any): any[] => {
+    if (pkg.services && pkg.services.length > 0) {
+      return pkg.services.map((s: any) => ({
+        id: s.serviceId,
+        name: s.name,
+        basePrice: s.price,
+        duration: s.duration,
+        image: s.image,
+      }));
+    }
+    return servicesByCategory[categoryKey(pkg)] ?? [];
+  };
 
   const toggleService = (pkgId: number, serviceId: number, requiredCount: number) => {
     setSelections(prev => {
@@ -94,7 +119,7 @@ const CustomPackagesScreen = ({navigation}: Props) => {
       Alert.alert('Select services', `Please select ${pkg.serviceCount} services to continue.`);
       return;
     }
-    const services = (servicesByCategory[categoryKey(pkg)] ?? [])
+    const selectedServices = getPackageServices(pkg)
       .filter((s: any) => selectedIds.has(s.id))
       .map((s: any) => ({
         id: s.id,
@@ -102,14 +127,17 @@ const CustomPackagesScreen = ({navigation}: Props) => {
         price: s.basePrice,
         duration: s.duration,
         image: s.image,
-        qty: 1,
       }));
-    navigation.navigate('AddressPayment', {
-      services,
+    dispatch(addPackageToCart({
       packageId: pkg.id,
-      packagePrice: pkg.price,
       packageTitle: pkg.title,
-    });
+      packagePrice: pkg.price,
+      packageOriginalPrice: pkg.originalPrice ?? pkg.price,
+      packageType: 'flexible',
+      services: selectedServices,
+    }));
+    // Reset this package's checklist so it doesn't stay stuck on "ready to add".
+    setSelections(prev => ({...prev, [pkg.id]: new Set<number>()}));
   };
 
   return (
@@ -160,7 +188,7 @@ const CustomPackagesScreen = ({navigation}: Props) => {
           ) : (
             packages.map((pkg: any) => {
               const selected = selections[pkg.id] ?? new Set<number>();
-              const services = servicesByCategory[categoryKey(pkg)] ?? [];
+              const services = getPackageServices(pkg);
               const discountPct = pkg.originalPrice && pkg.originalPrice > pkg.price
                 ? Math.round(((pkg.originalPrice - pkg.price) / pkg.originalPrice) * 100)
                 : 0;
@@ -186,6 +214,10 @@ const CustomPackagesScreen = ({navigation}: Props) => {
                       </Text>
                     </TouchableOpacity>
                   </View>
+
+                  {pkg.image ? (
+                    <Image source={{uri: pkg.image}} style={styles.cardImage} resizeMode="cover" />
+                  ) : null}
 
                   <View style={styles.priceRow}>
                     <Text style={styles.price}>₹{Math.round(pkg.price)}</Text>
@@ -225,6 +257,7 @@ const CustomPackagesScreen = ({navigation}: Props) => {
           </ScrollView>
         </>
       )}
+      <CartBar navigation={navigation} />
     </View>
   );
 };
@@ -293,6 +326,11 @@ const styles = StyleSheet.create({
   },
   cardTitle: {fontFamily: fonts.title, fontSize: sw(16), fontWeight: '700', color: '#171816'},
   cardSub: {fontFamily: fonts.textFont, fontSize: sw(12), color: '#656565', marginTop: sw(3)},
+  cardImage: {
+    width: '100%',
+    height: sw(120),
+    borderRadius: sw(10),
+  },
   addBtn: {
     minWidth: sw(64),
     alignItems: 'center',

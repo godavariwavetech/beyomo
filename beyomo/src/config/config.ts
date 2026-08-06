@@ -1,5 +1,5 @@
 // Android emulator: 10.0.2.2 | iOS simulator: localhost | Physical device: your machine IP
-export const BASE_URL = 'http://192.168.0.101:3000';
+export const BASE_URL = 'https://beyomo.in:3090';
 
 export const baseURL = BASE_URL;
 
@@ -61,4 +61,7 @@ export const endpoints = {
 
   // Global search (public, no auth)
   SEARCH: '/api/v1/search',
+
+  // App version / force-update check (public, no auth, checked at splash)
+  APP_VERSION: '/api/v1/app-version',
 };
