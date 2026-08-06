@@ -16,6 +16,7 @@ import {fonts} from '../../config/theme';
 import {BASE_URL, endpoints} from '../../config/config';
 import {setSelectedCity} from '../../redux/reducers/city';
 import {findCityForLocation} from '../../utils/geoUtils';
+import {checkForceUpdate} from '../../utils/versionCheck';
 import type {RootState} from '../../redux/store';
 
 const {width, height} = Dimensions.get('window');
@@ -56,15 +57,16 @@ const SplashScreen = ({navigation}: any) => {
 
   useEffect(() => {
     let done = false;
-    const go = (dest: string) => {
+    const go = (dest: string, params?: any) => {
       if (done) return;
       done = true;
-      navigation.replace(dest);
+      navigation.replace(dest, params);
     };
 
     const partnerDest = resolvePartnerDest(token, partner);
 
     const minWait = new Promise<void>(r => setTimeout(r, 2500));
+    const versionCheck = checkForceUpdate('partner');
 
     // Silently detect city in background — never blocks navigation
     (async () => {
@@ -87,7 +89,10 @@ const SplashScreen = ({navigation}: any) => {
       } catch {}
     })();
 
-    minWait.then(() => go(partnerDest));
+    Promise.all([minWait, versionCheck]).then(([, version]) => {
+      if (version.blocked) go('ForceUpdate', {updateUrl: version.updateUrl, message: version.message});
+      else go(partnerDest);
+    });
 
     return () => {
       done = true;

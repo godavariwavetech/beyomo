@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Settings as SettingsIcon, Users, Shield, Bell, CreditCard, Key, Save,
-  Plus, Edit2, Trash2, CheckCircle, XCircle
+  Plus, Edit2, Trash2, CheckCircle, XCircle, Smartphone
 } from 'lucide-react';
 import { ROLE_LABELS, ROLE_COLORS, ROLE_PERMISSIONS } from '../data/mockData';
 import { Badge } from '../components/common/Badge';
@@ -15,6 +15,7 @@ import api, { BASE_URL } from '../services/api';
 const SETTING_SECTIONS = [
   { id:'general',     label:'General',          icon:<SettingsIcon size={16}/> },
   { id:'agreement',   label:'Partner Agreement', icon:<Key size={16}/> },
+  { id:'appVersion',  label:'App Version',       icon:<Smartphone size={16}/>, superAdminOnly:true },
   { id:'admins',      label:'Admin Users',       icon:<Users size={16}/> },
   { id:'roles',       label:'Role Permissions',  icon:<Shield size={16}/> },
   { id:'commission',  label:'Commission',        icon:<CreditCard size={16}/> },
@@ -118,6 +119,126 @@ function AgreementSection() {
   );
 }
 
+const APP_LABELS = { user: 'User App', partner: 'Partner App' };
+const PLATFORM_LABELS = { android: 'Android', ios: 'iOS' };
+
+function AppVersionRow({ row, onSaved }) {
+  const [form, setForm] = useState({
+    minVersion: row.minVersion || '',
+    latestVersion: row.latestVersion || '',
+    updateUrl: row.updateUrl || '',
+    message: row.message || '',
+  });
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  const save = async () => {
+    setSaving(true);
+    setMsg('');
+    try {
+      const res = await api.put('/api/v1/app-version/admin', { app: row.app, platform: row.platform, ...form });
+      onSaved(res.data?.data);
+      setMsg('Saved.');
+    } catch (err) {
+      setMsg(err.response?.data?.message || 'Failed to save.');
+    }
+    setSaving(false);
+  };
+
+  return (
+    <div style={{ border: '1px solid var(--c-border)', borderRadius: 'var(--r-md)', padding: 16, marginBottom: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+        <strong style={{ fontSize: 14 }}>{APP_LABELS[row.app]} — {PLATFORM_LABELS[row.platform]}</strong>
+      </div>
+      <div className="form-grid form-grid-2" style={{ gap: 12, marginBottom: 12 }}>
+        <div className="form-group">
+          <label className="form-label">Minimum Required Version *</label>
+          <input
+            className="form-input"
+            placeholder="e.g. 1.0.2"
+            value={form.minVersion}
+            onChange={e => setForm(f => ({ ...f, minVersion: e.target.value }))}
+          />
+          <span className="form-hint">Installs below this are force-blocked until updated.</span>
+        </div>
+        <div className="form-group">
+          <label className="form-label">Latest Version</label>
+          <input
+            className="form-input"
+            placeholder="e.g. 1.1.0 (optional)"
+            value={form.latestVersion}
+            onChange={e => setForm(f => ({ ...f, latestVersion: e.target.value }))}
+          />
+        </div>
+      </div>
+      <div className="form-group" style={{ marginBottom: 12 }}>
+        <label className="form-label">Store URL</label>
+        <input
+          className="form-input"
+          placeholder="https://play.google.com/store/apps/details?id=..."
+          value={form.updateUrl}
+          onChange={e => setForm(f => ({ ...f, updateUrl: e.target.value }))}
+          style={{ fontFamily: 'monospace', fontSize: 13 }}
+        />
+      </div>
+      <div className="form-group" style={{ marginBottom: 12 }}>
+        <label className="form-label">Update Message <span style={{ fontWeight: 400, color: 'var(--c-text-muted)' }}>(optional — shown on the force-update screen)</span></label>
+        <input
+          className="form-input"
+          placeholder="A new version of the app is available. Please update to continue."
+          value={form.message}
+          onChange={e => setForm(f => ({ ...f, message: e.target.value }))}
+        />
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <button className="btn btn-teal btn-sm" onClick={save} disabled={saving || !form.minVersion}>
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+        {msg && <span style={{ fontSize: 13, color: msg === 'Saved.' ? 'var(--c-success)' : 'var(--c-danger)' }}>{msg}</span>}
+      </div>
+    </div>
+  );
+}
+
+function AppVersionSection() {
+  const [rows, setRows] = useState(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    api.get('/api/v1/app-version/admin/list')
+      .then(r => setRows(r.data?.data ?? []))
+      .catch(() => setError('Failed to load app version settings.'));
+  }, []);
+
+  const handleSaved = (updated) => {
+    setRows(prev => prev.map(r => (r.app === updated.app && r.platform === updated.platform) ? updated : r));
+  };
+
+  return (
+    <div className="card">
+      <div className="card-header">
+        <div className="card-title">App Version / Force Update</div>
+      </div>
+      <div className="card-body">
+        <p style={{ fontSize: 14, color: 'var(--c-text-secondary)', marginBottom: 20, lineHeight: 1.6 }}>
+          Set the minimum app version each platform accepts. Anyone on an older build sees a
+          non-dismissible "Update Required" screen at launch until they update — use this
+          when a release fixes something that makes older builds unsafe or broken to keep running,
+          not for routine releases.
+        </p>
+        {error && <div style={{ color: 'var(--c-danger)', fontSize: 14, marginBottom: 12 }}>{error}</div>}
+        {!rows ? (
+          <div style={{ color: 'var(--c-text-muted)', fontSize: 14 }}>Loading…</div>
+        ) : (
+          rows.map(row => (
+            <AppVersionRow key={`${row.app}-${row.platform}`} row={row} onSaved={handleSaved} />
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function Settings() {
   const { user, showToast } = useAuth();
   const { fetchList, create, update, remove } = useAdminUsers();
@@ -211,6 +332,9 @@ export default function Settings() {
       <div className="settings-content">
         {/* Agreement PDF */}
         {activeSection === 'agreement' && <AgreementSection />}
+
+        {/* App Version / Force Update */}
+        {activeSection === 'appVersion' && isSuperAdmin && <AppVersionSection />}
 
         {/* General */}
         {activeSection === 'general' && (

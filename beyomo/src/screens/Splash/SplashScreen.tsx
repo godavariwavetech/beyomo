@@ -16,6 +16,7 @@ import {fonts} from '../../config/theme';
 import {BASE_URL, endpoints} from '../../config/config';
 import {setSelectedCity} from '../../redux/reducers/city';
 import {findCityForLocation} from '../../utils/geoUtils';
+import {checkForceUpdate} from '../../utils/versionCheck';
 import type {RootState} from '../../redux/store';
 
 const {width, height} = Dimensions.get('window');
@@ -49,24 +50,31 @@ const SplashScreen = ({navigation}: any) => {
 
   useEffect(() => {
     let done = false;
-    const go = (dest: string) => {
+    const go = (dest: string, params?: any) => {
       if (done) return;
       done = true;
-      navigation.replace(dest);
+      navigation.replace(dest, params);
     };
 
     const mainDest = token ? 'Main' : 'Login';
 
     const minWait = new Promise<void>(r => setTimeout(r, 2500));
 
-    const cityCheck = (async (): Promise<string> => {
+    const run = (async (): Promise<{dest: string; params?: any}> => {
+      // Version check comes first — an install below the admin-configured minimum
+      // gets sent to the (non-dismissible) update screen instead of anything else.
+      const version = await checkForceUpdate('user');
+      if (version.blocked) {
+        return {dest: 'ForceUpdate', params: {updateUrl: version.updateUrl, message: version.message}};
+      }
+
       // City already persisted — skip all checks, go straight to the app
-      if (savedCity) return mainDest;
+      if (savedCity) return {dest: mainDest};
 
       // First launch or city was cleared — detect via GPS or ask manually
       try {
         const cities = await fetchActiveCities();
-        if (cities.length === 0) return mainDest;
+        if (cities.length === 0) return {dest: mainDest};
 
         const permission =
           Platform.OS === 'ios'
@@ -87,13 +95,13 @@ const SplashScreen = ({navigation}: any) => {
             }
           } catch { /* GPS timeout */ }
         }
-        return mainDest;
+        return {dest: mainDest};
       } catch {
-        return 'CitySelector';
+        return {dest: 'CitySelector'};
       }
     })();
 
-    Promise.all([minWait, cityCheck]).then(([, dest]) => go(dest));
+    Promise.all([minWait, run]).then(([, result]) => go(result.dest, result.params));
 
     return () => {
       done = true;

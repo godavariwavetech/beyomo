@@ -20,6 +20,7 @@ const packagesRoutes = require("./packages");
 const skillsRoutes = require("./skills");
 const contactsRoutes = require("./contacts");
 const searchRoutes = require("./search");
+const appVersionRoutes = require("./appVersion");
 
 // Reports routes (mounted under /api/v1/admin/reports via admin module)
 const reportsRoutes = require("./reports/routes/v1/reports.routes");
@@ -43,6 +44,7 @@ router.use("/api", packagesRoutes);
 router.use("/api", skillsRoutes);
 router.use("/api", contactsRoutes);
 router.use("/api", searchRoutes);
+router.use("/api", appVersionRoutes);
 
 // Reports under admin namespace
 router.use("/api/v1/admin/reports", reportsRoutes);
