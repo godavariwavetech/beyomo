@@ -24,8 +24,6 @@ const appVersionRoutes = require("./appVersion");
 
 // Reports routes (mounted under /api/v1/admin/reports via admin module)
 const reportsRoutes = require("./reports/routes/v1/reports.routes");
-// Banners admin CRUD (mounted under /api/v1/admin/banners)
-const bannersAdminRoutes = require("./banners/routes/v1/banners.routes");
 
 // Mount all routes under /api
 router.use("/api", authRoutes);
@@ -50,6 +48,5 @@ router.use("/api", appVersionRoutes);
 
 // Reports under admin namespace
 router.use("/api/v1/admin/reports", reportsRoutes);
-router.use("/api/v1/admin/banners", bannersAdminRoutes);
 
 module.exports = router;
