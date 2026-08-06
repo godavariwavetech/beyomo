@@ -71,6 +71,7 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
   const {categories, loading} = useSelector((state: RootState) => state.Services);
   const selectedCity = useSelector((state: RootState) => state.City?.selectedCity);
   const [packages, setPackages] = useState<any[]>([]);
+  const [banners, setBanners] = useState<any[]>([]);
 
   const offersScrollRef = useRef<ScrollView>(null);
   const offersIndexRef = useRef(0);
@@ -87,7 +88,16 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
     api.get(`${endpoints.PACKAGES}${cityParam}`).then(res => {
       if (res.data?.status) { setPackages(res.data.data ?? []); setLoadedBanners(new Set()); }
     }).catch(() => {});
+    api.get(endpoints.BANNERS).then(res => {
+      if (res.data?.status) setBanners(res.data.data ?? []);
+    }).catch(() => {});
   }, [dispatch, selectedCity?.id]);
+
+  // The two "Packages & Combos" CTA cards are fixed nav targets (always go to
+  // CustomPackages / Combos) — an admin can override just their artwork by creating a
+  // banner (either type) with the matching Target Screen; otherwise the static poster shows.
+  const customPackageBanner = banners.find(b => b.targetScreen === 'CustomPackages');
+  const comboBanner = banners.find(b => b.targetScreen === 'Combos');
 
   // Header carousel = whichever packages/combos the admin has flagged "Show on Home
   // Screen" — the Special Offers row now lives in the header itself.
@@ -299,7 +309,7 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
               onPress={() => navigation.navigate('CustomPackages')}>
               <View style={styles.ctaCardImgWrap}>
                 <Image
-                  source={require('../../assets/custom_package_banner.png')}
+                  source={customPackageBanner?.image ? {uri: customPackageBanner.image} : require('../../assets/custom_package_banner.png')}
                   style={styles.ctaCardImg}
                   resizeMode="cover"
                 />
@@ -312,7 +322,7 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
               onPress={() => navigation.navigate('PackageListing', {packageType: 'fixed', title: 'Combos'})}>
               <View style={styles.ctaCardImgWrap}>
                 <Image
-                  source={require('../../assets/combo_banner.png')}
+                  source={comboBanner?.image ? {uri: comboBanner.image} : require('../../assets/combo_banner.png')}
                   style={styles.ctaCardImg}
                   resizeMode="cover"
                 />

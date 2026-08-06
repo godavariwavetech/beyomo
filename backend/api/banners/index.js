@@ -1,20 +1,10 @@
 const express = require("express");
 const router = express.Router();
-const Banner = require("./models/banner.model");
 const ServiceZone = require("../zones/models/zone.model");
+const { listBanners } = require("./controllers/v1/banners.controller");
 
-// Public: active banners for the app
-router.get("/v1/banners", async (req, res) => {
-  try {
-    const banners = await Banner.findAll({
-      where: { isActive: true },
-      order: [["sortOrder", "ASC"], ["createdAt", "DESC"]],
-    });
-    res.json({ status: true, data: banners });
-  } catch (e) {
-    res.status(500).json({ status: false, message: e.message });
-  }
-});
+// Public: active banners for the app/website
+router.get("/v1/banners", listBanners);
 
 // Public: check if a pincode/city is within a service zone
 router.get("/v1/zones/check", async (req, res) => {

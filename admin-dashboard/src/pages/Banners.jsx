@@ -138,6 +138,8 @@ export default function Banners() {
             <option value="ServiceListing">Service Listing</option>
             <option value="Coupons">Coupons</option>
             <option value="Profile">Profile</option>
+            <option value="CustomPackages">Custom Packages CTA (home screen)</option>
+            <option value="Combos">Combos CTA (home screen)</option>
           </select>
         </div>
         <div className="form-group">
