@@ -14,9 +14,12 @@ import {
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import LinearGradient from 'react-native-linear-gradient';
+import {useDispatch} from 'react-redux';
 import {fonts} from '../../config/theme';
 import api from '../../utils/api';
 import {endpoints} from '../../config/config';
+import {addPackageToCart} from '../../redux/reducers/cart';
+import CartBar from '../../components/CartBar/CartBar';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
@@ -56,6 +59,7 @@ interface PickableService {
 
 const PackageDetailScreen = ({navigation, route}: {navigation: any; route: any}) => {
   const insets = useSafeAreaInsets();
+  const dispatch = useDispatch<any>();
   const pkg: Package = route?.params?.package;
 
   const [fullPkg, setFullPkg] = useState<Package | null>(pkg ?? null);
@@ -76,9 +80,22 @@ const PackageDetailScreen = ({navigation, route}: {navigation: any; route: any})
     }
   }, []);
 
-  // For flexible packages, fetch services to pick from
+  // For flexible packages, the pickable services come from the admin's curated
+  // "Eligible Services" list (in the order the admin set) when one was configured.
+  // An empty list is the admin's explicit "entire catalog" choice, so fall back
+  // to fetching the (optionally category-restricted) catalog in that case.
   useEffect(() => {
     if (fullPkg?.packageType !== 'flexible') return;
+    if (fullPkg.services && fullPkg.services.length > 0) {
+      setAllServices(fullPkg.services.map(s => ({
+        id: s.serviceId,
+        name: s.name,
+        basePrice: s.price,
+        duration: s.duration,
+        image: s.image,
+      })));
+      return;
+    }
     const url = fullPkg.categoryId
       ? `${endpoints.SERVICES}?categoryId=${fullPkg.categoryId}&limit=50`
       : `${endpoints.SERVICES}?limit=50`;
@@ -122,28 +139,26 @@ const PackageDetailScreen = ({navigation, route}: {navigation: any; route: any})
   };
 
   const handleBook = () => {
-    let servicesToBook: any[];
+    let packageServices: any[];
 
     if (fullPkg.packageType === 'fixed') {
       if (!fullPkg.services || fullPkg.services.length === 0) {
         Alert.alert('No services', 'This package has no services configured.');
         return;
       }
-      servicesToBook = (fullPkg.services ?? []).map(s => ({
+      packageServices = (fullPkg.services ?? []).map(s => ({
         id: s.serviceId,
         name: s.name,
         price: s.price,
         duration: s.duration,
         image: s.image,
-        qty: packageQty,
-        isPackageItem: true,
       }));
     } else {
       if (selectedIds.size < requiredCount) {
         Alert.alert('Select services', `Please select ${requiredCount} service${requiredCount > 1 ? 's' : ''} to continue.`);
         return;
       }
-      servicesToBook = allServices
+      packageServices = allServices
         .filter(s => selectedIds.has(s.id))
         .map(s => ({
           id: s.id,
@@ -151,16 +166,22 @@ const PackageDetailScreen = ({navigation, route}: {navigation: any; route: any})
           price: s.basePrice,
           duration: s.duration,
           image: s.image,
-          qty: packageQty,
-          isPackageItem: true,
         }));
     }
 
-    navigation.navigate('AddressPayment', {
-      services: servicesToBook,
+    dispatch(addPackageToCart({
       packageId: fullPkg.id,
-      packagePrice: fullPkg.price, // per-unit — checkout scales it live by the package's qty stepper there
       packageTitle: fullPkg.title,
+      packagePrice: fullPkg.price,
+      packageOriginalPrice: fullPkg.originalPrice ?? fullPkg.price,
+      packageType: fullPkg.packageType,
+      qty: packageQty,
+      services: packageServices,
+    }));
+    // Explicitly clear these so a stale legacy single-flow visit to this screen
+    // (services/packageId params from before) can't leak into cart mode.
+    navigation.navigate('AddressPayment', {
+      services: undefined, packageId: undefined, packagePrice: undefined, packageTitle: undefined, offerId: undefined,
     });
   };
 
@@ -265,7 +286,7 @@ const PackageDetailScreen = ({navigation, route}: {navigation: any; route: any})
                     <View style={styles.serviceInfo}>
                       <Text style={styles.serviceName}>{svc.name}</Text>
                       <Text style={styles.serviceMeta}>
-                        {svc.duration ? `${svc.duration} min · ` : ''}₹{Math.round(svc.basePrice)}
+                        {svc.duration ? `${svc.duration} min · ` : ''}Starts at ₹{Math.round(svc.basePrice)}
                       </Text>
                     </View>
                     <View style={[styles.checkCircle, selected && styles.checkCircleActive]}>
@@ -341,12 +362,13 @@ const PackageDetailScreen = ({navigation, route}: {navigation: any; route: any})
             <Text style={styles.bookBtnText}>
               {fullPkg.packageType === 'flexible' && selectedIds.size < requiredCount
                 ? `Pick ${requiredCount - selectedIds.size} more`
-                : 'Book Now'}
+                : 'Add to Cart'}
             </Text>
-            <Ionicons name="arrow-forward" size={sw(16)} color="#FDD77A" />
+            <Ionicons name="cart-outline" size={sw(16)} color="#FDD77A" />
           </LinearGradient>
         </TouchableOpacity>
       </View>
+      <CartBar navigation={navigation} />
     </View>
   );
 };

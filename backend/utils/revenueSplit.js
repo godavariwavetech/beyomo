@@ -91,10 +91,59 @@ const resolveRatesForBooking = async ({ serviceItems, package: pkg }) => {
   return computeWeightedCategoryRates(parseServiceItems(serviceItems));
 };
 
+/**
+ * Multi-package version: each package keeps its own fixed price AND its own
+ * adminPercent/partnerPercent/gstPercent (set per-package by the admin), so the
+ * booking's overall split has to be a price-weighted blend across all of them —
+ * a single flat rate (as the single-package path uses) would be wrong the moment
+ * two packages have different splits. Any true extra (non-package) services are
+ * folded into the same weighted pool via their own category rates, so the result
+ * is one coherent blended rate for the whole booking.
+ *
+ * @param {Array<{package: object, qty: number}>} packages
+ * @param {Array} serviceItems - the full service line-items (extras only need be
+ *   present here; package-sourced items are represented via `packages` instead)
+ */
+const resolveRatesForMultiPackageBooking = async ({ packages = [], serviceItems }) => {
+  const pools = packages.map(({ package: pkg, qty }) => ({
+    amount: parseFloat(pkg.price) * qty,
+    adminPercent: parseFloat(pkg.adminPercent),
+    partnerPercent: parseFloat(pkg.partnerPercent),
+    gstPercent: parseFloat(pkg.gstPercent),
+  }));
+
+  const extraItems = parseServiceItems(serviceItems).filter(s => !s.removed && !s.packageId);
+  const extraAmount = extraItems.reduce((sum, s) => sum + (parseFloat(s.price) || 0) * (s.qty || 1), 0);
+  if (extraAmount > 0) {
+    const extraRates = await computeWeightedCategoryRates(extraItems);
+    pools.push({ amount: extraAmount, ...extraRates });
+  }
+
+  const totalAmount = pools.reduce((sum, p) => sum + p.amount, 0);
+  if (totalAmount <= 0) {
+    return { adminPercent: DEFAULT_ADMIN_PERCENT, partnerPercent: DEFAULT_PARTNER_PERCENT, gstPercent: DEFAULT_GST_PERCENT };
+  }
+
+  let adminPercent = 0, partnerPercent = 0, gstPercent = 0;
+  for (const p of pools) {
+    const weight = p.amount / totalAmount;
+    adminPercent += p.adminPercent * weight;
+    partnerPercent += p.partnerPercent * weight;
+    gstPercent += p.gstPercent * weight;
+  }
+
+  return {
+    adminPercent: parseFloat(adminPercent.toFixed(2)),
+    partnerPercent: parseFloat(partnerPercent.toFixed(2)),
+    gstPercent: parseFloat(gstPercent.toFixed(2)),
+  };
+};
+
 module.exports = {
   DEFAULT_ADMIN_PERCENT,
   DEFAULT_PARTNER_PERCENT,
   DEFAULT_GST_PERCENT,
   computeWeightedCategoryRates,
   resolveRatesForBooking,
+  resolveRatesForMultiPackageBooking,
 };

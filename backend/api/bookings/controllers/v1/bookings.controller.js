@@ -3,21 +3,29 @@ const AppError = require("../../../../utils/errorHandlers/appError");
 const bookingsService = require("../../services/v1/bookings.service");
 const Joi = require("joi");
 
+const serviceItemSchema = Joi.object({
+  id: Joi.alternatives().try(Joi.number(), Joi.string()).required(),
+  qty: Joi.number().integer().min(1).default(1),
+});
+
 const createBookingSchema = Joi.object({
-  services: Joi.array().items(
+  // Single package (or no package) bookings carry their services here. Multi-package
+  // bookings carry services inside each `packages[]` entry instead, so this is only
+  // required when `packages` isn't used.
+  services: Joi.array().items(serviceItemSchema).min(1)
+    .when('packages', { is: Joi.array().min(1), then: Joi.optional().default([]), otherwise: Joi.required() }),
+  // Multiple distinct packages in one booking — each keeps its own price/discount and
+  // revenue split rather than collapsing into the single packageId below.
+  packages: Joi.array().items(
     Joi.object({
-      id: Joi.alternatives().try(Joi.number(), Joi.string()).required(),
+      packageId: Joi.number().integer().positive().required(),
       qty: Joi.number().integer().min(1).default(1),
+      services: Joi.array().items(serviceItemSchema).min(1).required(),
     })
-  ).min(1).required(),
+  ).optional(),
   // Extra individual services booked alongside a package/combo — billed additively on
   // top of the package's fixed price, instead of being folded into it.
-  extraServices: Joi.array().items(
-    Joi.object({
-      id: Joi.alternatives().try(Joi.number(), Joi.string()).required(),
-      qty: Joi.number().integer().min(1).default(1),
-    })
-  ).optional().default([]),
+  extraServices: Joi.array().items(serviceItemSchema).optional().default([]),
   partnerId: Joi.alternatives().try(Joi.number(), Joi.string()).allow(null, ""),
   address: Joi.object({
     label: Joi.string().allow("", null),

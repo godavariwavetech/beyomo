@@ -14,14 +14,63 @@ const City = require("../../../cities/models/city.model");
 const AppError = require("../../../../utils/errorHandlers/appError");
 const { sendPushNotification } = require("../../../../utils/firebaseUtils");
 const { haversineKm } = require("../../../../utils/geoUtils");
-const { resolveRatesForBooking } = require("../../../../utils/revenueSplit");
+const { resolveRatesForBooking, resolveRatesForMultiPackageBooking } = require("../../../../utils/revenueSplit");
+
+// Multi-package path: bookingData.packages = [{ packageId, qty, services: [{id, qty}] }, ...].
+// Each package keeps its own price/discount/revenue-split intact instead of collapsing
+// into one flat packageId (which can only ever represent a single package).
+const buildMultiPackageBooking = async (packagesInput, serviceMap) => {
+  let enrichedServices = [];
+  let packageBaseAmount = 0;
+  const packagesSummary = [];
+  const ratePools = [];
+
+  for (const entry of packagesInput) {
+    const appliedPackage = await packagesService.validateForBooking(entry.packageId);
+    const qty = entry.qty || 1;
+    const items = (entry.services || []).map(item => {
+      const svc = serviceMap[parseInt(item.id)];
+      const itemQty = item.qty || 1;
+      return {
+        serviceId: svc.id,
+        name: svc.name,
+        price: parseFloat(svc.basePrice),
+        qty: itemQty,
+        duration: svc.duration || null,
+        image: svc.image || null,
+        serviceStatus: 'unassigned',
+        assignedPartnerId: null,
+        assignedPartnerName: null,
+        addedByPackage: true,
+        packageId: appliedPackage.id,
+      };
+    });
+    enrichedServices = [...enrichedServices, ...items];
+    packageBaseAmount += parseFloat(appliedPackage.price) * qty;
+    packagesSummary.push({
+      packageId: appliedPackage.id,
+      title: appliedPackage.title,
+      qty,
+      price: parseFloat(appliedPackage.price),
+      originalPrice: appliedPackage.originalPrice != null ? parseFloat(appliedPackage.originalPrice) : null,
+    });
+    ratePools.push({ package: appliedPackage, qty });
+  }
+
+  return { enrichedServices, packageBaseAmount, packagesSummary, ratePools };
+};
 
 const createBooking = async (userId, bookingData) => {
-  const { services: serviceItems, extraServices = [], partnerId, address, scheduledAt, couponCode, offerId, packageId, packageQty = 1, paymentMode, notes } = bookingData;
+  const { services: serviceItems = [], extraServices = [], packages: packagesInput = [], partnerId, address, scheduledAt, couponCode, offerId, packageId, packageQty = 1, paymentMode, notes } = bookingData;
+  const isMultiPackage = Array.isArray(packagesInput) && packagesInput.length > 0;
 
-  // Fetch all requested services — the package/flexible-pick items and any extra
-  // individual services booked alongside them, validated together in one pass.
-  const allItems = [...serviceItems, ...extraServices];
+  // Fetch all requested services in one pass — the package/flexible-pick items (whether
+  // via the single legacy packageId or the multi-package `packages` array) and any extra
+  // individual services booked alongside them.
+  const multiPackageServiceItems = isMultiPackage
+    ? packagesInput.flatMap(p => p.services || [])
+    : [];
+  const allItems = [...serviceItems, ...extraServices, ...multiPackageServiceItems];
   const serviceIds = allItems.map(s => parseInt(s.id));
   const uniqueServiceIds = [...new Set(serviceIds)];
   const foundServices = await Service.findAll({ where: { id: uniqueServiceIds, isActive: true } });
@@ -52,28 +101,38 @@ const createBooking = async (userId, bookingData) => {
     };
   });
 
-  let enrichedServices = enrichItems(serviceItems);
-  const enrichedExtraServices = enrichItems(extraServices);
-
-  let baseAmount = enrichedServices.reduce((sum, s) => sum + s.price * s.qty, 0);
-
-  // If booking via a package, override the base amount with the package price
+  let enrichedServices;
+  let baseAmount;
   let appliedPackageId = null;
   let appliedPackage = null;
-  if (packageId) {
-    appliedPackage = await packagesService.validateForBooking(packageId);
-    // Each package-tagged service's qty already reflects packageQty copies (the client
-    // sends qty = packageQty per item), so the price must be multiplied the same way —
-    // otherwise ordering 2 packages would still only charge for 1.
-    baseAmount = parseFloat(appliedPackage.price) * packageQty;
-    appliedPackageId = appliedPackage.id;
-    // Mark each service as part of a package (for display/tracking)
-    enrichedServices.forEach(s => { s.addedByPackage = true; });
+  let multiPackageInfo = null; // { packagesSummary, ratePools } when isMultiPackage
+
+  if (isMultiPackage) {
+    const built = await buildMultiPackageBooking(packagesInput, serviceMap);
+    enrichedServices = built.enrichedServices;
+    baseAmount = built.packageBaseAmount;
+    multiPackageInfo = { packagesSummary: built.packagesSummary, ratePools: built.ratePools };
+  } else {
+    enrichedServices = enrichItems(serviceItems);
+    baseAmount = enrichedServices.reduce((sum, s) => sum + s.price * s.qty, 0);
+
+    // If booking via a single package, override the base amount with the package price
+    if (packageId) {
+      appliedPackage = await packagesService.validateForBooking(packageId);
+      // Each package-tagged service's qty already reflects packageQty copies (the client
+      // sends qty = packageQty per item), so the price must be multiplied the same way —
+      // otherwise ordering 2 packages would still only charge for 1.
+      baseAmount = parseFloat(appliedPackage.price) * packageQty;
+      appliedPackageId = appliedPackage.id;
+      // Mark each service as part of a package (for display/tracking)
+      enrichedServices.forEach(s => { s.addedByPackage = true; });
+    }
   }
 
-  // Extra services booked alongside the package (or alongside a regular booking) are
+  // Extra services booked alongside a package (or alongside a regular booking) are
   // billed additively on top, at their normal catalog price — never folded into the
   // package's fixed price.
+  const enrichedExtraServices = enrichItems(extraServices);
   if (enrichedExtraServices.length > 0) {
     enrichedExtraServices.forEach(s => { s.addedByUser = true; });
     baseAmount += enrichedExtraServices.reduce((sum, s) => sum + s.price * s.qty, 0);
@@ -134,10 +193,15 @@ const createBooking = async (userId, bookingData) => {
     appliedOfferId = offerId;
   }
 
-  const { partnerPercent, gstPercent } = await resolveRatesForBooking({
-    serviceItems: enrichedServices,
-    package: appliedPackage,
-  });
+  const { partnerPercent, gstPercent } = isMultiPackage
+    ? await resolveRatesForMultiPackageBooking({
+        packages: multiPackageInfo.ratePools,
+        serviceItems: enrichedExtraServices,
+      })
+    : await resolveRatesForBooking({
+        serviceItems: enrichedServices,
+        package: appliedPackage,
+      });
   const taxableAmount = baseAmount - couponDiscount;
   const tax = parseFloat((taxableAmount * gstPercent / 100).toFixed(2));
   const total = parseFloat((taxableAmount + tax).toFixed(2));
@@ -147,9 +211,11 @@ const createBooking = async (userId, bookingData) => {
 
   // Use first service as the primary serviceId (backward compat)
   const primaryServiceId = enrichedServices[0].serviceId;
-  const primaryServiceName = enrichedServices.length === 1
-    ? enrichedServices[0].name
-    : `${enrichedServices.length} services`;
+  const primaryServiceName = isMultiPackage
+    ? `${multiPackageInfo.packagesSummary.length} packages`
+    : enrichedServices.length === 1
+      ? enrichedServices[0].name
+      : `${enrichedServices.length} services`;
 
   // Resolve cityId from address city name so admin dashboard city filter works
   let cityId = null;
@@ -196,6 +262,7 @@ const createBooking = async (userId, bookingData) => {
     offerId: appliedOfferId,
     packageId: appliedPackageId,
     packageQty: appliedPackageId ? packageQty : 1,
+    packages: isMultiPackage ? multiPackageInfo.packagesSummary : null,
     cityId,
     notes,
   });

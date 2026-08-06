@@ -23,6 +23,11 @@ import {fonts} from '../../config/theme';
 import api from '../../utils/api';
 import {endpoints} from '../../config/config';
 import {fetchProfile} from '../../redux/reducers/user';
+import {
+  incrementItemQty, decrementItemQty, removeItemFromCart,
+  addServicesToCart, incrementServiceQty, decrementServiceQty, removeServiceFromCart, removeFreeService,
+  clearCart,
+} from '../../redux/reducers/cart';
 import {payWithRazorpay} from '../../utils/payments';
 import type {RootState} from '../../redux/store';
 
@@ -86,8 +91,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
   const [selectedAddr, setSelectedAddr] = useState<SavedAddress | null>(null);
   const [showAddrModal, setShowAddrModal] = useState(false);
 
-  const [services, setServices] = useState<ServiceItem[]>(() => {
-    const raw: any[] = route?.params?.services ?? [];
+  const dedupeServices = (raw: any[]): ServiceItem[] => {
     const map = new Map<string, ServiceItem>();
     for (const s of raw) {
       const key = String(s.id);
@@ -98,7 +102,9 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
       }
     }
     return Array.from(map.values());
-  });
+  };
+
+  const [services, setServices] = useState<ServiceItem[]>(() => dedupeServices(route?.params?.services ?? []));
 
   const [description, setDescription] = useState('');
   const [billExpanded, setBillExpanded] = useState(true);
@@ -130,6 +136,18 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
   const routePackagePrice: number | null = route?.params?.packagePrice ?? null; // per-unit package price
   const routePackageTitle: string | null = route?.params?.packageTitle ?? null;
 
+  // Cart mode: arrived via the package cart (Packages tab "Add to Cart" -> "View Cart"),
+  // which can hold several distinct packages at once, each keeping its own price/discount.
+  // Legacy mode: arrived with an explicit `services` param (ServiceListingScreen's own
+  // in-screen selection, or the old single-package direct-navigate flow) — unchanged.
+  const isCartMode = !route?.params?.services;
+  const cartItems: any[] = useSelector((state: RootState) => (state as any).Cart?.items ?? []);
+  // Plain individual services (no package) in the shared cart — combines with cartItems
+  // above so one booking can mix services + packages + combos, same as legacy mode's
+  // local `services` state did for a single package's extras.
+  const cartServices: ServiceItem[] = useSelector((state: RootState) => (state as any).Cart?.services ?? []);
+  const isCartEmpty = isCartMode && cartItems.length === 0 && cartServices.length === 0;
+
   const [eligibleOffer, setEligibleOffer] = useState<{
     offerId: number;
     title: string;
@@ -137,21 +155,42 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
   } | null>(null);
   // If the cart arrived with a free item already in it (e.g. from the offer's service
   // listing screen), track it as "applied" so the eligibility re-check below — and the
-  // pre-submit safety check — actually manage it instead of ignoring it.
-  const [appliedOffer, setAppliedOffer] = useState<typeof eligibleOffer>(() => {
-    const raw: any[] = route?.params?.services ?? [];
-    const freeItem = raw.find((s: any) => s.isFree);
-    if (!freeItem || !routeOfferId) return null;
-    return {
-      offerId: routeOfferId,
-      title: '',
-      freeService: {id: freeItem.id, name: freeItem.name, image: freeItem.image, duration: freeItem.duration, price: 0},
-    };
-  });
+  // pre-submit safety check — actually manage it instead of ignoring it. Actual value is
+  // set by the route.params-sync effect below (covers both initial mount and re-navigation).
+  const [appliedOffer, setAppliedOffer] = useState<{
+    offerId: number;
+    title: string;
+    freeService: {id: string | number; name: string; image?: string; duration?: number; price: 0};
+  } | null>(null);
 
   useEffect(() => {
     if (!profile) dispatch(fetchProfile());
   }, []);
+
+  // Re-sync from route.params whenever this screen is navigated to again with a
+  // different booking. A native-stack navigate() to a screen already in the stack
+  // reuses the existing instance and just updates route.params — it does NOT
+  // remount — so the useState lazy initializers above only ever apply once, to
+  // the very first package/services this screen was opened with. Without this,
+  // going back and booking a different package leaves the old package's services
+  // (and quantities, and any applied free-item offer) showing under the new
+  // package's banner.
+  useEffect(() => {
+    const raw: any[] = route?.params?.services ?? [];
+    setServices(dedupeServices(raw));
+    const freeItem = raw.find((s: any) => s.isFree);
+    setAppliedOffer(
+      freeItem && routeOfferId
+        ? {
+            offerId: routeOfferId,
+            title: '',
+            freeService: {id: freeItem.id, name: freeItem.name, image: freeItem.image, duration: freeItem.duration, price: 0},
+          }
+        : null,
+    );
+    setEligibleOffer(null);
+    setAddSvcCart([]);
+  }, [route?.params?.services]);
 
   // Auto-select default address once profile loads
   useEffect(() => {
@@ -163,8 +202,10 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
 
   // Package-tagged items keep the package's own fixed price; anything else (a regular
   // booking's items, or extra services added on top of a package) bills at its own price.
-  const packageItems = services.filter((s: any) => s.isPackageItem);
-  const extraItems = services.filter((s: any) => !s.isPackageItem && !s.isFree);
+  // In cart mode, packages live in Redux (cartItems) and plain services live in Redux
+  // (cartServices) — local `services` state is only used by the (now-unused) legacy path.
+  const packageItems = isCartMode ? [] : services.filter((s: any) => s.isPackageItem);
+  const extraItems = isCartMode ? cartServices.filter((s: any) => !s.isFree) : services.filter((s: any) => !s.isPackageItem && !s.isFree);
   // All package-tagged items scale together as one unit — the package's own qty stepper
   // (in the banner below) bumps every one of them in lockstep, mirroring how the website's
   // cart lets you adjust a package's quantity directly at checkout.
@@ -172,27 +213,57 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
   const packageItemsIndividualSum = packageItems.reduce((sum, s) => sum + (parseFloat(String(s.price)) || 0) * s.qty, 0);
   const extraItemsSubtotal = extraItems.reduce((sum, s) => sum + (parseFloat(String(s.price)) || 0) * s.qty, 0);
   const servicesSubtotal = services.reduce((sum, s) => sum + (parseFloat(String(s.price)) || 0) * s.qty, 0);
+
+  const cartPackageTotal = cartItems.reduce((sum, item) => sum + item.packagePrice * item.qty, 0);
+  const cartOriginalTotal = cartItems.reduce(
+    (sum, item) => sum + (item.packageOriginalPrice ?? item.packagePrice) * item.qty, 0,
+  );
+
   // When booking via a package, use the package price × qty (plus any extras) as the base instead of the raw service sum
-  const subtotal = routePackagePrice != null ? routePackagePrice * currentPackageQty + extraItemsSubtotal : servicesSubtotal;
-  const packageSavings = routePackagePrice != null ? Math.max(0, packageItemsIndividualSum - routePackagePrice * currentPackageQty) : 0;
+  const subtotal = isCartMode
+    ? cartPackageTotal + extraItemsSubtotal
+    : routePackagePrice != null
+      ? routePackagePrice * currentPackageQty + extraItemsSubtotal
+      : servicesSubtotal;
+  const packageSavings = isCartMode
+    ? Math.max(0, cartOriginalTotal - cartPackageTotal)
+    : routePackagePrice != null
+      ? Math.max(0, packageItemsIndividualSum - routePackagePrice * currentPackageQty)
+      : 0;
+  // What actually renders in the "Service items" list below: cart-mode shows only
+  // local extras — each cart package's own banner (above) already carries its name and
+  // service count, so its included services don't also need their own card each.
+  const displayServiceRows = isCartMode
+    ? cartServices.map(s => ({...s, rowKey: String((s as any).isFree ? `free-${s.id}` : s.id)}))
+    : services.map(s => ({...s, rowKey: String((s as any).isFree ? `free-${s.id}` : s.id)}));
+
   const couponDiscount = appliedCoupon?.discountAmount ?? 0;
   const taxableAmount = Math.max(0, subtotal - couponDiscount);
   const tax = Math.round(taxableAmount * 0.05); // GST — backend recomputes the authoritative weighted rate on submit
   const total = taxableAmount + tax + PLATFORM_FEE;
 
-  const increment = (id: string | number) =>
-    setServices(prev => prev.map(s => s.id === id ? {...s, qty: s.qty + 1} : s));
+  const increment = (id: string | number) => {
+    if (isCartMode) dispatch(incrementServiceQty(String(id)));
+    else setServices(prev => prev.map(s => s.id === id ? {...s, qty: s.qty + 1} : s));
+  };
 
-  const decrement = (id: string | number) =>
-    setServices(prev =>
+  const decrement = (id: string | number) => {
+    if (isCartMode) dispatch(decrementServiceQty(String(id)));
+    else setServices(prev =>
       prev.map(s => s.id === id ? {...s, qty: s.qty - 1} : s).filter(s => s.qty > 0),
     );
+  };
 
   const incrementPackageQty = () =>
     setServices(prev => prev.map(s => (s as any).isPackageItem ? {...s, qty: s.qty + 1} : s));
 
   const decrementPackageQty = () =>
     setServices(prev => prev.map(s => (s as any).isPackageItem && s.qty > 1 ? {...s, qty: s.qty - 1} : s));
+
+  // Cart-mode equivalents — each package in the cart has its own independent qty.
+  const incrementCartItem = (key: string) => dispatch(incrementItemQty(key));
+  const decrementCartItem = (key: string) => dispatch(decrementItemQty(key));
+  const removeCartItem = (key: string) => dispatch(removeItemFromCart(key));
 
   const openAddSvcModal = () => {
     setAddSvcCart([]);
@@ -213,26 +284,28 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
 
   const handleConfirmAddServices = () => {
     if (!addSvcCart.length) return;
-    setServices(prev => {
-      const merged = [...prev];
-      addSvcCart.forEach(item => {
-        const idx = merged.findIndex((s: any) =>
-          String(s.id) === String(item.svc.id) && !s.isPackageItem && !s.isFree);
-        if (idx >= 0) {
-          merged[idx] = {...merged[idx], qty: merged[idx].qty + item.qty};
-        } else {
-          merged.push({
-            id: item.svc.id,
-            name: item.svc.name,
-            price: parseFloat(item.svc.basePrice) || 0,
-            duration: item.svc.duration ? `${item.svc.duration} min` : undefined,
-            image: item.svc.image,
-            qty: item.qty,
-          });
-        }
+    const newEntries = addSvcCart.map(item => ({
+      id: item.svc.id,
+      name: item.svc.name,
+      price: parseFloat(item.svc.basePrice) || 0,
+      duration: item.svc.duration ? `${item.svc.duration} min` : undefined,
+      image: item.svc.image,
+      qty: item.qty,
+    }));
+    if (isCartMode) {
+      dispatch(addServicesToCart(newEntries));
+    } else {
+      setServices(prev => {
+        const merged = [...prev];
+        newEntries.forEach(entry => {
+          const idx = merged.findIndex((s: any) =>
+            String(s.id) === String(entry.id) && !s.isPackageItem && !s.isFree);
+          if (idx >= 0) merged[idx] = {...merged[idx], qty: merged[idx].qty + entry.qty};
+          else merged.push(entry);
+        });
+        return merged;
       });
-      return merged;
-    });
+    }
     setAddSvcCart([]);
     setShowAddSvcModal(false);
   };
@@ -249,14 +322,22 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
     setSelectedDate(date);
   };
 
-  // Check offer eligibility whenever cart changes (exclude already-free services)
+  // Check offer eligibility whenever the cart's plain services change (exclude
+  // already-free services). Cart mode reads/writes the free item via Redux; legacy
+  // mode keeps using local `services` state.
+  const effectiveServices = isCartMode ? cartServices : services;
+  const clearFreeItem = () => {
+    if (isCartMode) dispatch(removeFreeService());
+    else setServices(prev => prev.some((s: any) => s.isFree) ? prev.filter((s: any) => !s.isFree) : prev);
+  };
+
   useEffect(() => {
-    const paidServices = services.filter((s: any) => !s.isFree);
+    const paidServices = effectiveServices.filter((s: any) => !s.isFree);
     if (paidServices.length === 0) {
       // No paid services left — remove free service and clear both offer states
       setEligibleOffer(null);
       setAppliedOffer(null);
-      setServices(prev => prev.some((s: any) => s.isFree) ? prev.filter((s: any) => !s.isFree) : prev);
+      clearFreeItem();
       return;
     }
     const serviceIds = paidServices.map(s => Number(s.id));
@@ -274,25 +355,29 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
           // item was removed) — even if the cart happens to qualify for a different offer now.
           setEligibleOffer(null);
           setAppliedOffer(null);
-          setServices(prev => prev.some((s: any) => s.isFree) ? prev.filter((s: any) => !s.isFree) : prev);
+          clearFreeItem();
         }
       })
       .catch(() => {});
-  }, [services]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveServices]);
 
   const addFreeService = () => {
     if (!eligibleOffer) return;
     const fs = eligibleOffer.freeService;
-    setServices(prev => [
-      ...prev.filter((s: any) => !s.isFree),
-      {...fs, qty: 1, isFree: true, duration: fs.duration ? `${fs.duration} min` : undefined},
-    ]);
+    const freeEntry = {...fs, qty: 1, isFree: true, duration: fs.duration ? `${fs.duration} min` : undefined};
+    if (isCartMode) {
+      dispatch(removeFreeService());
+      dispatch(addServicesToCart([freeEntry]));
+    } else {
+      setServices(prev => [...prev.filter((s: any) => !s.isFree), freeEntry]);
+    }
     setAppliedOffer(eligibleOffer);
     setEligibleOffer(null);
   };
 
   const removeOffer = () => {
-    setServices(prev => prev.filter((s: any) => !s.isFree));
+    clearFreeItem();
     setAppliedOffer(null);
   };
 
@@ -302,7 +387,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
   };
 
   const handleBooking = async () => {
-    if (services.length === 0) {
+    if (isCartMode ? cartItems.length === 0 && cartServices.length === 0 : services.length === 0) {
       Alert.alert('No services', 'Please add at least one service.');
       return;
     }
@@ -324,7 +409,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
       // offerId / free item that no longer qualifies (the backend would reject it anyway,
       // but this avoids a confusing "Booking failed" and silently fixes the cart instead).
       let offerIdToSubmit = appliedOffer?.offerId;
-      let servicesToSubmit = services.filter((s: any) => !s.isFree);
+      let servicesToSubmit = effectiveServices.filter((s: any) => !s.isFree);
       if (appliedOffer) {
         const serviceIds = servicesToSubmit.map(s => Number(s.id));
         const total = servicesToSubmit.reduce((sum, s) => sum + (parseFloat(String(s.price)) || 0) * s.qty, 0);
@@ -335,7 +420,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
             offerIdToSubmit = undefined;
             setAppliedOffer(null);
             setEligibleOffer(null);
-            setServices(prev => prev.filter((s: any) => !s.isFree));
+            clearFreeItem();
             Alert.alert('Offer Removed', 'The free item no longer qualifies because a required service was removed.');
             setBooking(false);
             return;
@@ -355,29 +440,62 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
         ? servicesToSubmit.filter((s: any) => !s.isPackageItem)
         : [];
 
-      const result = await api.post(endpoints.BOOKINGS, {
-        services: packageItemsToSubmit.map(s => ({id: String(s.id), qty: s.qty})),
-        extraServices: extraServicesToSubmit.length
-          ? extraServicesToSubmit.map(s => ({id: String(s.id), qty: s.qty}))
-          : undefined,
-        address: {
-          label: addrLabel(selectedAddr),
-          line1: addrLine(selectedAddr),
-          line2: selectedAddr.line2 ?? '',
-          city: selectedAddr.city ?? '',
-          state: selectedAddr.state ?? '',
-          pincode: selectedAddr.pincode ?? '',
-          lat: selectedAddr.lat ?? null,
-          lng: selectedAddr.lng ?? null,
-        },
-        scheduledAt: selectedDate.toISOString(),
-        notes: description || undefined,
-        couponCode: appliedCoupon?.code || undefined,
-        offerId: offerIdToSubmit || undefined,
-        packageId: routePackageId || undefined,
-        packageQty: routePackageId ? currentPackageQty : undefined,
-        paymentMode,
-      });
+      // Cart mode: each cart package becomes its own entry in `packages`, keeping its own
+      // price/discount/revenue-split intact (see backend resolveRatesForMultiPackageBooking)
+      // instead of collapsing into a single packageId. Local `services` state in cart mode
+      // is extras-only (from "Add More Services"), submitted the same way as legacy mode.
+      const cartPackagesPayload = cartItems.map(item => ({
+        packageId: item.packageId,
+        qty: item.qty,
+        services: item.services.map((s: any) => ({id: String(s.id), qty: item.qty})),
+      }));
+
+      const result = await api.post(endpoints.BOOKINGS, isCartMode
+        ? {
+            packages: cartPackagesPayload,
+            extraServices: servicesToSubmit.length
+              ? servicesToSubmit.map(s => ({id: String(s.id), qty: s.qty}))
+              : undefined,
+            address: {
+              label: addrLabel(selectedAddr),
+              line1: addrLine(selectedAddr),
+              line2: selectedAddr.line2 ?? '',
+              city: selectedAddr.city ?? '',
+              state: selectedAddr.state ?? '',
+              pincode: selectedAddr.pincode ?? '',
+              lat: selectedAddr.lat ?? null,
+              lng: selectedAddr.lng ?? null,
+            },
+            scheduledAt: selectedDate.toISOString(),
+            notes: description || undefined,
+            couponCode: appliedCoupon?.code || undefined,
+            offerId: offerIdToSubmit || undefined,
+            paymentMode,
+          }
+        : {
+            services: packageItemsToSubmit.map(s => ({id: String(s.id), qty: s.qty})),
+            extraServices: extraServicesToSubmit.length
+              ? extraServicesToSubmit.map(s => ({id: String(s.id), qty: s.qty}))
+              : undefined,
+            address: {
+              label: addrLabel(selectedAddr),
+              line1: addrLine(selectedAddr),
+              line2: selectedAddr.line2 ?? '',
+              city: selectedAddr.city ?? '',
+              state: selectedAddr.state ?? '',
+              pincode: selectedAddr.pincode ?? '',
+              lat: selectedAddr.lat ?? null,
+              lng: selectedAddr.lng ?? null,
+            },
+            scheduledAt: selectedDate.toISOString(),
+            notes: description || undefined,
+            couponCode: appliedCoupon?.code || undefined,
+            offerId: offerIdToSubmit || undefined,
+            packageId: routePackageId || undefined,
+            packageQty: routePackageId ? currentPackageQty : undefined,
+            paymentMode,
+          });
+      if (isCartMode) dispatch(clearCart());
       const bk = result.data?.data;
       let paymentPending = false;
 
@@ -434,12 +552,41 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
           <Ionicons name="arrow-back" size={sw(22)} color="#FFFFFF" />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle}>{routePackageTitle ? routePackageTitle : 'Address & Payment'}</Text>
+          <Text style={styles.headerTitle}>
+            {isCartMode
+              ? cartItems.length === 1
+                ? cartItems[0].packageTitle
+                : cartItems.length > 1
+                  ? `${cartItems.length} Packages`
+                  : 'Address & Payment'
+              : routePackageTitle
+                ? routePackageTitle
+                : 'Address & Payment'}
+          </Text>
           <View style={styles.headerUnderline} />
         </View>
         <View style={{width: sw(38)}} />
       </View>
 
+      {isCartEmpty ? (
+        <View style={styles.emptyCart}>
+          <View style={styles.emptyCartIconCircle}>
+            <Ionicons name="cart-outline" size={sw(40)} color="#105641" />
+          </View>
+          <Text style={styles.emptyCartTitle}>Your cart is empty</Text>
+          <Text style={styles.emptyCartSub}>
+            Add a package, combo, or service to get started.
+          </Text>
+          <TouchableOpacity
+            style={styles.emptyCartBtn}
+            activeOpacity={0.85}
+            onPress={() => navigation?.navigate('Main')}>
+            <Text style={styles.emptyCartBtnText}>Browse Services</Text>
+            <Ionicons name="arrow-forward" size={sw(16)} color="#FDD77A" />
+          </TouchableOpacity>
+        </View>
+      ) : (
+      <>
       {/* ── Scrollable content ── */}
       <ScrollView
         style={styles.scroll}
@@ -511,8 +658,54 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
           ) : null}
         </View>
 
-        {/* ── Package Banner ── */}
-        {routePackageId && (
+        {/* ── Package Banner(s) — cart mode: one per package, each independently priced ── */}
+        {isCartMode && cartItems.map(item => (
+          <View key={item.key} style={styles.packageBannerCard}>
+            <View style={styles.packageBannerHeader}>
+              <View style={styles.packageBadge}>
+                <Ionicons name="gift" size={sw(12)} color="#012823" />
+                <Text style={styles.packageBadgeText}>
+                  {item.packageType === 'fixed' ? 'COMBO' : 'PACKAGE'}{item.qty > 1 ? ` ×${item.qty}` : ''}
+                </Text>
+              </View>
+              <Text style={styles.packageBannerTitle} numberOfLines={2}>
+                {item.packageTitle}
+              </Text>
+              <TouchableOpacity
+                hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}
+                onPress={() => removeCartItem(item.key)}>
+                <Ionicons name="close-circle" size={sw(20)} color="rgba(255,255,255,0.6)" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.packagePriceRow}>
+              <Text style={styles.packageBannerPrice}>
+                ₹{Math.round(item.packagePrice * item.qty).toLocaleString('en-IN')}
+              </Text>
+              {item.packageOriginalPrice > item.packagePrice && (
+                <Text style={styles.packageBannerOriginal}>
+                  ₹{Math.round(item.packageOriginalPrice * item.qty).toLocaleString('en-IN')}
+                </Text>
+              )}
+            </View>
+            <View style={styles.packageQtyRow}>
+              <Text style={styles.packageBannerSub}>
+                {item.services.length} service{item.services.length !== 1 ? 's' : ''} included
+              </Text>
+              <View style={styles.packageStepper}>
+                <TouchableOpacity style={styles.stepBtn} activeOpacity={0.7} onPress={() => decrementCartItem(item.key)}>
+                  <Ionicons name="remove" size={sw(16)} color="#FDD77A" />
+                </TouchableOpacity>
+                <Text style={styles.packageStepCount}>{item.qty}</Text>
+                <TouchableOpacity style={styles.stepBtn} activeOpacity={0.7} onPress={() => incrementCartItem(item.key)}>
+                  <Ionicons name="add" size={sw(16)} color="#FDD77A" />
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        ))}
+
+        {/* ── Package Banner (legacy single-package direct flow) ── */}
+        {!isCartMode && routePackageId && (
           <View style={styles.packageBannerCard}>
             <View style={styles.packageBannerHeader}>
               <View style={styles.packageBadge}>
@@ -560,8 +753,8 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
         )}
 
         {/* ── Service items ── */}
-        {services.map(item => (
-          <View key={String((item as any).isFree ? `free-${item.id}` : item.id)} style={styles.serviceCard}>
+        {displayServiceRows.map(item => (
+          <View key={item.rowKey} style={styles.serviceCard}>
             <Image source={{uri: item.image}} style={styles.serviceThumb} resizeMode="cover" />
             <View style={styles.serviceInfo}>
               <Text style={styles.serviceCode} numberOfLines={2}>{item.name}</Text>
@@ -775,8 +968,18 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
           <View style={styles.divider} />
           {billExpanded && (
             <View style={styles.billRows}>
-              {services.map(s => (
-                <View key={String(s.id)} style={styles.billRow}>
+              {isCartMode && cartItems.map(item => (
+                <View key={item.key} style={styles.billRow}>
+                  <Text style={styles.billLabel} numberOfLines={1}>
+                    {item.packageTitle}{item.qty > 1 ? ` ×${item.qty}` : ''}
+                  </Text>
+                  <Text style={styles.billValue}>
+                    ₹{(item.packagePrice * item.qty).toLocaleString('en-IN')}
+                  </Text>
+                </View>
+              ))}
+              {effectiveServices.map(s => (
+                <View key={String((s as any).isFree ? `free-${s.id}` : s.id)} style={styles.billRow}>
                   <Text style={styles.billLabel} numberOfLines={1}>
                     {s.name}{s.qty > 1 ? ` ×${s.qty}` : ''}
                   </Text>
@@ -785,7 +988,16 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
                   </Text>
                 </View>
               ))}
-              {routePackageId ? (
+              {isCartMode ? (
+                packageSavings > 0 && (
+                  <View style={styles.billRow}>
+                    <Text style={[styles.billLabel, {color: '#105641'}]}>Package Savings</Text>
+                    <Text style={[styles.billValue, {color: '#105641'}]}>
+                      −₹{packageSavings.toLocaleString('en-IN')}
+                    </Text>
+                  </View>
+                )
+              ) : routePackageId ? (
                 <>
                   <View style={styles.billRow}>
                     <Text style={[styles.billLabel, {fontWeight: '600'}]}>Package Price</Text>
@@ -1069,6 +1281,8 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
           )}
         </TouchableOpacity>
       </View>
+      </>
+      )}
     </View>
   );
 };
@@ -1104,6 +1318,53 @@ const styles = StyleSheet.create({
   /* ── Scroll ── */
   scroll: {flex: 1},
   scrollContent: {paddingHorizontal: sw(16), paddingTop: sw(14), gap: sw(14)},
+
+  /* ── Empty cart ── */
+  emptyCart: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: sw(32),
+  },
+  emptyCartIconCircle: {
+    width: sw(88),
+    height: sw(88),
+    borderRadius: sw(44),
+    backgroundColor: 'rgba(16,86,65,0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: sw(20),
+  },
+  emptyCartTitle: {
+    fontFamily: fonts.title,
+    fontSize: sw(18),
+    fontWeight: '700',
+    color: '#171816',
+    marginBottom: sw(8),
+  },
+  emptyCartSub: {
+    fontFamily: fonts.textFont,
+    fontSize: sw(13),
+    color: '#777',
+    textAlign: 'center',
+    lineHeight: sw(19),
+    marginBottom: sw(24),
+  },
+  emptyCartBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: sw(8),
+    backgroundColor: '#105641',
+    borderRadius: sw(12),
+    paddingVertical: sw(13),
+    paddingHorizontal: sw(24),
+  },
+  emptyCartBtnText: {
+    fontFamily: fonts.title,
+    fontSize: sw(14),
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
 
   /* ── Section card ── */
   sectionCard: {

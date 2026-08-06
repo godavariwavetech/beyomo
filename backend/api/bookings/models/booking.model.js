@@ -32,9 +32,16 @@ const Booking = sequelize.define("Booking", {
   couponCode: { type: DataTypes.STRING(50), allowNull: true },
   couponId:   { type: DataTypes.INTEGER, allowNull: true },
   offerId:    { type: DataTypes.INTEGER, allowNull: true },
+  // Single-package bookings (the common case): packageId/packageQty as before.
   packageId:  { type: DataTypes.INTEGER, allowNull: true },
   // How many copies of the package/combo were booked — mirrors per-service qty
   packageQty: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
+  // Multi-package bookings: [{packageId, title, qty, price, originalPrice}], one entry
+  // per distinct package in the cart, each keeping its own price/discount intact.
+  // Null/empty for ordinary single-package (or no-package) bookings — packageId/packageQty
+  // above remain the source of truth for those. When populated, this is authoritative
+  // and packageId is left null (there's no single package to point it at).
+  packages: { type: DataTypes.JSON, allowNull: true },
   paymentStatus: { type: DataTypes.ENUM("pending", "paid", "refunded"), defaultValue: "pending" },
   paymentMode: { type: DataTypes.ENUM("online", "cod"), allowNull: false, defaultValue: "online" },
   paymentId: { type: DataTypes.INTEGER, allowNull: true }, // no FK â€” circular dep with payments

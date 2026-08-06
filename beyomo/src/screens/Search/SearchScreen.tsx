@@ -184,7 +184,7 @@ const SearchScreen = ({navigation}: {navigation: any}) => {
                     {svc.category?.name ?? ''}{svc.duration ? ` · ${svc.duration} mins` : ''}
                   </Text>
                 </View>
-                <Text style={styles.rowPrice}>₹{Math.round(svc.price ?? svc.basePrice ?? 0)}</Text>
+                <Text style={styles.rowPrice}>Starts at ₹{Math.round(svc.price ?? svc.basePrice ?? 0)}</Text>
               </TouchableOpacity>
             ))}
           </View>
