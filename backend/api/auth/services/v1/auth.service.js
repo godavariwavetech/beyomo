@@ -11,7 +11,12 @@ const OTP_EXPIRY_MINUTES = 5;
 const MAX_ATTEMPTS = 3;
 const RATE_LIMIT_MINUTES = 0;
 
-const generateOtp = () => "1234";
+const TEST_PHONE_NUMBERS = ["7997753587"];
+
+const generateOtp = (phone) => {
+  if (TEST_PHONE_NUMBERS.includes(String(phone))) return "1234";
+  return String(Math.floor(1000 + Math.random() * 9000));
+};
 
 const sendOtpService = async (phone, userType = "user") => {
   if (userType === "partner") {
@@ -39,7 +44,7 @@ const sendOtpService = async (phone, userType = "user") => {
 
   await Otp.update({ isUsed: true }, { where: { phone, userType, isUsed: false } });
 
-  const otp = generateOtp();
+  const otp = generateOtp(phone);
   const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
   await Otp.create({ phone, otp, userType, expiresAt, attempts: 0, isUsed: false });
 

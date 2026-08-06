@@ -36,4 +36,7 @@ export const endpoints = {
   // Cities (public, no auth)
   CITIES: '/api/v1/cities/active',
   SERVICES: '/api/v1/services',
+
+  // App version / force-update check (public, no auth, checked at splash)
+  APP_VERSION: '/api/v1/app-version',
 };

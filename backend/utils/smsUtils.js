@@ -1,12 +1,20 @@
 const axios = require("axios");
 const logger = require("./logger");
-const { MSG91_AUTH_KEY, MSG91_TEMPLATE_ID, MSG91_SENDER_ID, MOCK_SMS } = require("../config");
+const {
+  MOCK_SMS,
+  SUNSTECH_SMS_KEY,
+  SUNSTECH_SMS_ROUTE_ID,
+  SUNSTECH_SMS_SENDER_ID,
+  SUNSTECH_SMS_TEMPLATE_ID,
+} = require("../config");
+
+const SUNSTECH_SMS_URL = "https://sms.sunstechit.com/app/smsapi/index.php";
 
 /**
- * Send OTP via MSG91
+ * Send OTP via SunsTechIT
  * @param {String} phone - 10-digit phone number (without country code)
- * @param {String} otp - 6-digit OTP
- * @returns {Promise<Object>} MSG91 response
+ * @param {String} otp - OTP
+ * @returns {Promise<Object>} SunsTechIT response
  */
 const sendOtp = async (phone, otp) => {
   if (MOCK_SMS) {
@@ -15,59 +23,27 @@ const sendOtp = async (phone, otp) => {
   }
 
   try {
-    // Format phone number with country code
-    const formattedPhone = phone.startsWith("91") ? phone : `91${phone}`;
+    const msg = `Your OTP for verification is ${otp}. Do not share this with anyone. - Godavari Wave Technologies`;
 
-    const url = `https://api.msg91.com/api/v5/otp`;
-    const params = {
-      template_id: MSG91_TEMPLATE_ID,
-      mobile: formattedPhone,
-      authkey: MSG91_AUTH_KEY,
-      otp: otp,
-    };
+    const response = await axios.get(SUNSTECH_SMS_URL, {
+      params: {
+        key: SUNSTECH_SMS_KEY,
+        campaign: 0,
+        routeid: SUNSTECH_SMS_ROUTE_ID,
+        type: "text",
+        contacts: phone,
+        senderid: SUNSTECH_SMS_SENDER_ID,
+        msg,
+        template_id: SUNSTECH_SMS_TEMPLATE_ID,
+      },
+    });
 
-    const response = await axios.post(url, null, { params });
-
-    if (response.data && response.data.type === "success") {
-      logger.info(`OTP sent successfully to ${phone}`);
-      return { success: true, data: response.data };
-    } else {
-      logger.error(`MSG91 OTP failed for ${phone}: ${JSON.stringify(response.data)}`);
-      throw new Error(response.data?.message || "Failed to send OTP");
-    }
+    logger.info(`OTP sent to ${phone} via SunsTechIT`);
+    return { success: true, data: response.data };
   } catch (error) {
     logger.error(`SMS send error for ${phone}: ${error.message}`);
     throw error;
   }
 };
 
-/**
- * Resend OTP via MSG91
- * @param {String} phone - 10-digit phone number
- * @returns {Promise<Object>}
- */
-const resendOtp = async (phone) => {
-  if (MOCK_SMS) {
-    logger.info(`[MOCK SMS] OTP resend triggered for ${phone}`);
-    return { success: true, mock: true };
-  }
-
-  try {
-    const formattedPhone = phone.startsWith("91") ? phone : `91${phone}`;
-    const url = `https://api.msg91.com/api/v5/otp/retry`;
-    const params = {
-      authkey: MSG91_AUTH_KEY,
-      mobile: formattedPhone,
-      retrytype: "text",
-    };
-
-    const response = await axios.post(url, null, { params });
-    logger.info(`OTP resend triggered for ${phone}`);
-    return { success: true, data: response.data };
-  } catch (error) {
-    logger.error(`SMS resend error for ${phone}: ${error.message}`);
-    throw error;
-  }
-};
-
-module.exports = { sendOtp, resendOtp };
+module.exports = { sendOtp };

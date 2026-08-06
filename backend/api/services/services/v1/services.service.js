@@ -40,7 +40,7 @@ const getServices = async (query, page = 1, limit = 20) => {
 
   const { count: total, rows } = await Service.findAndCountAll({
     where,
-    order: [["name", "ASC"]],
+    order: [["sortOrder", "ASC"], ["name", "ASC"]],
     offset,
     limit,
     include: [

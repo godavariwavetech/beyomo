@@ -12,7 +12,6 @@ import {
 } from 'react-native';
 import {HomeScreenSkeleton, SkeletonBox} from '../../components/Skeleton/Skeleton';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import LinearGradient from 'react-native-linear-gradient';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useDispatch, useSelector} from 'react-redux';
 import {fonts} from '../../config/theme';
@@ -35,27 +34,23 @@ const ELLIPSE_SCALE_X = ELLIPSE_W / ELLIPSE_H;
 
 const FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=800&q=90&fit=crop';
 
-const TOP_BANNER_ASPECT = 2.2;
+const HEADER_CARD_ASPECT = 2.2;
 // Slightly narrower than the full slide width, with matching side margins below, so the
 // card has breathing room from the device edges instead of touching them directly.
-const TOP_BANNER_W = width - sw(24);
-// Package poster slides — fixed height (not computed from the image's aspect ratio).
-// Adjust this single number directly to make the banner shorter/taller.
-const PACKAGE_SLIDE_W = width - sw(4);
-const PACKAGE_SLIDE_H = sw(200);
+const HEADER_CARD_W = width - sw(24);
+const HEADER_CARD_H = HEADER_CARD_W / HEADER_CARD_ASPECT;
 
 // Service grid items fill the full row width exactly — 4 columns with a fixed gap between
 // them, so there's no leftover whitespace dangling on the right edge of each row.
 const GRID_COLUMNS = 4;
 const GRID_GAP = sw(12);
 const GRID_ITEM_W = (width - sw(32) - GRID_GAP * (GRID_COLUMNS - 1)) / GRID_COLUMNS;
-const TOP_BANNER_H = TOP_BANNER_W / TOP_BANNER_ASPECT;
 
-// Packages & Combos CTA banners — pre-made poster graphics, cropped to their opaque
-// content (570×274px, no transparent margin). Sized in exact pixels (not aspectRatio +
-// percentage) to match how every other sized element in this file is computed, and to
-// avoid Yoga aspectRatio-in-flex quirks on Android.
-const CTA_CARD_ASPECT = 570 / 274;
+// Packages & Combos CTA banners — same poster graphics as the website's promo cards
+// (custom_package_banner.png / combo_banner.png, ~1496×945px). Sized in exact pixels
+// (not aspectRatio + percentage) to match how every other sized element in this file is
+// computed, and to avoid Yoga aspectRatio-in-flex quirks on Android.
+const CTA_CARD_ASPECT = 1496 / 945;
 const CTA_CARD_GAP = sw(12);
 const CTA_CARD_W = (width - sw(32) - CTA_CARD_GAP) / 2;
 const CTA_CARD_H = CTA_CARD_W / CTA_CARD_ASPECT;
@@ -76,13 +71,12 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
   const {categories, loading} = useSelector((state: RootState) => state.Services);
   const selectedCity = useSelector((state: RootState) => state.City?.selectedCity);
   const [packages, setPackages] = useState<any[]>([]);
-  const [banners, setBanners] = useState<any[]>([]);
 
   const offersScrollRef = useRef<ScrollView>(null);
   const offersIndexRef = useRef(0);
 
   // Track which images have finished loading so we can hide the skeleton overlay.
-  // Keyed by banner id / category id / image uri for promo cards.
+  // Keyed by offer id / category id / image uri for promo cards.
   const [loadedBanners, setLoadedBanners] = useState<Set<string>>(new Set());
   const [loadedServices, setLoadedServices] = useState<Set<string>>(new Set());
 
@@ -91,49 +85,26 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
     setLoadedServices(new Set());
     const cityParam = selectedCity?.id ? `?cityId=${selectedCity.id}` : '';
     api.get(`${endpoints.PACKAGES}${cityParam}`).then(res => {
-      if (res.data?.status) { setPackages(res.data.data ?? []); }
-    }).catch(() => {});
-    // Same admin-managed Banner entity the website's hero carousel reads from —
-    // keeps the app's top banner in sync with whatever's set in admin-dashboard/Banners.
-    api.get(endpoints.BANNERS).then(res => {
-      if (res.data?.status) { setBanners(res.data.data ?? []); setLoadedBanners(new Set()); }
+      if (res.data?.status) { setPackages(res.data.data ?? []); setLoadedBanners(new Set()); }
     }).catch(() => {});
   }, [dispatch, selectedCity?.id]);
 
-  // Header carousel = admin banners + whichever packages/combos the admin has explicitly
-  // flagged "Show on Home Screen" — not every package, only featured ones.
+  // Header carousel = whichever packages/combos the admin has flagged "Show on Home
+  // Screen" — the Special Offers row now lives in the header itself.
   const featuredPackages = packages.filter(p => p.showOnHome);
-  const headerSlides = [
-    ...banners.map((b: any) => ({...b, __kind: 'banner' as const})),
-    ...featuredPackages.map((p: any) => ({...p, __kind: 'package' as const})),
-  ];
 
-  // Auto-scroll the top banner — pages full-width, wraps back to the first slide
+  // Auto-scroll the top carousel — pages full-width, wraps back to the first slide
   useEffect(() => {
     offersIndexRef.current = 0;
-    if (headerSlides.length <= 1) return;
+    if (featuredPackages.length <= 1) return;
     const id = setInterval(() => {
-      offersIndexRef.current = (offersIndexRef.current + 1) % headerSlides.length;
+      offersIndexRef.current = (offersIndexRef.current + 1) % featuredPackages.length;
       offersScrollRef.current?.scrollTo({x: offersIndexRef.current * width, animated: true});
     }, AUTO_SCROLL_OFFERS_MS);
     return () => clearInterval(id);
-  }, [headerSlides.length]);
+  }, [featuredPackages.length]);
 
-  const goToBanner = (banner: any) => {
-    if (banner.targetScreen) {
-      navigation.navigate(banner.targetScreen, banner.targetParam ? {category: banner.targetParam} : undefined);
-    } else {
-      navigation.navigate('ServiceListing');
-    }
-  };
-
-  const goToSlide = (slide: any) => {
-    if (slide.__kind === 'package') {
-      navigation.navigate('PackageDetail', {package: slide});
-    } else {
-      goToBanner(slide);
-    }
-  };
+  const goToOffer = (pkg: any) => navigation.navigate('PackageDetail', {package: pkg});
 
   if (loading && categories.length === 0) {
     return (
@@ -149,7 +120,7 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
       <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
 
       {/* ══════════════════════════════════
-          FIXED HEADER — dark ellipse + nav row + banner
+          FIXED HEADER — dark ellipse + nav row + Special Offers carousel
       ══════════════════════════════════ */}
       <View style={[styles.topSection, {paddingTop: insets.top}]}>
 
@@ -190,7 +161,7 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
             </TouchableOpacity>
 
             <View style={styles.whatsappCol}>
-              <TouchableOpacity activeOpacity={0.7} style={styles.bellBtn} onPress={() => Linking.openURL('https://wa.me/919876543210')}>
+              <TouchableOpacity activeOpacity={0.7} style={styles.bellBtn} onPress={() => Linking.openURL('https://wa.me/919885909192')}>
                 <Ionicons name="logo-whatsapp" size={sw(24)} color="#25D366" />
               </TouchableOpacity>
               <View style={styles.connectBadge}>
@@ -200,8 +171,9 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
           </View>
         </View>
 
-        {/* ── Top banner — admin banners + real combo packages, all paging together ── */}
-        {headerSlides.length > 0 ? (
+        {/* ── Special Offers carousel — packages/combos flagged "Show on Home Screen",
+             pages full-width inside the header itself ── */}
+        {featuredPackages.length > 0 ? (
           <View style={{marginTop: sw(10)}}>
             <ScrollView
               ref={offersScrollRef}
@@ -213,80 +185,43 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
                 offersIndexRef.current = Math.round(e.nativeEvent.contentOffset.x / width);
               }}
               contentContainerStyle={{paddingBottom: sw(4)}}>
-              {headerSlides.map((slide: any) => {
-                const slideKey = `${slide.__kind}-${slide.id}`;
-                // Package images are pre-made poster graphics with their own rounded
-                // corners/shadow/padding already baked in -- render them plain and
-                // uncropped instead of wrapping them in another rounded+shadow card.
-                if (slide.image && slide.__kind === 'package') {
-                  return (
-                    <TouchableOpacity
-                      key={slideKey}
-                      activeOpacity={0.88}
-                      style={[styles.packageSlideWrap, {width}]}
-                      onPress={() => goToSlide(slide)}>
-                      <Image
-                        source={{uri: slide.image}}
-                        style={styles.packageSlideImg}
-                        resizeMode="stretch"
-                        onLoad={() =>
-                          setLoadedBanners(prev => new Set(prev).add(slideKey))
-                        }
-                      />
-                      {!loadedBanners.has(slideKey) && (
-                        <SkeletonBox color="#1a4036" r={0} style={StyleSheet.absoluteFill} />
-                      )}
-                    </TouchableOpacity>
-                  );
-                }
-                return slide.image ? (
+              {featuredPackages.map((pkg: any) => {
+                const offerKey = `offer-${pkg.id}`;
+                const isPackage = pkg.packageType === 'flexible';
+                return (
                   <TouchableOpacity
-                    key={slideKey}
-                    activeOpacity={0.88}
+                    key={offerKey}
+                    activeOpacity={1}
                     style={{width}}
-                    onPress={() => goToSlide(slide)}>
-                    <View style={styles.topBannerShadowWrap}>
-                      <View style={styles.topBannerImg}>
+                    onPress={() => goToOffer(pkg)}>
+                    <View style={styles.headerCardShadowWrap}>
+                      <View style={styles.headerCardImgWrap}>
                         <Image
-                          source={{uri: slide.image}}
-                          style={styles.bannerFill}
-                          resizeMode="cover"
+                          source={{uri: pkg.image ?? pkg.services?.[0]?.image ?? FALLBACK_IMAGE}}
+                          style={styles.headerCardImg}
+                          resizeMode="stretch"
                           onLoad={() =>
-                            setLoadedBanners(prev => new Set(prev).add(slideKey))
+                            setLoadedBanners(prev => new Set(prev).add(offerKey))
                           }
                         />
-                        {!loadedBanners.has(slideKey) && (
+                        {!loadedBanners.has(offerKey) && (
                           <SkeletonBox color="#1a4036" r={0} style={StyleSheet.absoluteFill} />
                         )}
+                        <View
+                          style={[
+                            styles.offerTypeBadge,
+                            isPackage ? styles.offerTypeBadgePackage : styles.offerTypeBadgeCombo,
+                          ]}>
+                          <Text
+                            style={[
+                              styles.offerTypeBadgeText,
+                              {color: isPackage ? '#14192B' : '#FFFFFF'},
+                            ]}>
+                            {isPackage ? 'Package' : 'Combo'}
+                          </Text>
+                        </View>
                       </View>
                     </View>
-                  </TouchableOpacity>
-                ) : (
-                  <TouchableOpacity
-                    key={slideKey}
-                    activeOpacity={0.88}
-                    style={{width}}
-                    onPress={() => goToSlide(slide)}>
-                    <LinearGradient
-                      colors={[slide.gradientStart || '#1a5c4a', slide.gradientEnd || '#022723']}
-                      start={{x: 0, y: 0}}
-                      end={{x: 1, y: 1}}
-                      style={styles.topBannerGradient}>
-                      {!!slide.subtitle && (
-                        <Text style={styles.bannerSubtitle}>{slide.subtitle}</Text>
-                      )}
-                      <Text style={styles.bannerTitle} numberOfLines={2}>
-                        {slide.title}
-                      </Text>
-                      {!!slide.description && (
-                        <Text style={styles.bannerDescription} numberOfLines={2}>
-                          {slide.description}
-                        </Text>
-                      )}
-                      <View style={styles.bannerButton}>
-                        <Text style={styles.bannerButtonText}>{slide.buttonText || 'Book Now'}</Text>
-                      </View>
-                    </LinearGradient>
                   </TouchableOpacity>
                 );
               })}
@@ -299,7 +234,6 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
         style={styles.scroll}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.contentContainer}>
-
 
         {/* ══════════════════════════════════
             OUR SERVICES
@@ -336,9 +270,11 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
                         )}
                       </View>
                     </View>
-                    <Text style={styles.serviceLabel} numberOfLines={2}>
+                    {/* Category name is already baked into the image itself, so the
+                        text label underneath would just duplicate it. */}
+                    {/* <Text style={styles.serviceLabel} numberOfLines={2}>
                       {item.name}
-                    </Text>
+                    </Text> */}
                   </TouchableOpacity>
                 ))}
               </View>
@@ -399,25 +335,35 @@ const styles = StyleSheet.create({
   scroll: {flex: 1},
   contentContainer: {paddingBottom: sw(16)},
 
-  /* ── Package poster slides — image already has its own card design baked
-     in (rounded corners, shadow, padding), so just show it uncropped ── */
-  packageSlideWrap: {
-    height: PACKAGE_SLIDE_H,
-    alignItems: 'center',
-    justifyContent: 'center',
+  /* ── Special Offers badge — featured packages/combos, same styling as the website's ── */
+  offerTypeBadge: {
+    position: 'absolute',
+    top: sw(8),
+    left: sw(8),
+    paddingHorizontal: sw(8),
+    paddingVertical: sw(3),
+    borderRadius: sw(20),
   },
-  packageSlideImg: {
-    width: PACKAGE_SLIDE_W,
-    height: PACKAGE_SLIDE_H,
+  offerTypeBadgeCombo: {
+    backgroundColor: '#105641',
   },
-
-  /* ── Top offers banner — plain poster image, no overlaid UI ──
+  offerTypeBadgePackage: {
+    backgroundColor: '#F2A93B',
+  },
+  offerTypeBadgeText: {
+    fontFamily: fonts.secondry,
+    fontSize: sw(9),
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  /* ── Header carousel card — plain poster image, badge + overlay on top ──
      RN clips shadows away on any view that also has overflow:hidden (needed
      here to clip the image to rounded corners), so the shadow lives on an
      outer wrapper and the rounding + clipping lives on the inner one. ── */
-  topBannerShadowWrap: {
-    width: TOP_BANNER_W,
-    height: TOP_BANNER_H,
+  headerCardShadowWrap: {
+    width: HEADER_CARD_W,
+    height: HEADER_CARD_H,
     marginHorizontal: sw(12),
     borderRadius: sw(16),
     shadowColor: '#000',
@@ -426,61 +372,15 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 5,
   },
-  topBannerImg: {
+  headerCardImgWrap: {
     width: '100%',
     height: '100%',
     borderRadius: sw(16),
     overflow: 'hidden',
   },
-  bannerFill: {
+  headerCardImg: {
     width: '100%',
     height: '100%',
-  },
-  topBannerGradient: {
-    width: TOP_BANNER_W,
-    height: TOP_BANNER_H,
-    marginHorizontal: sw(12),
-    borderRadius: sw(16),
-    padding: sw(16),
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 4},
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    elevation: 5,
-  },
-  bannerSubtitle: {
-    fontFamily: fonts.secondry,
-    fontSize: sw(11),
-    color: '#FDD77A',
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
-  },
-  bannerTitle: {
-    fontFamily: fonts.title,
-    fontSize: sw(18),
-    color: '#FFFFFF',
-    marginTop: sw(4),
-  },
-  bannerDescription: {
-    fontFamily: fonts.textFont,
-    fontSize: sw(11),
-    color: 'rgba(255,255,255,0.8)',
-    marginTop: sw(4),
-    lineHeight: sw(14),
-  },
-  bannerButton: {
-    marginTop: sw(10),
-    alignSelf: 'flex-start',
-    backgroundColor: '#FDD77A',
-    borderRadius: sw(18),
-    paddingHorizontal: sw(16),
-    paddingVertical: sw(7),
-  },
-  bannerButtonText: {
-    fontFamily: fonts.secondry,
-    fontSize: sw(12),
-    color: '#012823',
   },
 
   /* ── Packages & Combos CTA cards ──────────────────────── */

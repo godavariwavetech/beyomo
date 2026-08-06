@@ -11,6 +11,7 @@ const Service = sequelize.define("Service", {
   tags: { type: DataTypes.JSON, defaultValue: [] },
   image: { type: DataTypes.TEXT, allowNull: true, defaultValue: null },
   isActive: { type: DataTypes.BOOLEAN, defaultValue: true },
+  sortOrder: { type: DataTypes.INTEGER, defaultValue: 0 },
 }, {
   timestamps: true,
   tableName: "services",

@@ -24,6 +24,7 @@ interface Props {
 const OrderPlacedScreen = ({navigation, route}: Props) => {
   const bookingCode = route?.params?.bookingCode;
   const bookingId = route?.params?.bookingId;
+  const paymentPending = !!route?.params?.paymentPending;
 
   useEffect(() => {
     if (!bookingId) return;
@@ -38,13 +39,21 @@ const OrderPlacedScreen = ({navigation, route}: Props) => {
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       <View style={styles.centerContent}>
-        <View style={styles.checkCircle}>
-          <Ionicons name="checkmark" size={sw(62)} color="#FFFFFF" />
+        <View style={[styles.checkCircle, paymentPending && styles.pendingCircle]}>
+          <Ionicons name={paymentPending ? 'time-outline' : 'checkmark'} size={sw(62)} color="#FFFFFF" />
         </View>
 
         <Text style={styles.orderText}>
-          Order Placed for Home{'\n'}123, Palm Residency, Madhapur Main Road, Hyderabad – 500081
+          {paymentPending
+            ? 'Booking saved — payment not completed yet'
+            : 'Order Placed'}
         </Text>
+
+        {paymentPending && (
+          <Text style={styles.pendingSubText}>
+            Your slot is on hold. Complete the payment from My Bookings to confirm it.
+          </Text>
+        )}
 
         {bookingCode ? (
           <Text style={styles.bookingCode}>Booking ID: {bookingCode}</Text>
@@ -86,6 +95,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  pendingCircle: {backgroundColor: '#FF9500'},
 
   /* ── Order text ── */
   orderText: {
@@ -96,6 +106,15 @@ const styles = StyleSheet.create({
     fontWeight: '400',
     color: '#000000',
     textAlign: 'center',
+  },
+  pendingSubText: {
+    width: sw(300),
+    fontFamily: fonts.textFont,
+    fontSize: sw(13),
+    lineHeight: sw(19),
+    color: '#666666',
+    textAlign: 'center',
+    marginTop: sw(-16),
   },
 
   bookingCode: {

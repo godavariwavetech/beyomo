@@ -61,6 +61,7 @@ export default function Bookings() {
   const [partners, setPartners]     = useState([]);
   const [reassignId, setReassignId] = useState('');
   const [reassigning, setReassigning] = useState(false);
+  const [showNewBooking, setShowNewBooking] = useState(false);
 
   const [rescheduleDate, setRescheduleDate]     = useState('');
   const [rescheduleReason, setRescheduleReason] = useState('');
@@ -446,6 +447,9 @@ export default function Bookings() {
           </select>
           <button className="btn btn-outline btn-sm" style={{ display:'flex', alignItems:'center', gap:6 }} onClick={() => exportCSV(filtered, 'bookings.csv')}>
             <Download size={14} /> Export
+          </button>
+          <button className="btn btn-primary btn-sm" style={{ display:'flex', alignItems:'center', gap:6 }} onClick={() => setShowNewBooking(true)}>
+            <PlusCircle size={14} /> New Booking
           </button>
         </div>
 
@@ -1027,7 +1031,356 @@ export default function Bookings() {
           </div>
         )}
       </Modal>
+
+      <NewBookingModal
+        isOpen={showNewBooking}
+        onClose={() => setShowNewBooking(false)}
+        onCreated={() => { setShowNewBooking(false); loadBookings(); showToast('Booking created for customer.', 'success'); }}
+      />
     </div>
+  );
+}
+
+// ── New Booking (support/admin creates a booking on a customer's behalf, e.g. a
+// phone-support call requesting a one-time service) ──────────────────────────────
+function NewBookingModal({ isOpen, onClose, onCreated }) {
+  const { showToast } = useAuth();
+
+  const [userSearch, setUserSearch]     = useState('');
+  const [userResults, setUserResults]   = useState([]);
+  const [searchingUser, setSearchingUser] = useState(false);
+  const [customer, setCustomer]         = useState(null); // full user record incl. addresses
+
+  const [addressMode, setAddressMode]   = useState('saved'); // 'saved' | 'new'
+  const [selectedAddressId, setSelectedAddressId] = useState('');
+  const [newAddress, setNewAddress]     = useState({ label:'Home', line1:'', line2:'', city:'', state:'', pincode:'' });
+
+  const [allServices, setAllServices]   = useState([]);
+  const [cart, setCart]                 = useState([]); // [{type:'catalog', svc, qty} | {type:'addon', name, price, qty}]
+  const [svcSearch, setSvcSearch]       = useState('');
+  const [addMode, setAddMode]           = useState('catalog'); // 'catalog' | 'addon'
+  const [addonName, setAddonName]       = useState('');
+  const [addonPrice, setAddonPrice]     = useState('');
+  const [addonQty, setAddonQty]         = useState(1);
+
+  const [scheduleValue, setScheduleValue] = useState('');
+  const [paymentMode, setPaymentMode]   = useState('cod');
+  const [notes, setNotes]               = useState('');
+  const [submitting, setSubmitting]     = useState(false);
+
+  const resetAll = () => {
+    setUserSearch(''); setUserResults([]); setCustomer(null);
+    setAddressMode('saved'); setSelectedAddressId('');
+    setNewAddress({ label:'Home', line1:'', line2:'', city:'', state:'', pincode:'' });
+    setCart([]); setSvcSearch(''); setAddMode('catalog');
+    setAddonName(''); setAddonPrice(''); setAddonQty(1);
+    setScheduleValue(''); setPaymentMode('cod'); setNotes('');
+  };
+
+  useEffect(() => {
+    if (!isOpen) return;
+    resetAll();
+    if (allServices.length === 0) {
+      api.get('/api/v1/admin/services', { params: { limit: 500 } })
+        .then(res => setAllServices(res.data?.data?.data ?? res.data?.data ?? []))
+        .catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || !userSearch.trim()) { setUserResults([]); return; }
+    setSearchingUser(true);
+    const t = setTimeout(() => {
+      api.get('/api/v1/admin/users', { params: { search: userSearch.trim(), limit: 10 } })
+        .then(res => setUserResults(res.data?.data?.data ?? res.data?.data ?? []))
+        .catch(() => setUserResults([]))
+        .finally(() => setSearchingUser(false));
+    }, 350);
+    return () => clearTimeout(t);
+  }, [userSearch, isOpen]);
+
+  const selectCustomer = async (u) => {
+    setUserResults([]);
+    setUserSearch(u.name || u.phone);
+    try {
+      const res = await api.get(`/api/v1/admin/users/${u.id ?? u._id}`);
+      const full = res.data?.data ?? u;
+      setCustomer(full);
+      const addresses = full.addresses ?? [];
+      const def = addresses.find(a => a.isDefault) ?? addresses[0];
+      if (def) { setAddressMode('saved'); setSelectedAddressId(String(def.id)); }
+      else { setAddressMode('new'); }
+    } catch {
+      setCustomer(u);
+      setAddressMode('new');
+    }
+  };
+
+  const addonTotal = cart.reduce((sum, item) => {
+    const price = item.type === 'catalog' ? parseFloat(item.svc.basePrice || 0) : parseFloat(item.price || 0);
+    return sum + price * item.qty;
+  }, 0);
+
+  const validateSchedule = () => {
+    if (!scheduleValue) return 'Please choose a date & time.';
+    const time = new Date(scheduleValue).getTime();
+    if (Number.isNaN(time)) return 'Please select a valid date & time.';
+    const now = Date.now();
+    if (time < now + ONE_HOUR_MS) return 'Must be scheduled at least 1 hour from now.';
+    if (time > now + ONE_MONTH_MS) return 'Cannot be scheduled more than 1 month in advance.';
+    return '';
+  };
+
+  const handleSubmit = async () => {
+    if (!customer) { showToast('Please select a customer.', 'warning'); return; }
+    if (!cart.length) { showToast('Add at least one service.', 'warning'); return; }
+
+    let address;
+    if (addressMode === 'saved') {
+      const saved = (customer.addresses ?? []).find(a => String(a.id) === selectedAddressId);
+      if (!saved) { showToast('Please select a saved address.', 'warning'); return; }
+      address = { label: saved.label, line1: saved.line1, line2: saved.line2, city: saved.city, state: saved.state, pincode: saved.pincode, lat: saved.lat, lng: saved.lng };
+    } else {
+      if (!newAddress.line1.trim() || !newAddress.city.trim() || !newAddress.state.trim() || !newAddress.pincode.trim()) {
+        showToast('Please fill in address line, city, state and pincode.', 'warning'); return;
+      }
+      address = newAddress;
+    }
+
+    const scheduleError = validateSchedule();
+    if (scheduleError) { showToast(scheduleError, 'warning'); return; }
+
+    const services = cart.map(item => item.type === 'catalog'
+      ? { id: item.svc.id ?? item.svc._id, qty: item.qty }
+      : { isAddOn: true, name: item.name, price: item.price, qty: item.qty });
+
+    setSubmitting(true);
+    try {
+      await api.post('/api/v1/admin/bookings', {
+        userId: customer.id ?? customer._id,
+        services,
+        address,
+        scheduledAt: new Date(scheduleValue).toISOString(),
+        paymentMode,
+        notes: notes || undefined,
+      });
+      onCreated();
+    } catch (err) {
+      const msg = err.response?.data?.message ?? 'Failed to create booking.';
+      showToast(msg, 'danger');
+    }
+    setSubmitting(false);
+  };
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="New Booking for Customer" size="lg" footer={
+      <>
+        <button className="btn btn-outline btn-sm" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary btn-sm" onClick={handleSubmit} disabled={submitting} style={{ display:'flex', alignItems:'center', gap:6 }}>
+          {submitting ? 'Creating…' : <>Create Booking{cart.length ? ` · ₹${fmt(addonTotal)}` : ''}</>}
+        </button>
+      </>
+    }>
+      <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+        {/* Customer */}
+        <InfoBlock label="Customer">
+          {!customer ? (
+            <div style={{ position:'relative' }}>
+              <input
+                type="text"
+                placeholder="Search by name or phone…"
+                value={userSearch}
+                onChange={e => setUserSearch(e.target.value)}
+                style={{ width:'100%', border:'1px solid var(--c-border)', borderRadius:'var(--r-sm)', padding:'7px 10px', fontSize:13, background:'var(--c-bg-card)', color:'var(--c-text-primary)', boxSizing:'border-box' }}
+              />
+              {(userResults.length > 0 || searchingUser) && (
+                <div style={{ position:'absolute', zIndex:5, top:'calc(100% + 4px)', left:0, right:0, maxHeight:200, overflowY:'auto', border:'1px solid var(--c-border)', borderRadius:'var(--r-sm)', background:'var(--c-bg-card)', boxShadow:'0 4px 12px rgba(0,0,0,0.12)' }}>
+                  {searchingUser && <div style={{ padding:10, fontSize:12, color:'var(--c-text-muted)' }}>Searching…</div>}
+                  {userResults.map(u => (
+                    <div key={u.id ?? u._id} onClick={() => selectCustomer(u)}
+                      style={{ padding:'8px 10px', cursor:'pointer', borderBottom:'1px solid var(--c-border-light)', fontSize:13 }}
+                      onMouseDown={e => e.preventDefault()}>
+                      <div style={{ fontWeight:600 }}>{u.name || 'Unnamed'}</div>
+                      <div style={{ fontSize:11, color:'var(--c-text-muted)' }}>{u.phone}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+              <div>
+                <div style={{ fontWeight:600, fontSize:13 }}>{customer.name || 'Unnamed'}</div>
+                <div style={{ fontSize:12, color:'var(--c-text-muted)' }}>{customer.phone}</div>
+              </div>
+              <button className="btn btn-ghost btn-sm" onClick={() => { setCustomer(null); setUserSearch(''); }}>Change</button>
+            </div>
+          )}
+        </InfoBlock>
+
+        {/* Address */}
+        {customer && (
+          <InfoBlock label="Service Address">
+            <div style={{ display:'flex', background:'var(--c-border-light)', borderRadius:'var(--r-sm)', padding:3, marginBottom:10 }}>
+              <button onClick={() => setAddressMode('saved')} style={{ flex:1, border:'none', borderRadius:4, padding:'6px 0', fontSize:12, fontWeight:600, cursor:'pointer', background: addressMode === 'saved' ? 'var(--c-brand-primary)' : 'transparent', color: addressMode === 'saved' ? '#fff' : 'var(--c-text-secondary)' }}>
+                Saved Address
+              </button>
+              <button onClick={() => setAddressMode('new')} style={{ flex:1, border:'none', borderRadius:4, padding:'6px 0', fontSize:12, fontWeight:600, cursor:'pointer', background: addressMode === 'new' ? 'var(--c-brand-primary)' : 'transparent', color: addressMode === 'new' ? '#fff' : 'var(--c-text-secondary)' }}>
+                New Address
+              </button>
+            </div>
+
+            {addressMode === 'saved' ? (
+              (customer.addresses ?? []).length === 0 ? (
+                <div style={{ fontSize:12, color:'var(--c-text-muted)' }}>This customer has no saved addresses. Use "New Address" instead.</div>
+              ) : (
+                <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                  {customer.addresses.map(a => (
+                    <label key={a.id} style={{ display:'flex', alignItems:'flex-start', gap:8, padding:8, border:'1px solid var(--c-border)', borderRadius:'var(--r-sm)', cursor:'pointer', background: String(a.id) === selectedAddressId ? 'rgba(6,64,129,0.06)' : 'var(--c-bg-card)' }}>
+                      <input type="radio" checked={String(a.id) === selectedAddressId} onChange={() => setSelectedAddressId(String(a.id))} style={{ marginTop:2 }} />
+                      <div style={{ fontSize:12 }}>
+                        <div style={{ fontWeight:600 }}>{a.label}</div>
+                        <div style={{ color:'var(--c-text-muted)' }}>{[a.line1, a.line2, a.city, a.state, a.pincode].filter(Boolean).join(', ')}</div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              )
+            ) : (
+              <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                {[
+                  { key:'label', placeholder:'Label (e.g. Home, Office)' },
+                  { key:'line1', placeholder:'Address line 1' },
+                  { key:'line2', placeholder:'Address line 2 (optional)' },
+                  { key:'city', placeholder:'City' },
+                  { key:'state', placeholder:'State' },
+                  { key:'pincode', placeholder:'Pincode' },
+                ].map(f => (
+                  <input key={f.key} type="text" placeholder={f.placeholder} value={newAddress[f.key]}
+                    onChange={e => setNewAddress(prev => ({ ...prev, [f.key]: e.target.value }))}
+                    style={{ width:'100%', border:'1px solid var(--c-border)', borderRadius:'var(--r-sm)', padding:'6px 10px', fontSize:13, background:'var(--c-bg-card)', color:'var(--c-text-primary)', boxSizing:'border-box' }} />
+                ))}
+              </div>
+            )}
+          </InfoBlock>
+        )}
+
+        {/* Services */}
+        {customer && (
+          <InfoBlock label="Services">
+            <div style={{ display:'flex', background:'var(--c-border-light)', borderRadius:'var(--r-sm)', padding:3, marginBottom:10 }}>
+              <button onClick={() => setAddMode('catalog')} style={{ flex:1, border:'none', borderRadius:4, padding:'6px 0', fontSize:12, fontWeight:600, cursor:'pointer', background: addMode === 'catalog' ? 'var(--c-brand-primary)' : 'transparent', color: addMode === 'catalog' ? '#fff' : 'var(--c-text-secondary)' }}>
+                From Catalog
+              </button>
+              <button onClick={() => setAddMode('addon')} style={{ flex:1, border:'none', borderRadius:4, padding:'6px 0', fontSize:12, fontWeight:600, cursor:'pointer', background: addMode === 'addon' ? 'var(--c-brand-primary)' : 'transparent', color: addMode === 'addon' ? '#fff' : 'var(--c-text-secondary)' }}>
+                One-Time / Custom Service
+              </button>
+            </div>
+
+            {addMode === 'catalog' ? (
+              <>
+                <input type="text" placeholder="Filter services…" value={svcSearch} onChange={e => setSvcSearch(e.target.value)}
+                  style={{ width:'100%', border:'1px solid var(--c-border)', borderRadius:'var(--r-sm)', padding:'6px 10px', fontSize:13, background:'var(--c-bg-card)', color:'var(--c-text-primary)', marginBottom:8, boxSizing:'border-box' }} />
+                <div style={{ maxHeight:160, overflowY:'auto', border:'1px solid var(--c-border)', borderRadius:'var(--r-sm)', background:'var(--c-bg-card)', marginBottom:8 }}>
+                  {(svcSearch.trim() ? allServices.filter(s => s.name.toLowerCase().includes(svcSearch.toLowerCase())) : allServices).slice(0, 50).map(s => {
+                    const svcId = String(s.id ?? s._id);
+                    const cartItem = cart.find(item => item.type === 'catalog' && String(item.svc.id ?? item.svc._id) === svcId);
+                    return (
+                      <div key={svcId} style={{ display:'flex', alignItems:'center', gap:10, padding:'7px 12px', borderBottom:'1px solid var(--c-border-light)', background: cartItem ? 'rgba(6,64,129,0.04)' : undefined }}>
+                        <input type="checkbox" checked={!!cartItem}
+                          onChange={() => {
+                            if (cartItem) setCart(prev => prev.filter(item => !(item.type === 'catalog' && String(item.svc.id ?? item.svc._id) === svcId)));
+                            else setCart(prev => [...prev, { type:'catalog', svc:s, qty:1 }]);
+                          }}
+                          style={{ cursor:'pointer', width:15, height:15, flexShrink:0 }} />
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ fontSize:13, fontWeight: cartItem ? 600 : 400 }}>{s.name}</div>
+                          <div style={{ fontSize:11, color:'var(--c-text-muted)' }}>₹{parseFloat(s.basePrice || 0).toLocaleString('en-IN')} · {s.duration} min</div>
+                        </div>
+                        {cartItem && (
+                          <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+                            <button style={{ width:24, height:24, border:'1px solid var(--c-border)', borderRadius:4, background:'var(--c-bg-card)', cursor:'pointer', fontWeight:700 }}
+                              onClick={() => setCart(prev => prev.map(item => (item.type === 'catalog' && String(item.svc.id ?? item.svc._id) === svcId) ? {...item, qty: Math.max(1, item.qty-1)} : item))}>–</button>
+                            <span style={{ minWidth:20, textAlign:'center', fontSize:13, fontWeight:700 }}>{cartItem.qty}</span>
+                            <button style={{ width:24, height:24, border:'1px solid var(--c-border)', borderRadius:4, background:'var(--c-bg-card)', cursor:'pointer', fontWeight:700 }}
+                              onClick={() => setCart(prev => prev.map(item => (item.type === 'catalog' && String(item.svc.id ?? item.svc._id) === svcId) ? {...item, qty: item.qty+1} : item))}>+</button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {allServices.length === 0 && <div style={{ padding:12, fontSize:13, color:'var(--c-text-muted)', textAlign:'center' }}>Loading services…</div>}
+                </div>
+              </>
+            ) : (
+              <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:8 }}>
+                <input type="text" placeholder="Label (e.g. Custom bridal package requested by phone)" value={addonName} onChange={e => setAddonName(e.target.value)}
+                  style={{ width:'100%', border:'1px solid var(--c-border)', borderRadius:'var(--r-sm)', padding:'6px 10px', fontSize:13, background:'var(--c-bg-card)', color:'var(--c-text-primary)', boxSizing:'border-box' }} />
+                <div style={{ display:'flex', gap:8 }}>
+                  <input type="number" min="0" placeholder="Amount (₹)" value={addonPrice} onChange={e => setAddonPrice(e.target.value)}
+                    style={{ flex:1, border:'1px solid var(--c-border)', borderRadius:'var(--r-sm)', padding:'6px 10px', fontSize:13, background:'var(--c-bg-card)', color:'var(--c-text-primary)', boxSizing:'border-box' }} />
+                  <div style={{ display:'flex', alignItems:'center', gap:6, border:'1px solid var(--c-border)', borderRadius:'var(--r-sm)', padding:'0 8px' }}>
+                    <button style={{ width:22, height:22, border:'1px solid var(--c-border)', borderRadius:4, background:'var(--c-bg-card)', cursor:'pointer', fontWeight:700 }} onClick={() => setAddonQty(q => Math.max(1, q-1))}>–</button>
+                    <span style={{ minWidth:18, textAlign:'center', fontSize:13, fontWeight:700 }}>{addonQty}</span>
+                    <button style={{ width:22, height:22, border:'1px solid var(--c-border)', borderRadius:4, background:'var(--c-bg-card)', cursor:'pointer', fontWeight:700 }} onClick={() => setAddonQty(q => q+1)}>+</button>
+                  </div>
+                </div>
+                <button className="btn btn-outline btn-sm" style={{ alignSelf:'flex-start', display:'flex', alignItems:'center', gap:6 }}
+                  disabled={!addonName.trim() || !(parseFloat(addonPrice) >= 0)}
+                  onClick={() => {
+                    setCart(prev => [...prev, { type:'addon', name: addonName.trim(), price: parseFloat(addonPrice), qty: addonQty }]);
+                    setAddonName(''); setAddonPrice(''); setAddonQty(1);
+                  }}>
+                  <PlusCircle size={13}/> Add to Booking
+                </button>
+              </div>
+            )}
+
+            {cart.length > 0 && (
+              <div style={{ borderTop:'1px solid var(--c-border)', paddingTop:8, marginTop:4 }}>
+                {cart.map((item, i) => (
+                  <div key={i} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', fontSize:12, padding:'3px 0' }}>
+                    <span>
+                      {item.type === 'catalog' ? item.svc.name : item.name}
+                      {item.type === 'addon' && <span style={{ marginLeft:6, fontSize:10, background:'#fff3e4', color:'#c87b1a', padding:'1px 6px', borderRadius:4, fontWeight:700 }}>One-time</span>}
+                      {' '}× {item.qty}
+                    </span>
+                    <span style={{ display:'flex', alignItems:'center', gap:8 }}>
+                      <span style={{ fontWeight:600 }}>₹{fmt((item.type === 'catalog' ? item.svc.basePrice : item.price) * item.qty)}</span>
+                      <button className="btn btn-ghost btn-icon" style={{ width:20, height:20 }} onClick={() => setCart(prev => prev.filter((_, idx) => idx !== i))}><XCircle size={13} /></button>
+                    </span>
+                  </div>
+                ))}
+                <div style={{ display:'flex', justifyContent:'space-between', fontWeight:700, fontSize:13, marginTop:6, borderTop:'1px solid var(--c-border)', paddingTop:6 }}>
+                  <span>Total</span><span>₹{fmt(addonTotal)}</span>
+                </div>
+              </div>
+            )}
+          </InfoBlock>
+        )}
+
+        {/* Schedule / Payment / Notes */}
+        {customer && (
+          <InfoBlock label="Schedule & Payment">
+            <div style={{ display:'flex', gap:8, marginBottom:8 }}>
+              <input type="datetime-local" value={scheduleValue} onChange={e => setScheduleValue(e.target.value)}
+                min={toLocalInputValue(new Date(Date.now() + ONE_HOUR_MS))}
+                max={toLocalInputValue(new Date(Date.now() + ONE_MONTH_MS))}
+                style={{ flex:1, border:'1px solid var(--c-border)', borderRadius:'var(--r-sm)', padding:'6px 10px', fontSize:13, background:'var(--c-bg-card)', color:'var(--c-text-primary)' }} />
+              <select value={paymentMode} onChange={e => setPaymentMode(e.target.value)}
+                style={{ border:'1px solid var(--c-border)', borderRadius:'var(--r-sm)', padding:'6px 10px', fontSize:13, background:'var(--c-bg-card)', color:'var(--c-text-primary)' }}>
+                <option value="cod">Cash on Delivery</option>
+                <option value="online">Online</option>
+              </select>
+            </div>
+            <div style={{ fontSize:11, color:'var(--c-text-muted)', marginBottom:8 }}>Bookings must be 1 hour to 1 month out, between 8 AM–8 PM.</div>
+            <textarea placeholder="Notes (e.g. requested via phone support call)" value={notes} onChange={e => setNotes(e.target.value)} rows={2}
+              style={{ width:'100%', border:'1px solid var(--c-border)', borderRadius:'var(--r-sm)', padding:'6px 10px', fontSize:13, background:'var(--c-bg-card)', color:'var(--c-text-primary)', boxSizing:'border-box', resize:'vertical' }} />
+          </InfoBlock>
+        )}
+      </div>
+    </Modal>
   );
 }
 

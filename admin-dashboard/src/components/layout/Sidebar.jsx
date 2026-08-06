@@ -3,7 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Users, UserCog, CalendarCheck, Sparkles,
   DollarSign, Tag, Star, Bell, BarChart2, Settings, LogOut, X,
-  ShieldCheck, MessageCircle, Building2, Globe, Package, Boxes, TrendingUp, BookOpen, Inbox, Wallet, UserPlus
+  ShieldCheck, MessageCircle, Building2, Globe, Package, Boxes, TrendingUp, BookOpen, Inbox, Wallet, UserPlus, Image
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { ROLE_LABELS } from '../../data/mockData';
@@ -31,7 +31,7 @@ const NAV_SECTIONS = [
     items: [
       { path: '/earnings',  label: 'Earnings',        icon: DollarSign,     perm: 'earnings' },
       { path: '/settlements', label: 'Settlements',   icon: Wallet,         perm: 'settlements' },
-      { path: '/coupons',   label: 'Coupons',         icon: Tag,            perm: 'coupons' },
+      // { path: '/coupons',   label: 'Coupons',         icon: Tag,            perm: 'coupons' }, // Coupons hidden from nav for now — route/permission stay intact, just not linked.
       { path: '/packages',  label: 'Packages',        icon: Package,        perm: 'packages' },
       { path: '/combos',    label: 'Combos',          icon: Boxes,          perm: 'combos' },
       // Offers module hidden from nav for now — route/permission stay intact, just not linked.
@@ -58,6 +58,7 @@ const NAV_SECTIONS = [
   {
     label: 'App Content',
     items: [
+      { path: '/banners', label: 'Banners', icon: Image,   perm: 'banners' },
       { path: '/zones',  label: 'Zones',  icon: Globe,     perm: 'zones'  },
       { path: '/cities', label: 'Cities', icon: Building2, perm: 'cities' },
     ],

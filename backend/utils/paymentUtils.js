@@ -1,7 +1,7 @@
 const Razorpay = require("razorpay");
 const crypto = require("crypto");
 const logger = require("./logger");
-const { RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET } = require("../config");
+const { RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET } = require("../config");
 
 let razorpayInstance = null;
 
@@ -105,4 +105,29 @@ const initiateRefund = async (paymentId, amount = null) => {
   }
 };
 
-module.exports = { createOrder, verifySignature, fetchPayment, initiateRefund };
+/**
+ * Verify a Razorpay webhook request signature (HMAC-SHA256 over the raw request body,
+ * keyed with the webhook secret configured in the Razorpay dashboard — separate from
+ * the per-payment signature used by verifySignature above).
+ * @param {Buffer|String} rawBody - exact bytes of the request body
+ * @param {String} signature - value of the X-Razorpay-Signature header
+ * @returns {Boolean} isValid
+ */
+const verifyWebhookSignature = (rawBody, signature) => {
+  if (!RAZORPAY_WEBHOOK_SECRET) {
+    logger.error("RAZORPAY_WEBHOOK_SECRET is not configured — rejecting webhook");
+    return false;
+  }
+  try {
+    const expectedSignature = crypto
+      .createHmac("sha256", RAZORPAY_WEBHOOK_SECRET)
+      .update(rawBody)
+      .digest("hex");
+    return expectedSignature === signature;
+  } catch (error) {
+    logger.error(`Webhook signature verification error: ${error.message}`);
+    return false;
+  }
+};
+
+module.exports = { createOrder, verifySignature, verifyWebhookSignature, fetchPayment, initiateRefund };

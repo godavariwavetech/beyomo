@@ -61,4 +61,7 @@ export const endpoints = {
 
   // Global search (public, no auth)
   SEARCH: '/api/v1/search',
+
+  // App version / force-update check (public, no auth, checked at splash)
+  APP_VERSION: '/api/v1/app-version',
 };

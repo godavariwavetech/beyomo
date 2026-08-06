@@ -1,4 +1,5 @@
 const { Op } = require("sequelize");
+const { sequelize } = require("../../../../utils/dbconnect");
 const ServicePackage = require("../../models/package.model");
 const Service = require("../../../services/models/service.model");
 const AppError = require("../../../../utils/errorHandlers/appError");
@@ -17,7 +18,23 @@ const activeWhere = () => ({
   }],
 });
 
-// Enrich a fixed package — resolve service details from DB
+// Enrich a fixed package — resolve service details from an already-fetched map of
+// {id: Service}, so callers doing this for many packages at once make one shared
+// lookup query instead of firing one query per package.
+const enrichFixedFromMap = (pkg, serviceMap) => {
+  const plain = pkg.get ? pkg.get({ plain: true }) : { ...pkg };
+  if (plain.packageType !== "fixed") return plain;
+  plain.services = (plain.services ?? []).map((s) => ({
+    ...s,
+    name: serviceMap[s.serviceId]?.name ?? s.name,
+    price: parseFloat(serviceMap[s.serviceId]?.basePrice ?? s.price ?? 0),
+    duration: serviceMap[s.serviceId]?.duration ?? s.duration,
+    image: serviceMap[s.serviceId]?.image ?? s.image,
+  }));
+  return plain;
+};
+
+// Single-package version (e.g. getById) — one query is fine when there's only one package.
 const enrichFixed = async (pkg) => {
   const plain = pkg.get ? pkg.get({ plain: true }) : { ...pkg };
   if (plain.packageType !== "fixed") return plain;
@@ -28,22 +45,30 @@ const enrichFixed = async (pkg) => {
     attributes: ["id", "name", "basePrice", "duration", "image"],
   });
   const map = Object.fromEntries(dbServices.map((s) => [s.id, s]));
-  plain.services = (plain.services ?? []).map((s) => ({
-    ...s,
-    name: map[s.serviceId]?.name ?? s.name,
-    price: parseFloat(map[s.serviceId]?.basePrice ?? s.price ?? 0),
-    duration: map[s.serviceId]?.duration ?? s.duration,
-    image: map[s.serviceId]?.image ?? s.image,
-  }));
-  return plain;
+  return enrichFixedFromMap(plain, map);
 };
 
 const listActive = async (cityId) => {
   const pkgs = await ServicePackage.findAll({
     where: activeWhere(),
-    order: [["createdAt", "DESC"]],
+    order: [["sortOrder", "ASC"], ["createdAt", "DESC"]],
   });
-  const all = await Promise.all(pkgs.map(enrichFixed));
+
+  // Batch-resolve every fixed package's service details in one query instead of
+  // one query per package (which was blowing through the DB connection pool).
+  const allServiceIds = [...new Set(
+    pkgs.flatMap((pkg) => {
+      const plain = pkg.get({ plain: true });
+      return plain.packageType === "fixed" ? (plain.services ?? []).map((s) => s.serviceId).filter(Boolean) : [];
+    })
+  )];
+  const dbServices = allServiceIds.length
+    ? await Service.findAll({ where: { id: allServiceIds }, attributes: ["id", "name", "basePrice", "duration", "image"] })
+    : [];
+  const serviceMap = Object.fromEntries(dbServices.map((s) => [s.id, s]));
+
+  const all = pkgs.map((pkg) => enrichFixedFromMap(pkg, serviceMap));
+
   // Filter client-side: package with empty/null cityIds is global; otherwise check if cityId is in the array
   if (!cityId) return all;
   const cid = Number(cityId);
@@ -62,7 +87,7 @@ const getById = async (id) => {
 const listAll = async ({ page = 1, limit = 20, cityIds } = {}) => {
   // cityIds is a JSON array column (empty/null = available in all cities), so filtering
   // can't be a SQL where-clause — fetch all, filter, then paginate in application code.
-  const rows = await ServicePackage.findAll({ order: [["createdAt", "DESC"]] });
+  const rows = await ServicePackage.findAll({ order: [["sortOrder", "ASC"], ["createdAt", "DESC"]] });
   let data = rows.map((r) => r.get({ plain: true }));
 
   if (cityIds?.length) {
@@ -76,6 +101,20 @@ const listAll = async ({ page = 1, limit = 20, cityIds } = {}) => {
   const total = data.length;
   const offset = (page - 1) * limit;
   return { total, data: data.slice(offset, offset + limit) };
+};
+
+// Bulk-persist a new display order within a single packageType ('fixed' or
+// 'flexible' are ordered independently, matching how each is a separate admin
+// list). `orderedIds` is the full list of package IDs in the order they
+// should appear; index becomes sortOrder.
+const reorderPackages = async (packageType, orderedIds) => {
+  return sequelize.transaction(async (t) => {
+    await Promise.all(
+      orderedIds.map((id, index) =>
+        ServicePackage.update({ sortOrder: index }, { where: { id, packageType }, transaction: t })
+      )
+    );
+  });
 };
 
 const createPackage = async (data) => ServicePackage.create(data);
@@ -99,4 +138,4 @@ const validateForBooking = async (packageId) => {
   return pkg;
 };
 
-module.exports = { listActive, getById, listAll, createPackage, updatePackage, deletePackage, validateForBooking };
+module.exports = { listActive, getById, listAll, createPackage, updatePackage, deletePackage, validateForBooking, reorderPackages };

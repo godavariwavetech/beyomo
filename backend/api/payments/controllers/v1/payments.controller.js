@@ -1,6 +1,8 @@
 const catchAsync = require("../../../../utils/errorHandlers/catchAsync");
 const AppError = require("../../../../utils/errorHandlers/appError");
 const paymentsService = require("../../services/v1/payments.service");
+const { verifyWebhookSignature } = require("../../../../utils/paymentUtils");
+const logger = require("../../../../utils/logger");
 const Joi = require("joi");
 
 const createOrderSchema = Joi.object({
@@ -47,4 +49,20 @@ const getHistory = catchAsync(async (req, res, next) => {
   res.status(200).json({ status: true, data: result.data, pagination: result.pagination });
 });
 
-module.exports = { createOrder, verifyPayment, getHistory };
+/**
+ * POST /api/v1/payments/webhook
+ * Called directly by Razorpay's servers (not the app) — no user auth, verified instead
+ * by an HMAC signature over the raw request body.
+ */
+const webhook = catchAsync(async (req, res, next) => {
+  const signature = req.get("X-Razorpay-Signature");
+  if (!signature || !verifyWebhookSignature(req.rawBody, signature)) {
+    logger.error("Rejected Razorpay webhook: invalid or missing signature");
+    return next(new AppError("Invalid signature", 400));
+  }
+
+  await paymentsService.handleWebhookEvent(req.body.event, req.body.payload);
+  res.status(200).json({ status: true });
+});
+
+module.exports = { createOrder, verifyPayment, getHistory, webhook };

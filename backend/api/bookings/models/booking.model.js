@@ -6,7 +6,9 @@ const Booking = sequelize.define("Booking", {
   bookingCode: { type: DataTypes.STRING(30), allowNull: true, unique: true },
   userId: { type: DataTypes.INTEGER, allowNull: false },
   partnerId: { type: DataTypes.INTEGER, allowNull: true },
-  serviceId: { type: DataTypes.INTEGER, allowNull: false },
+  // Nullable because admin-created bookings can consist entirely of custom add-on
+  // line items with no real catalog service (see createdByAdminId below).
+  serviceId: { type: DataTypes.INTEGER, allowNull: true },
   services: { type: DataTypes.JSON, allowNull: true },
   addressLabel: { type: DataTypes.STRING(50), allowNull: true },
   addressLine1: { type: DataTypes.STRING(255), allowNull: false },
@@ -30,7 +32,16 @@ const Booking = sequelize.define("Booking", {
   couponCode: { type: DataTypes.STRING(50), allowNull: true },
   couponId:   { type: DataTypes.INTEGER, allowNull: true },
   offerId:    { type: DataTypes.INTEGER, allowNull: true },
+  // Single-package bookings (the common case): packageId/packageQty as before.
   packageId:  { type: DataTypes.INTEGER, allowNull: true },
+  // How many copies of the package/combo were booked — mirrors per-service qty
+  packageQty: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
+  // Multi-package bookings: [{packageId, title, qty, price, originalPrice}], one entry
+  // per distinct package in the cart, each keeping its own price/discount intact.
+  // Null/empty for ordinary single-package (or no-package) bookings — packageId/packageQty
+  // above remain the source of truth for those. When populated, this is authoritative
+  // and packageId is left null (there's no single package to point it at).
+  packages: { type: DataTypes.JSON, allowNull: true },
   paymentStatus: { type: DataTypes.ENUM("pending", "paid", "refunded"), defaultValue: "pending" },
   paymentMode: { type: DataTypes.ENUM("online", "cod"), allowNull: false, defaultValue: "online" },
   paymentId: { type: DataTypes.INTEGER, allowNull: true }, // no FK â€” circular dep with payments
@@ -55,6 +66,9 @@ const Booking = sequelize.define("Booking", {
   // approved apart from rejected without guessing from totals. Reset to null whenever
   // a new proposal is sent.
   lastServiceUpdateDecision: { type: DataTypes.ENUM("approved", "rejected"), allowNull: true },
+  // Set when a support/admin agent creates the booking on the customer's behalf
+  // (e.g. a phone call requesting a one-time service) rather than the user app.
+  createdByAdminId: { type: DataTypes.INTEGER, allowNull: true },
 }, {
   timestamps: true,
   tableName: "bookings",

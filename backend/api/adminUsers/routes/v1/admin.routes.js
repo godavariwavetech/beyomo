@@ -6,7 +6,7 @@ const multer = require("multer");
 const adminAuthenticate = require("../../../../utils/adminAuthenticate");
 const config = require("../../../../config");
 
-const uploadsDir = path.join(__dirname, "../../../../uploads");
+const uploadsDir = path.join(__dirname, "../../../../upload_files");
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
 const publicDir = path.join(__dirname, "../../../../public");
@@ -48,8 +48,9 @@ const {
   listCities, createCity, updateCity, deleteCity,
   listUsers, getUserById, updateUserStatus, deleteUser, createUser,
   listPartners, getPartnerById, updatePartnerStatus, createPartner, updatePartner,
-  listCategories, createCategory, updateCategory, deleteCategory,
-  listServices, createService, updateService, deleteService, patchService, patchServiceCity,
+  listCategories, createCategory, updateCategory, deleteCategory, reorderCategories,
+  listServices, createService, updateService, deleteService, patchService, patchServiceCity, reorderServices,
+  createBookingForCustomer,
   listBookings, getBookingDetail, assignPartner, cancelBooking, rescheduleBooking, editBookingServices,
   listPartnerBalances, getPartnerLedger, recordSettlement, voidLedgerEntry,
   listCoupons, createCoupon, updateCoupon, deleteCoupon, getReferral, updateReferral,
@@ -66,7 +67,7 @@ const {
 // File Upload
 router.post("/upload", adminAuthenticate(), upload.single("image"), (req, res) => {
   if (!req.file) return res.status(400).json({ status: false, message: "No file uploaded" });
-  res.status(200).json({ status: true, url: `${config.PUBLIC_BASE_URL}/uploads/${req.file.filename}` });
+  res.status(200).json({ status: true, url: `${config.PUBLIC_BASE_URL}/${req.file.filename}` });
 });
 
 // Agreement PDF upload/status
@@ -101,18 +102,21 @@ router.patch("/partners/:id", adminAuthenticate(["super_admin", "admin", "manage
 // Service Categories
 router.get("/services/categories", adminAuthenticate(), listCategories);
 router.post("/services/categories", adminAuthenticate(["super_admin", "admin", "manager"]), createCategory);
+router.patch("/services/categories/reorder", adminAuthenticate(["super_admin", "admin", "manager"]), reorderCategories);
 router.put("/services/categories/:id", adminAuthenticate(["super_admin", "admin", "manager"]), updateCategory);
 router.delete("/services/categories/:id", adminAuthenticate(["super_admin", "admin"]), deleteCategory);
 
 // Services
 router.get("/services", adminAuthenticate(), listServices);
 router.post("/services", adminAuthenticate(["super_admin", "admin", "manager"]), createService);
+router.patch("/services/reorder", adminAuthenticate(["super_admin", "admin", "manager"]), reorderServices);
 router.put("/services/:id", adminAuthenticate(["super_admin", "admin", "manager"]), updateService);
 router.patch("/services/:id", adminAuthenticate(["super_admin", "admin", "manager"]), patchService);
 router.patch("/services/:id/cities/:cityId", adminAuthenticate(["super_admin", "admin", "manager"]), patchServiceCity);
 router.delete("/services/:id", adminAuthenticate(["super_admin", "admin"]), deleteService);
 
 // Bookings
+router.post("/bookings", adminAuthenticate(["super_admin", "admin", "manager", "support"]), createBookingForCustomer);
 router.get("/bookings", adminAuthenticate(), listBookings);
 router.get("/bookings/:id", adminAuthenticate(), getBookingDetail);
 router.patch("/bookings/:id/assign", adminAuthenticate(["super_admin", "admin", "manager"]), assignPartner);

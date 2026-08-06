@@ -5,6 +5,7 @@ import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import messaging from '@react-native-firebase/messaging';
 
 import SplashScreen from '../screens/Splash/SplashScreen';
+import ForceUpdateScreen from '../screens/ForceUpdate/ForceUpdateScreen';
 import LoginScreen from '../screens/Auth/LoginScreen';
 import OTPScreen from '../screens/Auth/OTPScreen';
 import RegisterScreen from '../screens/Auth/RegisterScreen';
@@ -69,6 +70,7 @@ const AppNavigation = () => {
     <NavigationContainer ref={navigationRef}>
       <Stack.Navigator screenOptions={{headerShown: false}}>
         <Stack.Screen name="Splash" component={SplashScreen} />
+        <Stack.Screen name="ForceUpdate" component={ForceUpdateScreen} options={{gestureEnabled: false}} />
         <Stack.Screen name="CitySelector" component={CitySelectorScreen} />
         <Stack.Screen name="Login" component={LoginScreen} />
         <Stack.Screen name="OTP" component={OTPScreen} />

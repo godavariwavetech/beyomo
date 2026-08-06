@@ -9,6 +9,7 @@ import UserReducer from './reducers/user';
 import NotificationsReducer from './reducers/notifications';
 import PaymentsReducer from './reducers/payments';
 import CityReducer from './reducers/city';
+import CartReducer from './reducers/cart';
 
 const authPersistConfig = {
   key: 'auth',
@@ -34,6 +35,7 @@ export const store = configureStore({
     Notifications: NotificationsReducer,
     Payments: PaymentsReducer,
     City: persistedCity,
+    Cart: CartReducer,
   },
   middleware: getDefaultMiddleware =>
     getDefaultMiddleware({

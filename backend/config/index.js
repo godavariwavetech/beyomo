@@ -3,7 +3,7 @@ require("dotenv").config();
 module.exports = {
   NODE_ENV: process.env.NODE_ENV || "development",
   PORT: process.env.PORT || 3000,
-  PUBLIC_BASE_URL: process.env.PUBLIC_BASE_URL || "https://beyomo.in:3090",
+  PUBLIC_BASE_URL: process.env.PUBLIC_BASE_URL || "https://beyomo.com:3099/upload_files",
 
   // MySQL
   DB_HOST: process.env.DB_HOST || "localhost",
@@ -17,10 +17,11 @@ module.exports = {
   JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN || "7d",
   ADMIN_JWT_EXPIRES_IN: process.env.ADMIN_JWT_EXPIRES_IN || "1d",
 
-  // MSG91
-  MSG91_AUTH_KEY: process.env.MSG91_AUTH_KEY || "",
-  MSG91_TEMPLATE_ID: process.env.MSG91_TEMPLATE_ID || "",
-  MSG91_SENDER_ID: process.env.MSG91_SENDER_ID || "BEYOMO",
+  // SunsTechIT SMS
+  SUNSTECH_SMS_KEY: process.env.SUNSTECH_SMS_KEY || "",
+  SUNSTECH_SMS_ROUTE_ID: process.env.SUNSTECH_SMS_ROUTE_ID || "13",
+  SUNSTECH_SMS_SENDER_ID: process.env.SUNSTECH_SMS_SENDER_ID || "GDWOTP",
+  SUNSTECH_SMS_TEMPLATE_ID: process.env.SUNSTECH_SMS_TEMPLATE_ID || "",
   MOCK_SMS: process.env.MOCK_SMS === "true",
 
   // Firebase
@@ -33,6 +34,7 @@ module.exports = {
   // Razorpay
   RAZORPAY_KEY_ID: process.env.RAZORPAY_KEY_ID || "",
   RAZORPAY_KEY_SECRET: process.env.RAZORPAY_KEY_SECRET || "",
+  RAZORPAY_WEBHOOK_SECRET: process.env.RAZORPAY_WEBHOOK_SECRET || "",
 
   // Logs
   LOGS_PATH: process.env.LOGS_PATH || "./logs/",

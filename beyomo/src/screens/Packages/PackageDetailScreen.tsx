@@ -14,9 +14,12 @@ import {
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import LinearGradient from 'react-native-linear-gradient';
+import {useDispatch} from 'react-redux';
 import {fonts} from '../../config/theme';
 import api from '../../utils/api';
 import {endpoints} from '../../config/config';
+import {addPackageToCart} from '../../redux/reducers/cart';
+import CartBar from '../../components/CartBar/CartBar';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
@@ -56,12 +59,14 @@ interface PickableService {
 
 const PackageDetailScreen = ({navigation, route}: {navigation: any; route: any}) => {
   const insets = useSafeAreaInsets();
+  const dispatch = useDispatch<any>();
   const pkg: Package = route?.params?.package;
 
   const [fullPkg, setFullPkg] = useState<Package | null>(pkg ?? null);
   const [loading, setLoading] = useState(!pkg);
   const [allServices, setAllServices] = useState<PickableService[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [packageQty, setPackageQty] = useState(1);
 
   useEffect(() => {
     if (!fullPkg && route?.params?.packageId) {
@@ -75,9 +80,22 @@ const PackageDetailScreen = ({navigation, route}: {navigation: any; route: any})
     }
   }, []);
 
-  // For flexible packages, fetch services to pick from
+  // For flexible packages, the pickable services come from the admin's curated
+  // "Eligible Services" list (in the order the admin set) when one was configured.
+  // An empty list is the admin's explicit "entire catalog" choice, so fall back
+  // to fetching the (optionally category-restricted) catalog in that case.
   useEffect(() => {
     if (fullPkg?.packageType !== 'flexible') return;
+    if (fullPkg.services && fullPkg.services.length > 0) {
+      setAllServices(fullPkg.services.map(s => ({
+        id: s.serviceId,
+        name: s.name,
+        basePrice: s.price,
+        duration: s.duration,
+        image: s.image,
+      })));
+      return;
+    }
     const url = fullPkg.categoryId
       ? `${endpoints.SERVICES}?categoryId=${fullPkg.categoryId}&limit=50`
       : `${endpoints.SERVICES}?limit=50`;
@@ -121,28 +139,26 @@ const PackageDetailScreen = ({navigation, route}: {navigation: any; route: any})
   };
 
   const handleBook = () => {
-    let servicesToBook: any[];
+    let packageServices: any[];
 
     if (fullPkg.packageType === 'fixed') {
       if (!fullPkg.services || fullPkg.services.length === 0) {
         Alert.alert('No services', 'This package has no services configured.');
         return;
       }
-      servicesToBook = (fullPkg.services ?? []).map(s => ({
+      packageServices = (fullPkg.services ?? []).map(s => ({
         id: s.serviceId,
         name: s.name,
         price: s.price,
         duration: s.duration,
         image: s.image,
-        qty: 1,
-        isPackageItem: true,
       }));
     } else {
       if (selectedIds.size < requiredCount) {
         Alert.alert('Select services', `Please select ${requiredCount} service${requiredCount > 1 ? 's' : ''} to continue.`);
         return;
       }
-      servicesToBook = allServices
+      packageServices = allServices
         .filter(s => selectedIds.has(s.id))
         .map(s => ({
           id: s.id,
@@ -150,16 +166,22 @@ const PackageDetailScreen = ({navigation, route}: {navigation: any; route: any})
           price: s.basePrice,
           duration: s.duration,
           image: s.image,
-          qty: 1,
-          isPackageItem: true,
         }));
     }
 
-    navigation.navigate('AddressPayment', {
-      services: servicesToBook,
+    dispatch(addPackageToCart({
       packageId: fullPkg.id,
-      packagePrice: fullPkg.price,
       packageTitle: fullPkg.title,
+      packagePrice: fullPkg.price,
+      packageOriginalPrice: fullPkg.originalPrice ?? fullPkg.price,
+      packageType: fullPkg.packageType,
+      qty: packageQty,
+      services: packageServices,
+    }));
+    // Explicitly clear these so a stale legacy single-flow visit to this screen
+    // (services/packageId params from before) can't leak into cart mode.
+    navigation.navigate('AddressPayment', {
+      services: undefined, packageId: undefined, packagePrice: undefined, packageTitle: undefined, offerId: undefined,
     });
   };
 
@@ -264,7 +286,7 @@ const PackageDetailScreen = ({navigation, route}: {navigation: any; route: any})
                     <View style={styles.serviceInfo}>
                       <Text style={styles.serviceName}>{svc.name}</Text>
                       <Text style={styles.serviceMeta}>
-                        {svc.duration ? `${svc.duration} min · ` : ''}₹{Math.round(svc.basePrice)}
+                        {svc.duration ? `${svc.duration} min · ` : ''}Starts at ₹{Math.round(svc.basePrice)}
                       </Text>
                     </View>
                     <View style={[styles.checkCircle, selected && styles.checkCircleActive]}>
@@ -309,23 +331,44 @@ const PackageDetailScreen = ({navigation, route}: {navigation: any; route: any})
         </View>
       )}
 
+      {/* ── Quantity stepper — how many copies of this package/combo ── */}
+      <View style={styles.qtyBar}>
+        <Text style={styles.qtyLabel}>Quantity</Text>
+        <View style={styles.qtyStepper}>
+          <TouchableOpacity
+            style={styles.qtyStepBtn}
+            activeOpacity={0.7}
+            onPress={() => setPackageQty(q => Math.max(1, q - 1))}>
+            <Ionicons name="remove" size={sw(16)} color="#105641" />
+          </TouchableOpacity>
+          <Text style={styles.qtyCount}>{packageQty}</Text>
+          <TouchableOpacity
+            style={styles.qtyStepBtn}
+            activeOpacity={0.7}
+            onPress={() => setPackageQty(q => q + 1)}>
+            <Ionicons name="add" size={sw(16)} color="#105641" />
+          </TouchableOpacity>
+        </View>
+      </View>
+
       {/* ── Sticky Book Now button ── */}
       <View style={[styles.footer, {paddingBottom: insets.bottom + sw(12)}]}>
         <View style={styles.footerPriceSummary}>
           <Text style={styles.footerLabel}>Package Total</Text>
-          <Text style={styles.footerPrice}>₹{Math.round(fullPkg.price)}</Text>
+          <Text style={styles.footerPrice}>₹{Math.round(fullPkg.price * packageQty)}</Text>
         </View>
         <TouchableOpacity activeOpacity={0.88} onPress={handleBook} style={styles.bookBtn}>
           <LinearGradient colors={['#105641', '#012823']} style={styles.bookBtnGradient}>
             <Text style={styles.bookBtnText}>
               {fullPkg.packageType === 'flexible' && selectedIds.size < requiredCount
                 ? `Pick ${requiredCount - selectedIds.size} more`
-                : 'Book Now'}
+                : 'Add to Cart'}
             </Text>
-            <Ionicons name="arrow-forward" size={sw(16)} color="#FDD77A" />
+            <Ionicons name="cart-outline" size={sw(16)} color="#FDD77A" />
           </LinearGradient>
         </TouchableOpacity>
       </View>
+      <CartBar navigation={navigation} />
     </View>
   );
 };
@@ -524,14 +567,55 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
 
+  qtyBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: sw(16),
+    paddingTop: sw(12),
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#F0EDE8',
+  },
+  qtyLabel: {
+    fontFamily: fonts.title,
+    fontSize: sw(13),
+    fontWeight: '600',
+    color: '#171816',
+  },
+  qtyStepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: sw(14),
+    borderWidth: 1,
+    borderColor: '#E0DCD4',
+    borderRadius: sw(20),
+    paddingHorizontal: sw(6),
+    paddingVertical: sw(4),
+  },
+  qtyStepBtn: {
+    width: sw(26),
+    height: sw(26),
+    borderRadius: sw(13),
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(16,86,65,0.08)',
+  },
+  qtyCount: {
+    fontFamily: fonts.title,
+    fontSize: sw(14),
+    fontWeight: '700',
+    color: '#171816',
+    minWidth: sw(18),
+    textAlign: 'center',
+  },
+
   footer: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: sw(16),
     paddingTop: sw(12),
     backgroundColor: '#FFFFFF',
-    borderTopWidth: 1,
-    borderTopColor: '#F0EDE8',
     gap: sw(12),
   },
   footerPriceSummary: {flex: 1},

@@ -16,6 +16,7 @@ import {useSelector} from 'react-redux';
 import {fonts} from '../../config/theme';
 import api from '../../utils/api';
 import {endpoints} from '../../config/config';
+import CartBar from '../../components/CartBar/CartBar';
 import type {RootState} from '../../redux/store';
 
 const {width} = Dimensions.get('window');
@@ -52,7 +53,9 @@ const PackageListingScreen = ({navigation, route}: Props) => {
       .finally(() => setLoading(false));
   }, [selectedCity?.id, packageType]);
 
-  const filtered = packages.filter(p => p.packageType === packageType);
+  const filtered = packages
+    .filter(p => p.packageType === packageType)
+    .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
 
   return (
     <View style={styles.root}>
@@ -91,6 +94,9 @@ const PackageListingScreen = ({navigation, route}: Props) => {
                       {(combo.title ?? '').toUpperCase()}
                     </Text>
                   </View>
+                  {combo.image ? (
+                    <Image source={{uri: combo.image}} style={styles.comboImage} resizeMode="cover" />
+                  ) : null}
                   <View style={styles.comboPriceBand}>
                     <Text style={styles.comboPriceText}>₹{Math.round(combo.price)}</Text>
                   </View>
@@ -161,6 +167,7 @@ const PackageListingScreen = ({navigation, route}: Props) => {
           )}
         </ScrollView>
       )}
+      <CartBar navigation={navigation} />
     </View>
   );
 };
@@ -202,6 +209,10 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     textAlign: 'center',
     letterSpacing: 0.2,
+  },
+  comboImage: {
+    width: '100%',
+    height: sw(70),
   },
   comboPriceBand: {
     backgroundColor: '#137A54',

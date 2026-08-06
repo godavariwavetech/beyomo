@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit2, Power, Search, Users, ShoppingBag, DollarSign, Trash2, FolderOpen, Upload, RefreshCw, MapPin, CheckCircle, XCircle } from 'lucide-react';
+import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
+import { Plus, Edit2, Power, Search, Users, ShoppingBag, DollarSign, Trash2, FolderOpen, Upload, RefreshCw, MapPin, CheckCircle, XCircle, GripVertical, ListOrdered } from 'lucide-react';
 import { Badge, StarRating } from '../components/common/Badge';
 import Modal from '../components/common/Modal';
 import RevenueSplitFields from '../components/common/RevenueSplitFields';
@@ -208,7 +209,7 @@ const ServiceCityEditor = ({ mappings, cities, onToggle, onAdd, onRemove }) => {
 export default function Services() {
   const { showToast } = useAuth();
   const { fetchList: fetchServices, action: svcAction } = useServices();
-  const { fetchList: fetchCats, create: catCreate, update: catUpdate, remove: catRemove } = useCategories();
+  const { fetchList: fetchCats, create: catCreate, update: catUpdate, remove: catRemove, action: catAction } = useCategories();
   const { cityId, cities } = useCityFilter();
   const [services, setServices]       = useState([]);
   const [cats, setCatList]            = useState([]);
@@ -222,6 +223,7 @@ export default function Services() {
   const [editingCat, setEditingCat]   = useState(null);
   const [catForm, setCatForm]         = useState({});
   const [seedingCats, setSeedingCats] = useState(false);
+  const [reorderingSvcs, setReorderingSvcs] = useState(false);
 
   const loadServices = () => {
     const params = cityId ? { cityId, limit: 1000 } : { limit: 1000 };
@@ -256,6 +258,28 @@ export default function Services() {
     (!search || s.name.toLowerCase().includes(search.toLowerCase()) || (s.category ?? '').toLowerCase().includes(search.toLowerCase()))
     && (catFilter === 'all' || s.category === catFilter)
   );
+
+  const handleSvcDragEnd = async (result) => {
+    if (!result.destination || result.destination.index === result.source.index) return;
+    const catObj = cats.find(c => c.name === catFilter);
+    if (!catObj) return;
+    const scoped = services.filter(s => s.category === catFilter);
+    const reorderedScoped = Array.from(scoped);
+    const [moved] = reorderedScoped.splice(result.source.index, 1);
+    reorderedScoped.splice(result.destination.index, 0, moved);
+
+    let i = 0;
+    setServices(services.map(s => (s.category === catFilter ? reorderedScoped[i++] : s)));
+
+    const res = await svcAction('patch', '/api/v1/admin/services/reorder', {
+      categoryId: catObj.id,
+      order: reorderedScoped.map(s => s.id),
+    });
+    if (!res.ok) {
+      showToast(res.error ?? 'Failed to save service order.', 'danger');
+      loadServices();
+    }
+  };
 
   const toggleStatus = async (id) => {
     const svc = services.find(s => s.id === id);
@@ -304,6 +328,19 @@ export default function Services() {
       setCatList(prev => prev.filter(c => String(c._id ?? c.id) !== String(id)));
       showToast('Category deleted.', 'danger');
     } else showToast(res.error ?? 'Failed to delete.', 'danger');
+  };
+
+  const handleCatDragEnd = async (result) => {
+    if (!result.destination || result.destination.index === result.source.index) return;
+    const reordered = Array.from(cats);
+    const [moved] = reordered.splice(result.source.index, 1);
+    reordered.splice(result.destination.index, 0, moved);
+    setCatList(reordered);
+    const res = await catAction('patch', '/api/v1/admin/services/categories/reorder', { order: reordered.map(c => c._id ?? c.id) });
+    if (!res.ok) {
+      showToast(res.error ?? 'Failed to save category order.', 'danger');
+      fetchCats(cityId ? { cityId, limit: 1000 } : { limit: 1000 }).then(r => { if (r.ok) setCatList(r.data?.data ?? []); });
+    }
   };
 
   const toggleCatStatus = async (cat) => {
@@ -493,9 +530,18 @@ export default function Services() {
               <Search size={16} />
               <input className="search-input" placeholder="Search services…" value={search} onChange={e => setSearch(e.target.value)} />
             </div>
-            <select className="filter-select" value={catFilter} onChange={e => setCat(e.target.value)}>
+            <select className="filter-select" value={catFilter} onChange={e => { setCat(e.target.value); setReorderingSvcs(false); }}>
               {categories.map(c => <option key={c} value={c}>{c === 'all' ? 'All Categories' : c}</option>)}
             </select>
+            {catFilter !== 'all' && (
+              <button
+                className={`btn btn-sm ${reorderingSvcs ? 'btn-primary' : 'btn-outline'}`}
+                onClick={() => { setSearch(''); setReorderingSvcs(r => !r); }}
+                style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+              >
+                <ListOrdered size={14}/> {reorderingSvcs ? 'Done Reordering' : 'Reorder'}
+              </button>
+            )}
             <button className="btn btn-outline btn-sm" onClick={() => { setMngCats(true); setEditingCat(null); setCatForm({ cityIds: [], adminPercent: 20, partnerPercent: 80, gstPercent: 5 }); }} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <FolderOpen size={14}/> Categories
             </button>
@@ -505,6 +551,49 @@ export default function Services() {
           </div>
         </div>
 
+        {reorderingSvcs ? (
+          <div style={{ padding: 20 }}>
+            <div className="form-hint" style={{ marginBottom: 12 }}>
+              Drag to set the order these services appear in "{catFilter}" on the app and website.
+            </div>
+            <DragDropContext onDragEnd={handleSvcDragEnd}>
+              <Droppable droppableId="services-reorder-list">
+                {(dropProvided) => (
+                  <div ref={dropProvided.innerRef} {...dropProvided.droppableProps}>
+                    {services.filter(s => s.category === catFilter).map((svc, index) => (
+                      <Draggable key={svc.id} draggableId={String(svc.id)} index={index}>
+                        {(dragProvided, dragSnapshot) => (
+                          <div
+                            ref={dragProvided.innerRef}
+                            {...dragProvided.draggableProps}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px',
+                              border: '1px solid var(--c-border)', borderRadius: 'var(--r-md)', marginBottom: 8,
+                              background: dragSnapshot.isDragging ? 'var(--c-border-light)' : '#fff',
+                              ...dragProvided.draggableProps.style,
+                            }}
+                          >
+                            <span {...dragProvided.dragHandleProps} title="Drag to reorder" style={{ cursor: 'grab', color: 'var(--c-text-muted)', display: 'flex', flexShrink: 0 }}>
+                              <GripVertical size={16} />
+                            </span>
+                            {svc.image ? (
+                              <img src={svc.image} alt={svc.name} style={{ width: 36, height: 36, objectFit: 'cover', borderRadius: 6, flexShrink: 0 }} />
+                            ) : (
+                              <span style={{ fontSize: 20, flexShrink: 0 }}>{svc.icon}</span>
+                            )}
+                            <div style={{ flex: 1, minWidth: 0, fontWeight: 600, fontSize: 13 }}>{svc.name}</div>
+                            <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--c-text-secondary)' }}>₹{svc.basePrice.toLocaleString()}</div>
+                          </div>
+                        )}
+                      </Draggable>
+                    ))}
+                    {dropProvided.placeholder}
+                  </div>
+                )}
+              </Droppable>
+            </DragDropContext>
+          </div>
+        ) : (
         <div className="form-grid form-grid-3" style={{ padding: 20 }}>
           {filtered.map(svc => (
             <div key={svc.id} style={{
@@ -589,6 +678,7 @@ export default function Services() {
             </div>
           ))}
         </div>
+        )}
       </div>
 
       {/* Edit Service Modal */}
@@ -729,10 +819,23 @@ export default function Services() {
             <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--c-text-secondary)', fontSize: 14 }}>
               No categories yet. Add one above or click "Seed Default Categories".
             </div>
-          ) : cats.map(c => {
+          ) : (
+            <div className="form-hint" style={{ marginBottom: 8 }}>Drag <GripVertical size={11} style={{ verticalAlign: -2 }} /> to reorder — this sets the display order on the app and website.</div>
+          )}
+          {cats.length > 0 && (
+          <DragDropContext onDragEnd={handleCatDragEnd}>
+            <Droppable droppableId="categories-list">
+              {(dropProvided) => (
+                <div ref={dropProvided.innerRef} {...dropProvided.droppableProps}>
+                  {cats.map((c, index) => {
             const isActive = c.isActive ?? true;
             return (
-              <div key={c._id ?? c.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid var(--c-border-light)', opacity: isActive ? 1 : 0.6 }}>
+              <Draggable key={c._id ?? c.id} draggableId={String(c._id ?? c.id)} index={index}>
+                {(dragProvided, dragSnapshot) => (
+              <div ref={dragProvided.innerRef} {...dragProvided.draggableProps} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid var(--c-border-light)', opacity: isActive ? 1 : 0.6, background: dragSnapshot.isDragging ? 'var(--c-border-light)' : 'transparent', ...dragProvided.draggableProps.style }}>
+                <span {...dragProvided.dragHandleProps} title="Drag to reorder" style={{ cursor: 'grab', color: 'var(--c-text-muted)', display: 'flex', flexShrink: 0 }}>
+                  <GripVertical size={16} />
+                </span>
                 {c.image ? (
                   <img src={c.image} alt={c.name} style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 8, flexShrink: 0 }} />
                 ) : (
@@ -783,8 +886,16 @@ export default function Services() {
                 <button className="btn btn-ghost btn-icon" title="Edit" onClick={() => { setEditingCat(c); setCatForm({ name: c.name, description: c.description || '', image: c.image || '', cityIds: c.cityIds ?? [], adminPercent: parseFloat(c.adminPercent ?? 20), partnerPercent: parseFloat(c.partnerPercent ?? 80), gstPercent: parseFloat(c.gstPercent ?? 5), showOnHome: c.showOnHome ?? false }); }}><Edit2 size={14}/></button>
                 <button className="btn btn-ghost btn-icon" title="Delete" style={{ color: 'var(--c-danger)' }} onClick={() => deleteCat(c._id ?? c.id)}><Trash2 size={14}/></button>
               </div>
+                )}
+              </Draggable>
             );
-          })}
+                  })}
+                  {dropProvided.placeholder}
+                </div>
+              )}
+            </Droppable>
+          </DragDropContext>
+          )}
         </div>
       </Modal>
     </div>

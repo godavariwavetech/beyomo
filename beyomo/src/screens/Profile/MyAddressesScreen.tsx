@@ -190,10 +190,14 @@ const MyAddressesScreen = ({navigation}: any) => {
       isDefault: form.isDefault,
     };
     if (form.lat != null) { payload.lat = form.lat; payload.lng = form.lng; }
-    if (editAddr) {
-      await dispatch(updateAddress({addressId: editAddr._id ?? editAddr.id, ...payload}));
-    } else {
-      await dispatch(addAddress(payload));
+    const result = editAddr
+      ? await dispatch(updateAddress({addressId: editAddr._id ?? editAddr.id, ...payload}))
+      : await dispatch(addAddress(payload));
+
+    const rejected = editAddr ? updateAddress.rejected.match(result) : addAddress.rejected.match(result);
+    if (rejected) {
+      Alert.alert('Error', (result.payload as string) ?? 'Failed to save address.');
+      return;
     }
     setShowModal(false);
     dispatch(fetchProfile());

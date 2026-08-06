@@ -14,14 +14,63 @@ const City = require("../../../cities/models/city.model");
 const AppError = require("../../../../utils/errorHandlers/appError");
 const { sendPushNotification } = require("../../../../utils/firebaseUtils");
 const { haversineKm } = require("../../../../utils/geoUtils");
-const { resolveRatesForBooking } = require("../../../../utils/revenueSplit");
+const { resolveRatesForBooking, resolveRatesForMultiPackageBooking } = require("../../../../utils/revenueSplit");
+
+// Multi-package path: bookingData.packages = [{ packageId, qty, services: [{id, qty}] }, ...].
+// Each package keeps its own price/discount/revenue-split intact instead of collapsing
+// into one flat packageId (which can only ever represent a single package).
+const buildMultiPackageBooking = async (packagesInput, serviceMap) => {
+  let enrichedServices = [];
+  let packageBaseAmount = 0;
+  const packagesSummary = [];
+  const ratePools = [];
+
+  for (const entry of packagesInput) {
+    const appliedPackage = await packagesService.validateForBooking(entry.packageId);
+    const qty = entry.qty || 1;
+    const items = (entry.services || []).map(item => {
+      const svc = serviceMap[parseInt(item.id)];
+      const itemQty = item.qty || 1;
+      return {
+        serviceId: svc.id,
+        name: svc.name,
+        price: parseFloat(svc.basePrice),
+        qty: itemQty,
+        duration: svc.duration || null,
+        image: svc.image || null,
+        serviceStatus: 'unassigned',
+        assignedPartnerId: null,
+        assignedPartnerName: null,
+        addedByPackage: true,
+        packageId: appliedPackage.id,
+      };
+    });
+    enrichedServices = [...enrichedServices, ...items];
+    packageBaseAmount += parseFloat(appliedPackage.price) * qty;
+    packagesSummary.push({
+      packageId: appliedPackage.id,
+      title: appliedPackage.title,
+      qty,
+      price: parseFloat(appliedPackage.price),
+      originalPrice: appliedPackage.originalPrice != null ? parseFloat(appliedPackage.originalPrice) : null,
+    });
+    ratePools.push({ package: appliedPackage, qty });
+  }
+
+  return { enrichedServices, packageBaseAmount, packagesSummary, ratePools };
+};
 
 const createBooking = async (userId, bookingData) => {
-  const { services: serviceItems, extraServices = [], partnerId, address, scheduledAt, couponCode, offerId, packageId, paymentMode, notes } = bookingData;
+  const { services: serviceItems = [], extraServices = [], packages: packagesInput = [], partnerId, address, scheduledAt, couponCode, offerId, packageId, packageQty = 1, paymentMode, notes } = bookingData;
+  const isMultiPackage = Array.isArray(packagesInput) && packagesInput.length > 0;
 
-  // Fetch all requested services — the package/flexible-pick items and any extra
-  // individual services booked alongside them, validated together in one pass.
-  const allItems = [...serviceItems, ...extraServices];
+  // Fetch all requested services in one pass — the package/flexible-pick items (whether
+  // via the single legacy packageId or the multi-package `packages` array) and any extra
+  // individual services booked alongside them.
+  const multiPackageServiceItems = isMultiPackage
+    ? packagesInput.flatMap(p => p.services || [])
+    : [];
+  const allItems = [...serviceItems, ...extraServices, ...multiPackageServiceItems];
   const serviceIds = allItems.map(s => parseInt(s.id));
   const uniqueServiceIds = [...new Set(serviceIds)];
   const foundServices = await Service.findAll({ where: { id: uniqueServiceIds, isActive: true } });
@@ -52,25 +101,38 @@ const createBooking = async (userId, bookingData) => {
     };
   });
 
-  let enrichedServices = enrichItems(serviceItems);
-  const enrichedExtraServices = enrichItems(extraServices);
-
-  let baseAmount = enrichedServices.reduce((sum, s) => sum + s.price * s.qty, 0);
-
-  // If booking via a package, override the base amount with the package price
+  let enrichedServices;
+  let baseAmount;
   let appliedPackageId = null;
   let appliedPackage = null;
-  if (packageId) {
-    appliedPackage = await packagesService.validateForBooking(packageId);
-    baseAmount = parseFloat(appliedPackage.price);
-    appliedPackageId = appliedPackage.id;
-    // Mark each service as part of a package (for display/tracking)
-    enrichedServices.forEach(s => { s.addedByPackage = true; });
+  let multiPackageInfo = null; // { packagesSummary, ratePools } when isMultiPackage
+
+  if (isMultiPackage) {
+    const built = await buildMultiPackageBooking(packagesInput, serviceMap);
+    enrichedServices = built.enrichedServices;
+    baseAmount = built.packageBaseAmount;
+    multiPackageInfo = { packagesSummary: built.packagesSummary, ratePools: built.ratePools };
+  } else {
+    enrichedServices = enrichItems(serviceItems);
+    baseAmount = enrichedServices.reduce((sum, s) => sum + s.price * s.qty, 0);
+
+    // If booking via a single package, override the base amount with the package price
+    if (packageId) {
+      appliedPackage = await packagesService.validateForBooking(packageId);
+      // Each package-tagged service's qty already reflects packageQty copies (the client
+      // sends qty = packageQty per item), so the price must be multiplied the same way —
+      // otherwise ordering 2 packages would still only charge for 1.
+      baseAmount = parseFloat(appliedPackage.price) * packageQty;
+      appliedPackageId = appliedPackage.id;
+      // Mark each service as part of a package (for display/tracking)
+      enrichedServices.forEach(s => { s.addedByPackage = true; });
+    }
   }
 
-  // Extra services booked alongside the package (or alongside a regular booking) are
+  // Extra services booked alongside a package (or alongside a regular booking) are
   // billed additively on top, at their normal catalog price — never folded into the
   // package's fixed price.
+  const enrichedExtraServices = enrichItems(extraServices);
   if (enrichedExtraServices.length > 0) {
     enrichedExtraServices.forEach(s => { s.addedByUser = true; });
     baseAmount += enrichedExtraServices.reduce((sum, s) => sum + s.price * s.qty, 0);
@@ -131,10 +193,15 @@ const createBooking = async (userId, bookingData) => {
     appliedOfferId = offerId;
   }
 
-  const { partnerPercent, gstPercent } = await resolveRatesForBooking({
-    serviceItems: enrichedServices,
-    package: appliedPackage,
-  });
+  const { partnerPercent, gstPercent } = isMultiPackage
+    ? await resolveRatesForMultiPackageBooking({
+        packages: multiPackageInfo.ratePools,
+        serviceItems: enrichedExtraServices,
+      })
+    : await resolveRatesForBooking({
+        serviceItems: enrichedServices,
+        package: appliedPackage,
+      });
   const taxableAmount = baseAmount - couponDiscount;
   const tax = parseFloat((taxableAmount * gstPercent / 100).toFixed(2));
   const total = parseFloat((taxableAmount + tax).toFixed(2));
@@ -144,9 +211,11 @@ const createBooking = async (userId, bookingData) => {
 
   // Use first service as the primary serviceId (backward compat)
   const primaryServiceId = enrichedServices[0].serviceId;
-  const primaryServiceName = enrichedServices.length === 1
-    ? enrichedServices[0].name
-    : `${enrichedServices.length} services`;
+  const primaryServiceName = isMultiPackage
+    ? `${multiPackageInfo.packagesSummary.length} packages`
+    : enrichedServices.length === 1
+      ? enrichedServices[0].name
+      : `${enrichedServices.length} services`;
 
   // Resolve cityId from address city name so admin dashboard city filter works
   let cityId = null;
@@ -192,6 +261,8 @@ const createBooking = async (userId, bookingData) => {
     couponId,
     offerId: appliedOfferId,
     packageId: appliedPackageId,
+    packageQty: appliedPackageId ? packageQty : 1,
+    packages: isMultiPackage ? multiPackageInfo.packagesSummary : null,
     cityId,
     notes,
   });
@@ -404,6 +475,37 @@ const submitReview = async (userId, bookingId, reviewData) => {
   return review;
 };
 
+const parseServicesField = (s) => {
+  if (Array.isArray(s)) return s;
+  if (typeof s === 'string') { try { return JSON.parse(s); } catch { return []; } }
+  return [];
+};
+
+// A package booking's total isn't the sum of its (real, undiscounted) per-service
+// prices — its package-tagged items keep contributing the package's own fixed price,
+// and only genuinely extra items add on top. Recomputing from raw prices here would
+// silently erase the package discount the moment anything changes.
+// Entries the admin has soft-removed (`removed: true`, kept in the array for its own
+// audit trail) are excluded here too, so acting on a booking via these endpoints never
+// resurrects a removed item's price into the total.
+const recomputeBookingAmounts = async (booking, updatedServices) => {
+  const activeServices = updatedServices.filter(s => !s.removed);
+  const pkg = booking.packageId ? await ServicePackage.findByPk(booking.packageId) : null;
+  const nonPackageAmount = activeServices
+    .filter(s => !s.addedByPackage)
+    .reduce((sum, s) => sum + (parseFloat(s.price) || 0) * (s.qty || 1), 0);
+  const newBase = pkg
+    ? parseFloat(pkg.price) + nonPackageAmount
+    : activeServices.reduce((sum, s) => sum + (parseFloat(s.price) || 0) * (s.qty || 1), 0);
+  const couponDiscount = parseFloat(booking.couponDiscountAmount || 0);
+  const taxable = newBase - couponDiscount;
+  const { partnerPercent, gstPercent } = await resolveRatesForBooking({ serviceItems: activeServices, package: pkg });
+  const tax = parseFloat((taxable * gstPercent / 100).toFixed(2));
+  const total = parseFloat((taxable + tax).toFixed(2));
+  const partnerEarning = parseFloat((taxable * partnerPercent / 100).toFixed(2));
+  return { newBase, tax, total, partnerEarning };
+};
+
 const addUserServices = async (userId, bookingId, serviceItems) => {
   const booking = await Booking.findOne({ where: { id: bookingId, userId } });
   if (!booking) throw new AppError("Booking not found", 404);
@@ -421,27 +523,10 @@ const addUserServices = async (userId, bookingId, serviceItems) => {
     return { serviceId: svc.id, name: svc.name, price: parseFloat(svc.basePrice), qty: item.qty || 1, duration: svc.duration || null, image: svc.image || null, addedByUser: true };
   });
 
-  const existing = (() => { const s = booking.services; if (Array.isArray(s)) return s; if (typeof s === 'string') { try { return JSON.parse(s); } catch { return []; } } return []; })();
+  const existing = parseServicesField(booking.services);
   const updatedServices = [...existing, ...newEntries];
 
-  // A package booking's total isn't the sum of its (real, undiscounted) per-service
-  // prices — its package-tagged items keep contributing the package's own fixed price,
-  // and only genuinely extra items add on top. Recomputing from raw prices here would
-  // silently erase the package discount the moment anything is added.
-  const pkg = booking.packageId ? await ServicePackage.findByPk(booking.packageId) : null;
-  const nonPackageAmount = updatedServices
-    .filter(s => !s.addedByPackage)
-    .reduce((sum, s) => sum + (parseFloat(s.price) || 0) * (s.qty || 1), 0);
-  const newBase = pkg
-    ? parseFloat(pkg.price) + nonPackageAmount
-    : updatedServices.reduce((sum, s) => sum + (parseFloat(s.price) || 0) * (s.qty || 1), 0);
-  const couponDiscount = parseFloat(booking.couponDiscountAmount || 0);
-  const taxable = newBase - couponDiscount;
-  const { partnerPercent, gstPercent } = await resolveRatesForBooking({ serviceItems: updatedServices, package: pkg });
-  const tax = parseFloat((taxable * gstPercent / 100).toFixed(2));
-  const total = parseFloat((taxable + tax).toFixed(2));
-  const partnerEarning = parseFloat((taxable * partnerPercent / 100).toFixed(2));
-
+  const { newBase, tax, total, partnerEarning } = await recomputeBookingAmounts(booking, updatedServices);
   await booking.update({ services: updatedServices, baseAmount: newBase, taxAmount: tax, totalAmount: total, partnerEarning });
 
   if (booking.partnerId) {
@@ -460,4 +545,68 @@ const addUserServices = async (userId, bookingId, serviceItems) => {
   return booking;
 };
 
-module.exports = { createBooking, getBookingById, cancelBooking, rescheduleBooking, submitReview, addUserServices };
+const updateServiceQty = async (userId, bookingId, index, qty) => {
+  const booking = await Booking.findOne({ where: { id: bookingId, userId } });
+  if (!booking) throw new AppError("Booking not found", 404);
+  if (!["pending", "confirmed"].includes(booking.status))
+    throw new AppError("Services can only be edited on pending or confirmed bookings", 400);
+
+  const existing = parseServicesField(booking.services);
+  if (index < 0 || index >= existing.length) throw new AppError("Service not found on this booking", 404);
+  const item = existing[index];
+  if (item.removed) throw new AppError("This service has been removed from the booking", 400);
+  if (item.addedByPackage) throw new AppError("Package services can't be changed individually", 400);
+
+  const updatedServices = existing.map((s, i) => (i === index ? { ...s, qty } : s));
+  const { newBase, tax, total, partnerEarning } = await recomputeBookingAmounts(booking, updatedServices);
+  await booking.update({ services: updatedServices, baseAmount: newBase, taxAmount: tax, totalAmount: total, partnerEarning });
+
+  return booking;
+};
+
+const removeService = async (userId, bookingId, index) => {
+  const booking = await Booking.findOne({ where: { id: bookingId, userId } });
+  if (!booking) throw new AppError("Booking not found", 404);
+  if (!["pending", "confirmed"].includes(booking.status))
+    throw new AppError("Services can only be removed from pending or confirmed bookings", 400);
+
+  const existing = parseServicesField(booking.services);
+  if (index < 0 || index >= existing.length) throw new AppError("Service not found on this booking", 404);
+  const item = existing[index];
+  if (item.removed) throw new AppError("This service has already been removed", 400);
+  if (item.addedByPackage) throw new AppError("Package services can't be removed individually", 400);
+  const activeCount = existing.filter(s => !s.removed).length;
+  if (activeCount <= 1) throw new AppError("A booking must have at least one service — cancel the booking instead", 400);
+
+  const updatedServices = existing.filter((_, i) => i !== index);
+  const { newBase, tax, total, partnerEarning } = await recomputeBookingAmounts(booking, updatedServices);
+  await booking.update({ services: updatedServices, baseAmount: newBase, taxAmount: tax, totalAmount: total, partnerEarning });
+
+  return booking;
+};
+
+// Drops the whole package from a booking: strips every addedByPackage-tagged service in
+// one go, clears packageId, and re-prices the remaining (non-package) items at their real
+// catalog prices instead of the package's fixed price.
+const removePackage = async (userId, bookingId) => {
+  const booking = await Booking.findOne({ where: { id: bookingId, userId } });
+  if (!booking) throw new AppError("Booking not found", 404);
+  if (!["pending", "confirmed"].includes(booking.status))
+    throw new AppError("The package can only be removed from a pending or confirmed booking", 400);
+  if (!booking.packageId) throw new AppError("This booking doesn't have a package attached", 400);
+
+  const existing = parseServicesField(booking.services);
+  const remaining = existing.filter(s => !s.addedByPackage);
+  if (remaining.filter(s => !s.removed).length === 0)
+    throw new AppError("Removing this package would leave the booking with no services — cancel the booking instead", 400);
+
+  const { newBase, tax, total, partnerEarning } = await recomputeBookingAmounts(
+    { packageId: null, couponDiscountAmount: booking.couponDiscountAmount },
+    remaining
+  );
+  await booking.update({ services: remaining, packageId: null, baseAmount: newBase, taxAmount: tax, totalAmount: total, partnerEarning });
+
+  return booking;
+};
+
+module.exports = { createBooking, getBookingById, cancelBooking, rescheduleBooking, submitReview, addUserServices, updateServiceQty, removeService, removePackage };

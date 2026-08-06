@@ -5,6 +5,7 @@ const ServiceZone = require("../../../zones/models/zone.model");
 const City = require("../../../cities/models/city.model");
 const AdminUser = require("../../models/adminUser.model");
 const User = require("../../../users/models/user.model");
+const UserAddress = require("../../../users/models/userAddress.model");
 const Partner = require("../../../partners/models/partner.model");
 const ServiceCategory = require("../../../services/models/serviceCategory.model");
 const Service = require("../../../services/models/service.model");
@@ -20,6 +21,7 @@ const Notification = require("../../../notifications/models/notification.model")
 const AppFeedback = require("../../../feedback/models/feedback.model");
 const { signToken } = require("../../../../utils/jwtUtils");
 const { sendPushNotification } = require("../../../../utils/firebaseUtils");
+const { haversineKm } = require("../../../../utils/geoUtils");
 const {
   resolveRatesForBooking,
   DEFAULT_ADMIN_PERCENT,
@@ -71,7 +73,9 @@ const listUsers = async ({ search, status, cityIds, page = 1, limit = 10 }) => {
 };
 
 const getUserById = async (userId) => {
-  const user = await User.findByPk(userId);
+  const user = await User.findByPk(userId, {
+    include: [{ model: UserAddress, as: "addresses" }],
+  });
   if (!user) throw new AppError("User not found", 404);
   return user;
 };
@@ -202,6 +206,10 @@ const listCategories = async () =>
 
 const createCategory = async (data) => {
   try {
+    if (data.sortOrder == null) {
+      const last = await ServiceCategory.findOne({ order: [["sortOrder", "DESC"]] });
+      data = { ...data, sortOrder: last ? last.sortOrder + 1 : 0 };
+    }
     return await ServiceCategory.create(data);
   } catch (e) {
     if (e.name === "SequelizeUniqueConstraintError") {
@@ -209,6 +217,18 @@ const createCategory = async (data) => {
     }
     throw e;
   }
+};
+
+// Bulk-persist a new category display order. `orderedIds` is the full list of
+// category IDs in the order they should appear; index becomes sortOrder.
+const reorderCategories = async (orderedIds) => {
+  return sequelize.transaction(async (t) => {
+    await Promise.all(
+      orderedIds.map((id, index) =>
+        ServiceCategory.update({ sortOrder: index }, { where: { id }, transaction: t })
+      )
+    );
+  });
 };
 
 const updateCategory = async (id, data) => {
@@ -262,7 +282,7 @@ const listServices = async ({ categoryId, search, cityId, page = 1, limit = 20 }
 
   const { count: total, rows } = await Service.findAndCountAll({
     where,
-    order: [["name", "ASC"]],
+    order: [["sortOrder", "ASC"], ["name", "ASC"]],
     offset,
     limit,
     include: [
@@ -287,9 +307,30 @@ const createService = async (data) => {
   // Normalise to [{ cityId, isActive }] regardless of which shape was sent
   const mappings = cityMappings ?? (cityIds ?? []).map((cid) => ({ cityId: cid, isActive: true }));
   return sequelize.transaction(async (t) => {
+    if (serviceData.sortOrder == null) {
+      const last = await Service.findOne({
+        where: { categoryId: serviceData.categoryId },
+        order: [["sortOrder", "DESC"]],
+        transaction: t,
+      });
+      serviceData.sortOrder = last ? last.sortOrder + 1 : 0;
+    }
     const service = await Service.create(serviceData, { transaction: t });
     await syncCityMappings(service.id, mappings, t);
     return service;
+  });
+};
+
+// Bulk-persist a new service display order within a single category.
+// `orderedIds` is the full list of service IDs (within that category) in the
+// order they should appear; index becomes sortOrder.
+const reorderServices = async (categoryId, orderedIds) => {
+  return sequelize.transaction(async (t) => {
+    await Promise.all(
+      orderedIds.map((id, index) =>
+        Service.update({ sortOrder: index }, { where: { id, categoryId }, transaction: t })
+      )
+    );
   });
 };
 
@@ -325,6 +366,138 @@ const toggleServiceCityStatus = async (serviceId, cityId, isActive) => {
 };
 
 // ==================== BOOKINGS ====================
+
+// Admin/support-created booking — e.g. a customer calls in asking for a one-time
+// service. Line items can be real catalog services ({id, qty}) and/or free-form
+// add-ons ({isAddOn:true, name, price, qty}), same shape editBookingServices already
+// accepts, so a purely one-off request never needs a permanent catalog entry.
+const createBookingForCustomer = async (adminId, data) => {
+  const { userId, services: serviceItems = [], partnerId, address, scheduledAt, paymentMode, notes } = data;
+
+  const user = await User.findByPk(userId);
+  if (!user) throw new AppError("User not found", 404);
+
+  if (partnerId) {
+    const partner = await Partner.findOne({ where: { id: partnerId, status: "approved" } });
+    if (!partner) throw new AppError("Partner not found or not available", 404);
+  }
+
+  const catalogItems = serviceItems.filter(s => !s.isAddOn);
+  const addOnItems = serviceItems.filter(s => s.isAddOn);
+
+  let enrichedServices = [];
+  if (catalogItems.length > 0) {
+    const serviceIds = [...new Set(catalogItems.map(s => parseInt(s.id)))];
+    const foundServices = await Service.findAll({ where: { id: serviceIds, isActive: true } });
+    if (foundServices.length !== serviceIds.length) throw new AppError("One or more services not found or unavailable", 404);
+
+    const serviceMap = Object.fromEntries(foundServices.map(s => [s.id, s]));
+    enrichedServices = catalogItems.map(item => {
+      const svc = serviceMap[parseInt(item.id)];
+      return {
+        serviceId: svc.id, name: svc.name, price: parseFloat(svc.basePrice), qty: item.qty || 1,
+        duration: svc.duration || null, image: svc.image || null,
+        serviceStatus: "unassigned", assignedPartnerId: null, assignedPartnerName: null,
+        addedByAdmin: true,
+      };
+    });
+  }
+
+  if (addOnItems.length > 0) {
+    enrichedServices = [...enrichedServices, ...addOnItems.map(item => ({
+      name: item.name, price: parseFloat(item.price) || 0, qty: item.qty || 1,
+      isAddOn: true, addedByAdmin: true,
+      serviceStatus: "unassigned", assignedPartnerId: null, assignedPartnerName: null,
+    }))];
+  }
+
+  const baseAmount = enrichedServices.reduce((sum, s) => sum + s.price * s.qty, 0);
+  const { partnerPercent, gstPercent } = await resolveRatesForBooking({ serviceItems: enrichedServices, package: null });
+  const tax = parseFloat((baseAmount * gstPercent / 100).toFixed(2));
+  const total = parseFloat((baseAmount + tax).toFixed(2));
+  const partnerEarning = parseFloat((baseAmount * partnerPercent / 100).toFixed(2));
+
+  // Backward-compat single serviceId column — first catalog item if any, else null
+  // (a booking made up entirely of custom add-ons has no real catalog service).
+  const primaryServiceId = enrichedServices.find(s => s.serviceId)?.serviceId ?? null;
+  const primaryServiceName = enrichedServices.length === 1 ? enrichedServices[0].name : `${enrichedServices.length} services`;
+
+  let cityId = null;
+  if (address.city) {
+    const city = await City.findOne({ where: { name: { [Op.like]: `%${address.city.trim()}%` }, isActive: true } });
+    cityId = city ? city.id : null;
+    if (city && city.lat && city.lng && address.lat && address.lng) {
+      const dist = haversineKm(address.lat, address.lng, city.lat, city.lng);
+      const limit = city.radius ?? 30;
+      if (dist > limit) {
+        throw new AppError(`Address is outside the ${city.name} service area (${Math.round(dist)} km from city center)`, 400);
+      }
+    }
+  }
+
+  const booking = await Booking.create({
+    userId,
+    serviceId: primaryServiceId,
+    services: enrichedServices,
+    partnerId: partnerId || null,
+    addressLabel: address.label || "Home",
+    addressLine1: address.line1,
+    addressLine2: address.line2 || null,
+    addressCity: address.city || "",
+    addressState: address.state || "",
+    addressPincode: address.pincode || "",
+    addressLat: address.lat || null,
+    addressLng: address.lng || null,
+    scheduledAt: new Date(scheduledAt),
+    status: "pending",
+    paymentMode: paymentMode === "online" ? "online" : "cod",
+    baseAmount,
+    discountAmount: 0,
+    couponDiscountAmount: 0,
+    taxAmount: tax,
+    totalAmount: total,
+    partnerEarning,
+    cityId,
+    notes,
+    createdByAdminId: adminId,
+  });
+
+  if (user.fcmToken) {
+    await sendPushNotification(
+      [user.fcmToken],
+      "Booking Confirmed",
+      `Your booking for ${primaryServiceName} has been placed. Booking ID: ${booking.bookingCode}`,
+      { bookingId: String(booking.id), type: "booking" },
+      "beyomo_booking"
+    ).catch(() => {});
+  }
+
+  await Notification.create({
+    userId,
+    title: "Booking Placed",
+    body: `Your booking for ${primaryServiceName} (${booking.bookingCode}) has been placed.`,
+    data: { bookingId: String(booking.id) },
+    type: "booking",
+  });
+
+  if (!partnerId && booking.addressCity) {
+    const cityPartners = await Partner.findAll({
+      where: { status: "approved", locationCity: booking.addressCity },
+      attributes: ["id", "fcmToken"],
+    });
+    const tokens = cityPartners.map(p => p.fcmToken).filter(Boolean);
+    if (tokens.length > 0) {
+      await sendPushNotification(
+        tokens,
+        "New Job Available",
+        `New booking for ${primaryServiceName} near you. Open the app to accept.`,
+        { bookingId: String(booking.id), type: "available_booking" }
+      ).catch(() => {});
+    }
+  }
+
+  return booking;
+};
 
 const listBookings = async ({ status, userId, partnerId, cityIds, page = 1, limit = 10 }) => {
   const offset = (page - 1) * limit;
@@ -873,8 +1046,9 @@ module.exports = {
   adminLogin,
   listUsers, getUserById, updateUserStatus, deleteUser, createUser,
   listPartners, getPartnerById, updatePartnerStatus, createPartner, updatePartner,
-  listCategories, createCategory, updateCategory, deleteCategory,
-  listServices, createService, updateService, deleteService, toggleServiceCityStatus,
+  listCategories, createCategory, updateCategory, deleteCategory, reorderCategories,
+  listServices, createService, updateService, deleteService, toggleServiceCityStatus, reorderServices,
+  createBookingForCustomer,
   listBookings, getBookingDetail, assignPartner, cancelBooking, rescheduleBooking, editBookingServices,
   listCoupons, createCoupon, updateCoupon, deleteCoupon, getReferralProgram, updateReferralProgram,
   listReviews, updateReviewStatus,

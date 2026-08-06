@@ -23,16 +23,11 @@ if (SSL_KEY && SSL_CERT && fs.existsSync(SSL_KEY) && fs.existsSync(SSL_CERT)) {
 
   server = https.createServer(sslOptions, app);
 
-  // Redirect HTTP → HTTPS
-  const httpRedirect = http.createServer((req, res) => {
-    res.writeHead(301, { Location: `https://${req.headers.host}${req.url}` });
-    res.end();
-  });
-  const HTTP_PORT = process.env.HTTP_PORT || 80;
-  httpRedirect.listen(HTTP_PORT, () => {
-    logger.info(`HTTP → HTTPS redirect active on port ${HTTP_PORT}`);
-  });
-
+  // No HTTP->HTTPS redirect listener here: this process runs as an
+  // unprivileged user on shared cPanel hosting and can't bind port 80
+  // (Apache owns it for the whole server) — attempting to breaks the API
+  // with EACCES and crash-loops PM2. Apache/cPanel already handles the
+  // domain-level HTTP->HTTPS redirect.
   server.listen(PORT, () => {
     logger.info(`Beyomo API server running on port ${PORT} (HTTPS) in ${process.env.NODE_ENV || "development"} mode`);
     logger.info(`Health check: https://localhost:${PORT}/`);

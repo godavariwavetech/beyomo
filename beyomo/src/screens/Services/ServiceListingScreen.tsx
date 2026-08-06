@@ -17,6 +17,7 @@ import LinearGradient from 'react-native-linear-gradient';
 import {fonts} from '../../config/theme';
 import {useDispatch, useSelector} from 'react-redux';
 import {fetchCategories, fetchServices} from '../../redux/reducers/services';
+import {addServicesToCart} from '../../redux/reducers/cart';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
@@ -236,10 +237,21 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
     .filter(([id]) => addedServicesMap[id])
     .flatMap(([id, qty]) => Array.from({length: qty}, () => addedServicesMap[id]));
 
-  const handleCheckout = () => navigation?.navigate('AddressPayment', {
-    services: selectedServices,
-    ...(offer ? {offerId: offer.id} : {}),
-  });
+  const handleCheckout = () => {
+    // Merge this page's picks into the shared cart (same one packages/combos use) so a
+    // booking can mix individual services with packages, instead of navigating away with
+    // its own isolated services list.
+    const toAdd = Object.entries(quantities)
+      .filter(([id]) => addedServicesMap[id])
+      .map(([id, qty]) => ({...addedServicesMap[id], qty}));
+    dispatch(addServicesToCart(toAdd));
+    navigation?.navigate('AddressPayment', {
+      // Explicitly clear these so a stale legacy single-flow visit to this screen
+      // (services/packageId params from before) can't leak into cart mode.
+      services: undefined, packageId: undefined, packagePrice: undefined, packageTitle: undefined,
+      ...(offer ? {offerId: offer.id} : {}),
+    });
+  };
 
   return (
     <View style={styles.root}>
@@ -482,7 +494,7 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
                 />
                 {/* Price badge over image */}
                 <View style={styles.sheetHeroPriceBadge}>
-                  <Text style={styles.sheetHeroPrice}>₹{detailItem.price?.toLocaleString('en-IN')}</Text>
+                  <Text style={styles.sheetHeroPrice}>Starts at ₹{detailItem.price?.toLocaleString('en-IN')}</Text>
                   {detailItem.originalPrice > detailItem.price && (
                     <Text style={styles.sheetHeroOriginal}>₹{detailItem.originalPrice?.toLocaleString('en-IN')}</Text>
                   )}
@@ -650,6 +662,7 @@ const ServiceCard = ({
         ) : (
           <>
             <View style={styles.priceBlock}>
+              <Text style={styles.startsAtLabel}>Starts at</Text>
               <View style={styles.priceRow}>
                 <Text style={styles.currentPrice}>₹{item.price.toLocaleString('en-IN')}</Text>
                 {item.originalPrice > item.price && (
@@ -811,6 +824,7 @@ const styles = StyleSheet.create({
 
   cardRight: {alignItems: 'flex-end', justifyContent: 'space-between', gap: sw(12)},
   priceBlock: {alignItems: 'flex-end', gap: sw(12)},
+  startsAtLabel: {fontFamily: fonts.textFont, fontSize: sw(11), fontWeight: '500', color: '#A0AEC0'},
   priceRow: {flexDirection: 'row', alignItems: 'center', gap: sw(4)},
   currentPrice: {fontFamily: fonts.textFont, fontSize: sw(16), fontWeight: '700', color: '#000000', lineHeight: sw(20)},
   originalPrice: {fontFamily: fonts.textFont, fontSize: sw(14), fontWeight: '400', color: '#656565', lineHeight: sw(18), textDecorationLine: 'line-through'},

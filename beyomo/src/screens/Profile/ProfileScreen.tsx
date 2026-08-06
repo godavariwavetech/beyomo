@@ -23,8 +23,8 @@ const sw = (px: number) => (px / 393) * width;
 
 const MENU_ITEMS = [
   {id: 'addresses',  label: 'My Addresses',    icon: 'location-outline',              route: 'MyAddresses'},
-  {id: 'coupons',    label: 'Coupons & Offers', icon: 'pricetag-outline',             route: 'Coupons'},
-  {id: 'refer',      label: 'Refer & Earn',     icon: 'people-outline',               route: 'ReferEarn'},
+  // {id: 'coupons',    label: 'Coupons & Offers', icon: 'pricetag-outline',             route: 'Coupons'}, // hidden for now — screen/route stay intact, just not linked.
+  // {id: 'refer',      label: 'Refer & Earn',     icon: 'people-outline',               route: 'ReferEarn'}, // hidden for now — screen/route stay intact, just not linked.
   {id: 'reviews',    label: 'My Reviews',       icon: 'star-outline',                 route: 'MyReviews'},
   {id: 'help',       label: 'Help & Support',   icon: 'chatbubble-ellipses-outline',  route: 'HelpSupport'},
   {id: 'about',      label: 'About Us',         icon: 'information-circle-outline',   route: 'AboutUs'},
