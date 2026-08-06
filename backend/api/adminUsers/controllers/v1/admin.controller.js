@@ -733,9 +733,13 @@ const updateFeedbackStatus = catchAsync(async (req, res, next) => {
 
 // ==================== BANNERS ====================
 
+// type identifies the fixed site/app slot this banner's image fills — one active
+// row per type is used (hero = website homepage banner, custom_package/combo = the
+// two CTA cards on the app + website). Everything below image/isActive is legacy from
+// an earlier design and stays optional so old rows still validate.
 const bannerSchema = Joi.object({
-  type:          Joi.string().valid("top", "promo").required(),
-  title:         Joi.string().trim().required(),
+  type:          Joi.string().valid("hero", "custom_package", "combo").required(),
+  title:         Joi.string().trim().allow("", null),
   subtitle:      Joi.string().trim().allow("", null),
   description:   Joi.string().trim().allow("", null),
   image:         Joi.string().allow("", null),

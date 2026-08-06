@@ -133,7 +133,7 @@ const SplashScreen = ({navigation}: any) => {
 
       <View style={styles.logoContainer}>
         <Image
-          source={require('../../assets/beyomo_logo.png')}
+          source={require('../../assets/beyomo_logo_icon.png')}
           style={styles.logo}
           resizeMode="contain"
         />
@@ -179,8 +179,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   logo: {
-    width: sw(280.5),
-    height: sh(83.93),
+    width: sw(160),
+    height: sw(160),
   },
   textContainer: {
     position: 'absolute',

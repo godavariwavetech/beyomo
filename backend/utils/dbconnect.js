@@ -104,6 +104,16 @@ const connectDB = async () => {
     await sequelize.query("ALTER TABLE services ADD COLUMN IF NOT EXISTS sortOrder INT NOT NULL DEFAULT 0").catch(() => {});
     // How many copies of a package/combo were booked (mirrors per-service qty)
     await sequelize.query("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS packageQty INT NOT NULL DEFAULT 1").catch(() => {});
+    // Simplify banners: type now directly identifies the site/app slot it fills (one
+    // active image per slot) instead of a generic top/promo card nobody ever finished
+    // building the title/subtitle/gradient/target-screen machinery for. Widen the enum
+    // first so the old values stay valid while remapping, then narrow it — doing this in
+    // the other order silently truncates every row to '' (MySQL enum-mismatch behavior).
+    await sequelize.query("ALTER TABLE banners MODIFY COLUMN type ENUM('top','promo','hero','custom_package','combo') NOT NULL DEFAULT 'hero'").catch(() => {});
+    await sequelize.query("DELETE FROM banners WHERE type = 'promo'").catch(() => {});
+    await sequelize.query("UPDATE banners SET type = 'hero' WHERE type = 'top'").catch(() => {});
+    await sequelize.query("ALTER TABLE banners MODIFY COLUMN type ENUM('hero','custom_package','combo') NOT NULL DEFAULT 'hero'").catch(() => {});
+    await sequelize.query("ALTER TABLE banners MODIFY COLUMN title VARCHAR(120) NULL").catch(() => {});
     logger.info("Column migrations applied");
 
     // Seed cities — INSERT IGNORE skips if name already exists (unique constraint)

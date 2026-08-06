@@ -3,7 +3,7 @@ const router = express.Router();
 const Banner = require("./models/banner.model");
 const ServiceZone = require("../zones/models/zone.model");
 
-// Public: active banners for the app
+// Public: active banners for the app/website
 router.get("/v1/banners", async (req, res) => {
   try {
     const banners = await Banner.findAll({
