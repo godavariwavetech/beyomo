@@ -19,18 +19,22 @@ const sw = (px: number) => (px / 393) * width;
 type FAQ = {id: string; q: string; a: string};
 
 const FAQS: FAQ[] = [
-  {id: '1', q: 'How do I reschedule a booking?', a: 'Go to My Bookings → select the booking → tap Reschedule. You can reschedule up to 4 hours before the appointment.'},
-  {id: '2', q: 'Can I cancel my booking?', a: 'Yes, you can cancel from My Bookings. Cancellations made 2+ hours in advance are eligible for a full refund as Beyomo credits.'},
-  {id: '3', q: 'How long does it take to get a refund?', a: 'Refunds are processed within 5–7 business days to your original payment method, or instantly to your Beyomo wallet.'},
-  {id: '4', q: 'Are the beauty experts verified?', a: 'Yes, all Beyomo experts are trained, background-checked, and have undergone a 50-hour certification programme.'},
-  {id: '5', q: 'What safety measures are followed?', a: 'All experts carry sanitised kits, wear gloves, and follow strict hygiene protocols during every session.'},
-  {id: '6', q: 'How do I apply a coupon code?', a: 'On the checkout screen, tap "Add Coupon" and enter your code. Applicable discounts will be applied automatically.'},
+  {id: '1', q: 'How long does application review take?', a: 'Applications are typically reviewed within 24–48 hours. Check the Account Status screen and tap "Refresh Status" to see if you\'ve been approved — you can start accepting jobs as soon as you are.'},
+  {id: '2', q: 'What if my application is rejected?', a: 'The app won\'t show a reason. Contact Partner Support to understand why and find out how to reapply.'},
+  {id: '3', q: 'How do I get job requests?', a: 'New jobs appear as Incoming Requests, and you can also browse open jobs under the Available tab in Jobs. Accepting claims all unassigned services on that booking, so accept quickly — another partner can claim it first.'},
+  {id: '4', q: 'Can I reject or cancel a job?', a: 'You can reject an incoming request before accepting it — it simply won\'t be booked to you. Once you\'ve accepted a job there\'s no cancel option in the app, so only accept jobs you can complete.'},
+  {id: '5', q: 'What do I do when I reach the customer\'s location?', a: 'Open the job and tap "Mark as Arrived", then "Continue to Checklist" to review the services before starting the job.'},
+  {id: '6', q: 'Can I change the services on a booking?', a: 'Yes. On the checklist screen (and again after you start the job) you can add catalog services, add a custom item, adjust quantities, or remove services — changes save immediately.'},
+  {id: '7', q: 'How do I mark a job as completed?', a: 'Tap "Mark as Completed" on the active job screen. If the customer is paying by cash, you\'ll be asked to confirm you\'ve collected the amount before it\'s marked done.'},
+  {id: '8', q: 'How do earnings and settlement work?', a: 'Your Earnings tab shows a running Settlement balance: a positive balance means Beyomo owes you for online-paid jobs, a negative balance means you owe Beyomo for cash jobs you collected. Contact Partner Support for payout timing.'},
+  {id: '9', q: 'Can I change my professions, gender, or city after registering?', a: 'Not from Edit Profile — those are set during registration. Name, email, experience, bio, city, state and your profile photo can be updated anytime from Edit Profile. For anything else, contact Partner Support.'},
 ];
 
 const CONTACT = [
-  {id: 'call', icon: 'call-outline', label: 'Call Us', value: '+91 98859 09192', action: () => Linking.openURL('tel:+919885909192')},
+  {id: 'call', icon: 'call-outline', label: 'Call Us', value: '+91 77995 34222', action: () => Linking.openURL('tel:+917799534222')},
+  {id: 'call2', icon: 'call-outline', label: 'Call Us (Alt)', value: '+91 77995 34333', action: () => Linking.openURL('tel:+917799534333')},
+  {id: 'whatsapp', icon: 'logo-whatsapp', label: 'WhatsApp', value: 'Chat with us', action: () => Linking.openURL('https://wa.me/917799534222')},
   {id: 'email', icon: 'mail-outline', label: 'Email Us', value: 'support@beyomo.com', action: () => Linking.openURL('mailto:support@beyomo.com')},
-  {id: 'whatsapp', icon: 'logo-whatsapp', label: 'WhatsApp', value: 'Chat with us', action: () => Linking.openURL('https://wa.me/919885909192')},
 ];
 
 const HelpSupportScreen = ({navigation}: any) => {

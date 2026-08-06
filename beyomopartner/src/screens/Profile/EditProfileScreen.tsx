@@ -11,19 +11,59 @@ import {
   Platform,
   ScrollView,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useDispatch, useSelector} from 'react-redux';
+import {launchImageLibrary} from 'react-native-image-picker';
 import {fonts} from '../../config/theme';
 import {updatePartnerProfile} from '../../redux/reducers/partner';
 import type {AppDispatch, RootState} from '../../redux/store';
 import {useAppAlert} from '../../hooks/useAppAlert';
 import AppAlertModal from '../../components/AppAlertModal/AppAlertModal';
+import {resolveImageUrl} from '../../utils/utils';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
+
+const Field = ({
+  icon,
+  label,
+  value,
+  onChangeText,
+  placeholder,
+  keyboardType = 'default',
+  multiline = false,
+}: {
+  icon: string;
+  label: string;
+  value: string;
+  onChangeText: (v: string) => void;
+  placeholder: string;
+  keyboardType?: any;
+  multiline?: boolean;
+}) => (
+  <View style={styles.fieldGroup}>
+    <Text style={styles.fieldLabel}>{label}</Text>
+    <View style={[styles.inputWrapper, multiline && styles.inputWrapperMulti]}>
+      <Ionicons name={icon} size={sw(18)} color="rgba(255,255,255,0.5)" style={styles.inputIcon} />
+      <TextInput
+        style={[styles.input, multiline && styles.inputMulti]}
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor="#9CA3AF"
+        keyboardType={keyboardType}
+        multiline={multiline}
+        numberOfLines={multiline ? 3 : 1}
+        textAlignVertical={multiline ? 'top' : 'center'}
+        autoCapitalize={keyboardType === 'email-address' ? 'none' : 'sentences'}
+      />
+    </View>
+  </View>
+);
 
 const EditProfileScreen = ({navigation}: {navigation: any}) => {
   const dispatch = useDispatch<AppDispatch>();
@@ -39,6 +79,27 @@ const EditProfileScreen = ({navigation}: {navigation: any}) => {
   const [loading, setLoading] = useState(false);
   const {alertConfig, showAlert, hideAlert} = useAppAlert();
 
+  // Preview shows either the existing remote picture or a just-picked local
+  // file; newPhotoBase64 is only set (and only sent to the server) when the
+  // partner actually picks a new image.
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(
+    resolveImageUrl(profile?.profilePicture) ?? null,
+  );
+  const [newPhotoBase64, setNewPhotoBase64] = useState<string | null>(null);
+
+  const handlePickPhoto = () => {
+    launchImageLibrary(
+      {mediaType: 'photo', includeBase64: true, quality: 0.6, maxWidth: 800, maxHeight: 800},
+      response => {
+        if (response.didCancel || response.errorCode) return;
+        const asset = response.assets?.[0];
+        if (!asset?.base64 || !asset.uri) return;
+        setAvatarPreview(asset.uri);
+        setNewPhotoBase64(`data:${asset.type ?? 'image/jpeg'};base64,${asset.base64}`);
+      },
+    );
+  };
+
   const handleSave = async () => {
     if (!name.trim()) {
       showAlert('Required', 'Name cannot be empty.');
@@ -52,6 +113,7 @@ const EditProfileScreen = ({navigation}: {navigation: any}) => {
           ...(email.trim() ? {email: email.trim()} : {}),
           ...(experience ? {experience: parseInt(experience, 10)} : {}),
           ...(bio.trim() ? {bio: bio.trim()} : {}),
+          ...(newPhotoBase64 ? {profilePicture: newPhotoBase64} : {}),
           location: {
             city: city.trim() || undefined,
             state: state.trim() || undefined,
@@ -69,43 +131,6 @@ const EditProfileScreen = ({navigation}: {navigation: any}) => {
       setLoading(false);
     }
   };
-
-  const Field = ({
-    icon,
-    label,
-    value,
-    onChangeText,
-    placeholder,
-    keyboardType = 'default',
-    multiline = false,
-  }: {
-    icon: string;
-    label: string;
-    value: string;
-    onChangeText: (v: string) => void;
-    placeholder: string;
-    keyboardType?: any;
-    multiline?: boolean;
-  }) => (
-    <View style={styles.fieldGroup}>
-      <Text style={styles.fieldLabel}>{label}</Text>
-      <View style={[styles.inputWrapper, multiline && styles.inputWrapperMulti]}>
-        <Ionicons name={icon} size={sw(18)} color="rgba(255,255,255,0.5)" style={styles.inputIcon} />
-        <TextInput
-          style={[styles.input, multiline && styles.inputMulti]}
-          value={value}
-          onChangeText={onChangeText}
-          placeholder={placeholder}
-          placeholderTextColor="#9CA3AF"
-          keyboardType={keyboardType}
-          multiline={multiline}
-          numberOfLines={multiline ? 3 : 1}
-          textAlignVertical={multiline ? 'top' : 'center'}
-          autoCapitalize={keyboardType === 'email-address' ? 'none' : 'sentences'}
-        />
-      </View>
-    </View>
-  );
 
   return (
     <LinearGradient
@@ -130,6 +155,22 @@ const EditProfileScreen = ({navigation}: {navigation: any}) => {
           contentContainerStyle={[styles.scroll, {paddingBottom: insets.bottom + sw(32)}]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}>
+
+          <View style={styles.avatarSection}>
+            <TouchableOpacity onPress={handlePickPhoto} activeOpacity={0.8} style={styles.avatarWrap}>
+              {avatarPreview ? (
+                <Image source={{uri: avatarPreview}} style={styles.avatar} resizeMode="cover" />
+              ) : (
+                <View style={[styles.avatar, styles.avatarFallback]}>
+                  <Text style={styles.avatarInitial}>{name?.[0]?.toUpperCase() ?? '?'}</Text>
+                </View>
+              )}
+              <View style={styles.avatarEditBadge}>
+                <Ionicons name="camera" size={sw(14)} color="#1a1a1a" />
+              </View>
+            </TouchableOpacity>
+            <Text style={styles.avatarHint}>Tap to change photo</Text>
+          </View>
 
           <View style={styles.card}>
             <Field icon="person-outline" label="Full Name *" value={name} onChangeText={setName} placeholder="Your full name" />
@@ -190,6 +231,30 @@ const styles = StyleSheet.create({
   scroll: {
     paddingHorizontal: sw(20),
     paddingTop: sw(16),
+  },
+  avatarSection: {alignItems: 'center', marginBottom: sw(20)},
+  avatarWrap: {width: sw(88), height: sw(88)},
+  avatar: {width: '100%', height: '100%', borderRadius: sw(44), borderWidth: 2, borderColor: '#FDD77A'},
+  avatarFallback: {backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center'},
+  avatarInitial: {fontFamily: fonts.title, fontSize: sw(30), fontWeight: '700', color: '#FFFFFF'},
+  avatarEditBadge: {
+    position: 'absolute',
+    right: 0,
+    bottom: 0,
+    width: sw(28),
+    height: sw(28),
+    borderRadius: sw(14),
+    backgroundColor: '#FDD77A',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#0E5843',
+  },
+  avatarHint: {
+    fontFamily: fonts.textFont,
+    fontSize: sw(12),
+    color: 'rgba(255,255,255,0.6)',
+    marginTop: sw(8),
   },
   card: {
     backgroundColor: 'rgba(255,255,255,0.07)',
