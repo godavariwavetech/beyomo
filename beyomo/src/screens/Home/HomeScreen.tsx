@@ -94,10 +94,10 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
   }, [dispatch, selectedCity?.id]);
 
   // The two "Packages & Combos" CTA cards are fixed nav targets (always go to
-  // CustomPackages / Combos) — an admin can override just their artwork by creating a
-  // banner (either type) with the matching Target Screen; otherwise the static poster shows.
-  const customPackageBanner = banners.find(b => b.targetScreen === 'CustomPackages');
-  const comboBanner = banners.find(b => b.targetScreen === 'Combos');
+  // CustomPackages / Combos) — an admin can override just their artwork via the Banners
+  // page; otherwise the static poster shows.
+  const customPackageBanner = banners.find(b => b.type === 'custom_package');
+  const comboBanner = banners.find(b => b.type === 'combo');
 
   // Header carousel = whichever packages/combos the admin has flagged "Show on Home
   // Screen" — the Special Offers row now lives in the header itself.

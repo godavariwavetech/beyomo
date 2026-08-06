@@ -1,10 +1,14 @@
 const { DataTypes } = require("sequelize");
 const { sequelize } = require("../../../utils/dbconnect");
 
+// type identifies which fixed slot on the site/app this banner's image fills —
+// exactly one active row per type is used. See dbconnect.js for the migration that
+// narrowed this from the old free-form top/promo + title/subtitle/gradient design
+// (which nothing ever actually consumed beyond the image itself) down to this.
 const Banner = sequelize.define("Banner", {
   id:            { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
-  type:          { type: DataTypes.ENUM("top", "promo"), allowNull: false, defaultValue: "top" },
-  title:         { type: DataTypes.STRING(120), allowNull: false },
+  type:          { type: DataTypes.ENUM("hero", "custom_package", "combo"), allowNull: false, defaultValue: "hero" },
+  title:         { type: DataTypes.STRING(120), allowNull: true },
   subtitle:      { type: DataTypes.STRING(120), allowNull: true },
   description:   { type: DataTypes.TEXT, allowNull: true },
   image:         { type: DataTypes.TEXT, allowNull: true },
