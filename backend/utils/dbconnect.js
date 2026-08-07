@@ -112,8 +112,11 @@ const connectDB = async () => {
     await sequelize.query("ALTER TABLE banners MODIFY COLUMN type ENUM('top','promo','hero','custom_package','combo') NOT NULL DEFAULT 'hero'").catch(() => {});
     await sequelize.query("DELETE FROM banners WHERE type = 'promo'").catch(() => {});
     await sequelize.query("UPDATE banners SET type = 'hero' WHERE type = 'top'").catch(() => {});
-    await sequelize.query("ALTER TABLE banners MODIFY COLUMN type ENUM('hero','custom_package','combo') NOT NULL DEFAULT 'hero'").catch(() => {});
+    await sequelize.query("ALTER TABLE banners MODIFY COLUMN type ENUM('hero','custom_package','combo','why_beyomo','book_steps') NOT NULL DEFAULT 'hero'").catch(() => {});
     await sequelize.query("ALTER TABLE banners MODIFY COLUMN title VARCHAR(120) NULL").catch(() => {});
+    // Additional banner image slots (image2, image3) for extra images per banner
+    await sequelize.query("ALTER TABLE banners ADD COLUMN IF NOT EXISTS image2 TEXT NULL").catch(() => {});
+    await sequelize.query("ALTER TABLE banners ADD COLUMN IF NOT EXISTS image3 TEXT NULL").catch(() => {});
     logger.info("Column migrations applied");
 
     // Seed cities — INSERT IGNORE skips if name already exists (unique constraint)

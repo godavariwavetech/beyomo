@@ -738,11 +738,13 @@ const updateFeedbackStatus = catchAsync(async (req, res, next) => {
 // two CTA cards on the app + website). Everything below image/isActive is legacy from
 // an earlier design and stays optional so old rows still validate.
 const bannerSchema = Joi.object({
-  type:          Joi.string().valid("hero", "custom_package", "combo").required(),
+  type:          Joi.string().valid("hero", "custom_package", "combo", "why_beyomo", "book_steps").required(),
   title:         Joi.string().trim().allow("", null),
   subtitle:      Joi.string().trim().allow("", null),
   description:   Joi.string().trim().allow("", null),
   image:         Joi.string().allow("", null),
+  image2:        Joi.string().allow("", null),
+  image3:        Joi.string().allow("", null),
   gradientStart: Joi.string().allow("", null),
   gradientEnd:   Joi.string().allow("", null),
   buttonText:    Joi.string().allow("", null),

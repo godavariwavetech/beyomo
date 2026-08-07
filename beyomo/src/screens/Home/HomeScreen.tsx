@@ -1,4 +1,4 @@
-import React, {useEffect, useRef, useState} from 'react';
+import React, {useEffect, useState} from 'react';
 import {
   View,
   Text,
@@ -56,8 +56,6 @@ const CTA_CARD_GAP = sw(12);
 const CTA_CARD_W = (width - sw(32) - CTA_CARD_GAP) / 2;
 const CTA_CARD_H = CTA_CARD_W / CTA_CARD_ASPECT;
 
-const AUTO_SCROLL_OFFERS_MS = 4000;
-
 const chunkArray = <T,>(arr: T[], size: number): T[][] => {
   const chunks: T[][] = [];
   for (let i = 0; i < arr.length; i += size) {
@@ -71,30 +69,18 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
   const dispatch = useDispatch<AppDispatch>();
   const {categories, loading} = useSelector((state: RootState) => state.Services);
   const selectedCity = useSelector((state: RootState) => state.City?.selectedCity);
-  const [packages, setPackages] = useState<any[]>([]);
   const [banners, setBanners] = useState<any[]>([]);
 
-  const offersScrollRef = useRef<ScrollView>(null);
-  const offersIndexRef = useRef(0);
-
-  // Track which images have finished loading so we can hide the skeleton overlay.
-  // Keyed by offer id / category id / image uri for promo cards.
-  const [loadedBanners, setLoadedBanners] = useState<Set<string>>(new Set());
   const [loadedServices, setLoadedServices] = useState<Set<string>>(new Set());
   const [refreshing, setRefreshing] = useState(false);
 
   const loadHomeData = () => {
     setLoadedServices(new Set());
-    const cityParam = selectedCity?.id ? `?cityId=${selectedCity.id}` : '';
-    const packagesPromise = api.get(`${endpoints.PACKAGES}${cityParam}`).then(res => {
-      if (res.data?.status) { setPackages(res.data.data ?? []); setLoadedBanners(new Set()); }
-    }).catch(() => {});
     const bannersPromise = api.get(endpoints.BANNERS).then(res => {
       if (res.data?.status) setBanners(res.data.data ?? []);
     }).catch(() => {});
     return Promise.all([
       dispatch(fetchCategories()),
-      packagesPromise,
       bannersPromise,
     ]);
   };
@@ -118,22 +104,9 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
   const customPackageBanner = banners.find(b => b.type === 'custom_package');
   const comboBanner = banners.find(b => b.type === 'combo');
 
-  // Header carousel = whichever packages/combos the admin has flagged "Show on Home
-  // Screen" — the Special Offers row now lives in the header itself.
-  const featuredPackages = packages.filter(p => p.showOnHome);
-
-  // Auto-scroll the top carousel — pages full-width, wraps back to the first slide
-  useEffect(() => {
-    offersIndexRef.current = 0;
-    if (featuredPackages.length <= 1) return;
-    const id = setInterval(() => {
-      offersIndexRef.current = (offersIndexRef.current + 1) % featuredPackages.length;
-      offersScrollRef.current?.scrollTo({x: offersIndexRef.current * width, animated: true});
-    }, AUTO_SCROLL_OFFERS_MS);
-    return () => clearInterval(id);
-  }, [featuredPackages.length]);
-
-  const goToOffer = (pkg: any) => navigation.navigate('PackageDetail', {package: pkg});
+  // Same admin-managed hero banner the website's homepage shows — replaces the old
+  // featured-packages carousel in the header.
+  const heroBanner = banners.find(b => b.type === 'hero');
 
   if (loading && categories.length === 0) {
     return (
@@ -200,61 +173,18 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
           </View>
         </View>
 
-        {/* ── Special Offers carousel — packages/combos flagged "Show on Home Screen",
-             pages full-width inside the header itself ── */}
-        {featuredPackages.length > 0 ? (
+        {/* ── Hero banner — same admin-managed image the website's homepage shows ── */}
+        {heroBanner?.image ? (
           <View style={{marginTop: sw(10)}}>
-            <ScrollView
-              ref={offersScrollRef}
-              horizontal
-              pagingEnabled
-              showsHorizontalScrollIndicator={false}
-              decelerationRate="fast"
-              onMomentumScrollEnd={e => {
-                offersIndexRef.current = Math.round(e.nativeEvent.contentOffset.x / width);
-              }}
-              contentContainerStyle={{paddingBottom: sw(4)}}>
-              {featuredPackages.map((pkg: any) => {
-                const offerKey = `offer-${pkg.id}`;
-                const isPackage = pkg.packageType === 'flexible';
-                return (
-                  <TouchableOpacity
-                    key={offerKey}
-                    activeOpacity={1}
-                    style={{width}}
-                    onPress={() => goToOffer(pkg)}>
-                    <View style={styles.headerCardShadowWrap}>
-                      <View style={styles.headerCardImgWrap}>
-                        <Image
-                          source={{uri: pkg.image ?? pkg.services?.[0]?.image ?? FALLBACK_IMAGE}}
-                          style={styles.headerCardImg}
-                          resizeMode="stretch"
-                          onLoad={() =>
-                            setLoadedBanners(prev => new Set(prev).add(offerKey))
-                          }
-                        />
-                        {!loadedBanners.has(offerKey) && (
-                          <SkeletonBox color="#1a4036" r={0} style={StyleSheet.absoluteFill} />
-                        )}
-                        <View
-                          style={[
-                            styles.offerTypeBadge,
-                            isPackage ? styles.offerTypeBadgePackage : styles.offerTypeBadgeCombo,
-                          ]}>
-                          <Text
-                            style={[
-                              styles.offerTypeBadgeText,
-                              {color: isPackage ? '#14192B' : '#FFFFFF'},
-                            ]}>
-                            {isPackage ? 'Package' : 'Combo'}
-                          </Text>
-                        </View>
-                      </View>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
+            <View style={styles.headerCardShadowWrap}>
+              <View style={styles.headerCardImgWrap}>
+                <Image
+                  source={{uri: heroBanner.image}}
+                  style={styles.headerCardImg}
+                  resizeMode="cover"
+                />
+              </View>
+            </View>
           </View>
         ) : null}
       </View>
@@ -266,53 +196,6 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#105641']} tintColor="#105641" />
         }>
-
-        {/* ══════════════════════════════════
-            OUR SERVICES
-        ══════════════════════════════════ */}
-        <View style={styles.servicesSection}>
-          <View style={styles.sectionHeaderBlock}>
-            <Text style={styles.sectionTitle}>Our Services</Text>
-            <View style={styles.titleUnderline} />
-          </View>
-
-          <View style={styles.grid}>
-            {chunkArray(categories, 4).map((row: any[], ri: number) => (
-              <View key={ri} style={styles.gridRow}>
-                {row.map((item: any) => (
-                  <TouchableOpacity
-                    key={item._id ?? item.id}
-                    style={styles.serviceItem}
-                    activeOpacity={0.7}
-                    onPress={() => navigation.navigate('ServiceListing', {categoryId: item._id ?? item.id, category: item.name})}>
-                    <View style={styles.serviceImgBox}>
-                      <View style={styles.serviceImgInner}>
-                        <Image
-                          source={{uri: item.image ?? FALLBACK_IMAGE}}
-                          style={styles.serviceImg}
-                          resizeMode="cover"
-                          onLoad={() =>
-                            setLoadedServices(prev =>
-                              new Set(prev).add(String(item._id ?? item.id))
-                            )
-                          }
-                        />
-                        {!loadedServices.has(String(item._id ?? item.id)) && (
-                          <SkeletonBox color="#DCDCDC" r={0} style={StyleSheet.absoluteFill} />
-                        )}
-                      </View>
-                    </View>
-                    {/* Category name is already baked into the image itself, so the
-                        text label underneath would just duplicate it. */}
-                    {/* <Text style={styles.serviceLabel} numberOfLines={2}>
-                      {item.name}
-                    </Text> */}
-                  </TouchableOpacity>
-                ))}
-              </View>
-            ))}
-          </View>
-        </View>
 
         {/* ══════════════════════════════════
             PACKAGES & COMBOS — pick a flexible build-your-own package, or a
@@ -353,6 +236,51 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
           </View>
         </View>
 
+        {/* ══════════════════════════════════
+            OUR SERVICES
+        ══════════════════════════════════ */}
+        <View style={styles.servicesSection}>
+          <View style={styles.sectionHeaderBlock}>
+            <Text style={styles.sectionTitle}>Our Services</Text>
+            <View style={styles.titleUnderline} />
+          </View>
+
+          <View style={styles.grid}>
+            {chunkArray(categories, 4).map((row: any[], ri: number) => (
+              <View key={ri} style={styles.gridRow}>
+                {row.map((item: any) => (
+                  <TouchableOpacity
+                    key={item._id ?? item.id}
+                    style={styles.serviceItem}
+                    activeOpacity={0.7}
+                    onPress={() => navigation.navigate('ServiceListing', {categoryId: item._id ?? item.id, category: item.name})}>
+                    <View style={styles.serviceImgBox}>
+                      <View style={styles.serviceImgInner}>
+                        <Image
+                          source={{uri: item.image ?? FALLBACK_IMAGE}}
+                          style={styles.serviceImg}
+                          resizeMode="cover"
+                          onLoad={() =>
+                            setLoadedServices(prev =>
+                              new Set(prev).add(String(item._id ?? item.id))
+                            )
+                          }
+                        />
+                        {!loadedServices.has(String(item._id ?? item.id)) && (
+                          <SkeletonBox color="#DCDCDC" r={0} style={StyleSheet.absoluteFill} />
+                        )}
+                      </View>
+                    </View>
+                    <Text style={styles.serviceLabel} numberOfLines={2}>
+                      {item.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ))}
+          </View>
+        </View>
+
         <View style={{height: sw(24)}} />
       </ScrollView>
     </View>
@@ -367,29 +295,7 @@ const styles = StyleSheet.create({
   scroll: {flex: 1},
   contentContainer: {paddingBottom: sw(16)},
 
-  /* ── Special Offers badge — featured packages/combos, same styling as the website's ── */
-  offerTypeBadge: {
-    position: 'absolute',
-    top: sw(8),
-    left: sw(8),
-    paddingHorizontal: sw(8),
-    paddingVertical: sw(3),
-    borderRadius: sw(20),
-  },
-  offerTypeBadgeCombo: {
-    backgroundColor: '#105641',
-  },
-  offerTypeBadgePackage: {
-    backgroundColor: '#F2A93B',
-  },
-  offerTypeBadgeText: {
-    fontFamily: fonts.secondry,
-    fontSize: sw(9),
-    fontWeight: '700',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-  },
-  /* ── Header carousel card — plain poster image, badge + overlay on top ──
+  /* ── Header hero banner card — plain poster image ──
      RN clips shadows away on any view that also has overflow:hidden (needed
      here to clip the image to rounded corners), so the shadow lives on an
      outer wrapper and the rounding + clipping lives on the inner one. ── */

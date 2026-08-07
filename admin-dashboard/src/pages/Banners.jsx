@@ -8,9 +8,11 @@ import { useAutoRefresh } from '../hooks/useAutoRefresh';
 
 // Fixed slots — exactly one active image per slot, used across the website and app.
 const SLOTS = [
-  { type: 'hero', label: 'Homepage Hero', desc: 'Large banner at the top of the website homepage' },
-  { type: 'custom_package', label: 'Custom Package CTA', desc: '"Make Your Own Package" card on the app home screen, website homepage, and Products page' },
-  { type: 'combo', label: 'Combo CTA', desc: '"Combo Offers" card on the app home screen, website homepage, and Products page' },
+  { type: 'hero',           label: 'Homepage Hero',          desc: 'Large banner at the top of the website homepage',                                                                    w: 1320, h: 510 },
+  { type: 'custom_package', label: 'Custom Package CTA',     desc: '"Make Your Own Package" card on the app home screen, website homepage, and Products page',                           w: 384,  h: 175 },
+  { type: 'combo',          label: 'Combo CTA',              desc: '"Combo Offers" card on the app home screen, website homepage, and Products page',                                    w: 384,  h: 175 },
+  { type: 'why_beyomo',     label: 'Why Beyomo?',            desc: 'Section image on the website homepage — "Why Beyomo?" promo card',                                                   w: 628,  h: 355 },
+  { type: 'book_steps',     label: 'Book in 3 Easy Steps',   desc: 'Section image on the website homepage — "Book in 3 Easy Steps" promo card',                                         w: 628,  h: 355 },
 ];
 
 export default function Banners() {
@@ -18,7 +20,7 @@ export default function Banners() {
   const { fetchList, create, update } = useBanners();
   const [banners, setBanners] = useState([]);
   const [editingSlot, setEditingSlot] = useState(null);
-  const [form, setForm] = useState({ image: '', isActive: true });
+  const [form, setForm] = useState({ image: '', image2: '', image3: '', isActive: true });
 
   const loadBanners = () => {
     fetchList().then(res => { if (res.ok) setBanners(res.data?.data ?? []); });
@@ -31,16 +33,16 @@ export default function Banners() {
 
   const openSlot = (type) => {
     const existing = bannerForSlot(type);
-    setForm({ image: existing?.image ?? '', isActive: existing?.isActive ?? true });
+    setForm({ image: existing?.image ?? '', image2: existing?.image2 ?? '', image3: existing?.image3 ?? '', isActive: existing?.isActive ?? true });
     setEditingSlot(type);
   };
 
   const save = async () => {
-    if (!form.image) { showToast('Please upload an image.', 'danger'); return; }
+    if (!form.image) { showToast('Please upload a main image.', 'danger'); return; }
     const existing = bannerForSlot(editingSlot);
     const res = existing
-      ? await update(existing.id, { image: form.image, isActive: form.isActive })
-      : await create({ type: editingSlot, image: form.image, isActive: form.isActive });
+      ? await update(existing.id, { image: form.image, image2: form.image2 || null, image3: form.image3 || null, isActive: form.isActive })
+      : await create({ type: editingSlot, image: form.image, image2: form.image2 || null, image3: form.image3 || null, isActive: form.isActive });
     if (res.ok) {
       showToast('Banner saved!', 'success');
       setEditingSlot(null);
@@ -106,11 +108,16 @@ export default function Banners() {
         title={`${SLOTS.find(s => s.type === editingSlot)?.label ?? ''} Image`}
         footer={<><button className="btn btn-outline" onClick={() => setEditingSlot(null)}>Cancel</button><button className="btn btn-primary" onClick={save}>Save</button></>}
       >
-        <div className="form-grid">
-          <div className="form-group">
-            <label className="form-label">Image</label>
-            <ImageUploader value={form.image} onChange={v => setForm(f => ({ ...f, image: v }))} />
-          </div>
+      <div className="form-grid">
+          {(() => {
+            const slot = SLOTS.find(s => s.type === editingSlot);
+            return (
+              <div className="form-group">
+                <label className="form-label">Banner Image <span style={{ fontWeight: 400, color: 'var(--c-text-muted)', fontSize: 12 }}>JPG/PNG/WebP · max 1 MB · {slot?.w}×{slot?.h} px</span></label>
+                <ImageUploader value={form.image} onChange={v => setForm(f => ({ ...f, image: v }))} exactWidth={slot?.w} exactHeight={slot?.h} />
+              </div>
+            );
+          })()}
           <div className="form-group">
             <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
               <input type="checkbox" checked={form.isActive} onChange={e => setForm(f => ({ ...f, isActive: e.target.checked }))} />

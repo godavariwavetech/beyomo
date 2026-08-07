@@ -17,12 +17,46 @@ const DEFAULT_CATEGORIES = [
   'Manicure', 'Mehndi', 'Nail Art', 'Bridal Services',
 ];
 
-const ImagePicker = ({ value, onChange, label = 'Image' }) => {
+const ImagePicker = ({ value, onChange, label = 'Image', hint = 'JPEG, PNG or WebP · Max 1 MB', exactWidth, exactHeight }) => {
   const [uploading, setUploading] = useState(false);
+
+  const checkDimensions = (file) =>
+    new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new window.Image();
+      img.onload = () => { URL.revokeObjectURL(url); resolve({ w: img.naturalWidth, h: img.naturalHeight }); };
+      img.onerror = () => { URL.revokeObjectURL(url); reject('Could not read image.'); };
+      img.src = url;
+    });
+
+  const [dimError, setDimError] = useState('');
 
   const handleFile = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    setDimError('');
+
+    if (file.size > 1 * 1024 * 1024) {
+      setDimError('File too large — max 1 MB.');
+      e.target.value = '';
+      return;
+    }
+
+    if (exactWidth && exactHeight) {
+      try {
+        const { w, h } = await checkDimensions(file);
+        if (w !== exactWidth || h !== exactHeight) {
+          setDimError(`Wrong size: image is ${w}×${h} px. Required: ${exactWidth}×${exactHeight} px.`);
+          e.target.value = '';
+          return;
+        }
+      } catch (err) {
+        setDimError(err);
+        e.target.value = '';
+        return;
+      }
+    }
+
     setUploading(true);
     try {
       const fd = new FormData();
@@ -64,7 +98,8 @@ const ImagePicker = ({ value, onChange, label = 'Image' }) => {
               Remove
             </button>
           )}
-          <div className="form-hint" style={{ marginTop: 4 }}>JPEG, PNG or WebP · Max 5 MB</div>
+          <div className="form-hint" style={{ marginTop: 4 }}>{hint}</div>
+          {dimError && <div style={{ marginTop: 4, fontSize: 12, color: 'var(--c-danger)' }}>{dimError}</div>}
         </div>
       </div>
     </div>
@@ -692,7 +727,7 @@ export default function Services() {
       >
         {editing && (
           <div className="form-grid">
-            <ImagePicker label="Service Image" value={form.image || ''} onChange={url => setForm(f => ({ ...f, image: url }))} />
+            <ImagePicker label="Service Image" value={form.image || ''} onChange={url => setForm(f => ({ ...f, image: url }))} hint="JPG/PNG/WebP · max 1 MB · 128×128 px" exactWidth={128} exactHeight={128} />
             <div className="form-group">
               <label className="form-label">Service Name</label>
               <input className="form-input" value={form.name || ''} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
@@ -733,7 +768,7 @@ export default function Services() {
         }
       >
         <div className="form-grid">
-          <ImagePicker label="Service Image" value={form.image || ''} onChange={url => setForm(f => ({ ...f, image: url }))} />
+            <ImagePicker label="Service Image" value={form.image || ''} onChange={url => setForm(f => ({ ...f, image: url }))} hint="JPG/PNG/WebP · max 1 MB · 128×128 px" exactWidth={128} exactHeight={128} />
           <div className="form-group">
             <label className="form-label">Service Name *</label>
             <input className="form-input" placeholder="e.g. Deep Tissue Massage" value={form.name || ''} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
@@ -781,6 +816,9 @@ export default function Services() {
               label="Category Image"
               value={catForm.image || ''}
               onChange={url => setCatForm(f => ({ ...f, image: url }))}
+              hint="JPG/PNG/WebP · max 1 MB · 193×193 px"
+              exactWidth={193}
+              exactHeight={193}
             />
             <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
               <input className="form-input" placeholder="Category name *" value={catForm.name || ''} onChange={e => setCatForm(f => ({ ...f, name: e.target.value }))} style={{ flex: 2, minWidth: 120 }} />
