@@ -179,8 +179,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   logo: {
-    width: sw(160),
-    height: sw(160),
+    width: sw(240),
+    height: sw(240),
   },
   textContainer: {
     position: 'absolute',

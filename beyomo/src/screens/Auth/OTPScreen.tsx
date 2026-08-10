@@ -272,7 +272,7 @@ const styles = StyleSheet.create({
   taglineLine: {height: 1, width: sw(24), backgroundColor: '#C8A84C'},
   tagline: {
     fontFamily: fonts.textFont,
-    fontSize: sw(10),
+    fontSize: sw(12),
     color: '#C8A84C',
     letterSpacing: sw(2),
   },
@@ -365,7 +365,7 @@ const styles = StyleSheet.create({
   resendDisabled: {color: 'rgba(200,168,76,0.45)'},
   detectingText: {
     fontFamily: fonts.textFont,
-    fontSize: sw(11),
+    fontSize: sw(13),
     color: 'rgba(255,255,255,0.5)',
     textAlign: 'center',
     marginTop: -sw(4),

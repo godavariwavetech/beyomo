@@ -181,7 +181,7 @@ const styles = StyleSheet.create({
     color: '#171816',
     flex: 1,
   },
-  reviewDate: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#A3A3A3'},
+  reviewDate: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#A3A3A3'},
 
   expertRow: {flexDirection: 'row', alignItems: 'center', gap: sw(8)},
   expertAvatar: {

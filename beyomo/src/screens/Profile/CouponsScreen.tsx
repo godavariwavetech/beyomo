@@ -130,6 +130,7 @@ const CouponsScreen = ({navigation, route}: Props) => {
 
       <ScrollView
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={[styles.scroll, {paddingBottom: insets.bottom + sw(24)}]}>
 
         <View style={styles.promoBox}>
@@ -329,7 +330,7 @@ const styles = StyleSheet.create({
     gap: sw(2),
   },
   discountText: {fontFamily: fonts.title, fontSize: sw(22), fontWeight: '700', color: '#FDD77A'},
-  discountLabel: {fontFamily: fonts.textFont, fontSize: sw(11), color: 'rgba(255,255,255,0.8)'},
+  discountLabel: {fontFamily: fonts.textFont, fontSize: sw(13), color: 'rgba(255,255,255,0.8)'},
 
   dashedDivider: {
     width: 1,
@@ -365,15 +366,15 @@ const styles = StyleSheet.create({
   applyChipDisabled: {borderColor: '#CCC'},
   applyChipText: {
     fontFamily: fonts.textFont,
-    fontSize: sw(11),
+    fontSize: sw(13),
     fontWeight: '700',
     color: '#105641',
   },
   couponDesc: {fontFamily: fonts.textFont, fontSize: sw(12), color: '#5C5C5C', lineHeight: sw(17)},
   couponMeta: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: sw(4)},
-  minOrderText: {fontFamily: fonts.textFont, fontSize: sw(10), color: '#888'},
+  minOrderText: {fontFamily: fonts.textFont, fontSize: sw(12), color: '#888'},
   expiryRow: {flexDirection: 'row', alignItems: 'center', gap: sw(3)},
-  expiryText: {fontFamily: fonts.textFont, fontSize: sw(10), color: '#A3A3A3'},
+  expiryText: {fontFamily: fonts.textFont, fontSize: sw(12), color: '#A3A3A3'},
 });
 
 export default CouponsScreen;

@@ -189,9 +189,11 @@ const PackageDetailScreen = ({navigation, route}: {navigation: any; route: any})
     <View style={styles.root}>
       <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
 
-      {/* Header image / gradient */}
+      {/* Header image / gradient — combos (fixed) show a solid brand background instead of a photo */}
       <View style={[styles.heroContainer, {paddingTop: insets.top}]}>
-        {fullPkg.image ? (
+        {fullPkg.packageType === 'fixed' ? (
+          <View style={[StyleSheet.absoluteFillObject, styles.comboHeroBg]} />
+        ) : fullPkg.image ? (
           <Image source={{uri: fullPkg.image}} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
         ) : (
           <Image source={{uri: FALLBACK_IMAGE}} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
@@ -381,6 +383,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     justifyContent: 'flex-end',
   },
+  comboHeroBg: {
+    backgroundColor: '#0E5843',
+  },
   heroContent: {
     padding: sw(20),
     gap: sw(6),
@@ -406,7 +411,7 @@ const styles = StyleSheet.create({
   },
   savingsText: {
     fontFamily: fonts.title,
-    fontSize: sw(11),
+    fontSize: sw(13),
     fontWeight: '700',
     color: '#012823',
   },
@@ -503,7 +508,7 @@ const styles = StyleSheet.create({
   },
   serviceMeta: {
     fontFamily: fonts.textFont,
-    fontSize: sw(11),
+    fontSize: sw(13),
     color: '#888',
   },
   includedBadge: {
@@ -561,7 +566,7 @@ const styles = StyleSheet.create({
   },
   selectedChipText: {
     fontFamily: fonts.textFont,
-    fontSize: sw(11),
+    fontSize: sw(13),
     fontWeight: '600',
     color: '#105641',
     flexShrink: 1,
@@ -621,7 +626,7 @@ const styles = StyleSheet.create({
   footerPriceSummary: {flex: 1},
   footerLabel: {
     fontFamily: fonts.textFont,
-    fontSize: sw(11),
+    fontSize: sw(13),
     color: '#888',
   },
   footerPrice: {

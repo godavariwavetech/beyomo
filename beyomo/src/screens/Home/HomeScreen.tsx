@@ -389,7 +389,7 @@ const styles = StyleSheet.create({
     paddingBottom: sw(4),
   },
   headerLogo: {
-    width: sw(144.61),
+    width: sw(150.19),
     height: sw(43.19),
   },
   locationBtn: {
@@ -405,7 +405,7 @@ const styles = StyleSheet.create({
   },
   locationName: {
     fontFamily: fonts.title,
-    fontSize: sw(11),
+    fontSize: sw(13),
     color: '#FDD77A',
     maxWidth: sw(78),
   },
@@ -432,7 +432,7 @@ const styles = StyleSheet.create({
   },
   connectText: {
     color: '#FFFFFF',
-    fontSize: sw(8),
+    fontSize: sw(10),
     fontFamily: fonts.textFont,
     lineHeight: sw(10),
   },

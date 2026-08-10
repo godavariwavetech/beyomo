@@ -171,7 +171,7 @@ const styles = StyleSheet.create({
     gap: sw(4),
     marginTop: sw(4),
   },
-  codeLabel: {fontFamily: fonts.textFont, fontSize: sw(11), color: 'rgba(255,255,255,0.65)'},
+  codeLabel: {fontFamily: fonts.textFont, fontSize: sw(13), color: 'rgba(255,255,255,0.65)'},
   code: {fontFamily: fonts.title, fontSize: sw(26), fontWeight: '700', color: '#FDD77A', letterSpacing: 3},
   creditsRow: {flexDirection: 'row', gap: sw(10), marginTop: sw(4)},
   creditPill: {
@@ -183,7 +183,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: sw(12),
     paddingVertical: sw(5),
   },
-  creditText: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#FFFFFF'},
+  creditText: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#FFFFFF'},
 
   scroll: {paddingHorizontal: sw(16), paddingTop: sw(16), gap: sw(12)},
   sectionLabel: {fontFamily: fonts.textFont, fontSize: sw(14), fontWeight: '700', color: '#171816'},
@@ -209,7 +209,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  stepNum: {fontFamily: fonts.title, fontSize: sw(11), fontWeight: '700', color: '#105641'},
+  stepNum: {fontFamily: fonts.title, fontSize: sw(13), fontWeight: '700', color: '#105641'},
   stepIconWrap: {
     width: sw(44),
     height: sw(44),
@@ -229,7 +229,7 @@ const styles = StyleSheet.create({
     gap: sw(5),
   },
   termsTitle: {fontFamily: fonts.textFont, fontSize: sw(12), fontWeight: '700', color: '#C49738', marginBottom: sw(4)},
-  termsText: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#656565', lineHeight: sw(17)},
+  termsText: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#656565', lineHeight: sw(19)},
 
   shareWrap: {
     position: 'absolute',

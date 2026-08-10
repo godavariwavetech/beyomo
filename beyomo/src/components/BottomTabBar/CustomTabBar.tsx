@@ -178,7 +178,7 @@ const styles = StyleSheet.create({
   },
   labelInactive: {
     fontFamily: fonts.textFont,
-    fontSize: sw(10),
+    fontSize: sw(12),
     fontWeight: '400',
     lineHeight: sw(15),
     color: INACTIVE_COLOR,
@@ -202,7 +202,7 @@ const styles = StyleSheet.create({
   },
   cartCountText: {
     color: '#FFFFFF',
-    fontSize: sw(9),
+    fontSize: sw(11),
     fontWeight: '800',
     fontFamily: fonts.title,
   },

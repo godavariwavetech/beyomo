@@ -49,8 +49,7 @@ const ServiceCompletedScreen = ({navigation, route}: any) => {
 
   const services: any[] = booking.services ?? [];
   const subtotal = services.reduce((s: number, i: any) => s + (i.price ?? 0), 0);
-  const platformFee = booking.platformFee ?? 0;
-  const total = booking.totalAmount ?? (subtotal + platformFee);
+  const total = booking.totalAmount ?? subtotal;
 
   const partner = booking.partner ?? {};
   const partnerName = partner.name ?? booking.partnerName ?? '';
@@ -302,7 +301,7 @@ const styles = StyleSheet.create({
     paddingVertical: sw(5),
     borderRadius: sw(20),
   },
-  completedDate: {fontFamily: fonts.textFont, fontSize: sw(11), color: 'rgba(255,255,255,0.8)'},
+  completedDate: {fontFamily: fonts.textFont, fontSize: sw(13), color: 'rgba(255,255,255,0.8)'},
 
   card: {
     backgroundColor: '#FFFFFF',
@@ -334,13 +333,13 @@ const styles = StyleSheet.create({
     paddingVertical: sw(2),
     gap: sw(3),
   },
-  ratingText: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#171816'},
+  ratingText: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#171816'},
 
   serviceRow: {flexDirection: 'row', alignItems: 'center', paddingVertical: sw(7), gap: sw(10)},
   serviceRowBorder: {borderTopWidth: 1, borderTopColor: '#F0F0F0'},
   serviceDot: {width: sw(6), height: sw(6), borderRadius: sw(3), backgroundColor: '#105641'},
   serviceName: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#171816', fontWeight: '500'},
-  serviceDuration: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#656565', marginTop: sw(1)},
+  serviceDuration: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#656565', marginTop: sw(1)},
   servicePrice: {fontFamily: fonts.title, fontSize: sw(13), color: '#105641', fontWeight: '700'},
   totalRow: {
     flexDirection: 'row',

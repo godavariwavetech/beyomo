@@ -59,8 +59,6 @@ type SavedAddress = {
   lng?: number | null;
 };
 
-const PLATFORM_FEE = 30;
-
 // Service hours are 8 AM - 8 PM, matching the website's checkout.
 const BOOKING_WINDOW_START_HOUR = 8;
 const BOOKING_WINDOW_END_HOUR = 20;
@@ -96,7 +94,20 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
   const insets = useSafeAreaInsets();
   const dispatch = useDispatch<any>();
   const {profile, error: profileError} = useSelector((state: RootState) => state.User as any);
+  const selectedCity = useSelector((state: RootState) => (state as any).City?.selectedCity);
   const addresses: SavedAddress[] = profile?.addresses ?? [];
+
+  // Same rule as the website's Checkout and MyAddressesScreen: without a serviceable
+  // city chosen there's nothing to validate against, so nothing is blocked; once one's
+  // picked, only addresses within it can be booked against.
+  const isLocationAvailable = (city?: string | null) => {
+    if (!selectedCity) return true;
+    if (!city) return false;
+    return city.toLowerCase().includes(selectedCity.name.toLowerCase());
+  };
+  const selectableAddresses = selectedCity
+    ? addresses.filter(a => isLocationAvailable(a.city))
+    : addresses;
 
   const [selectedAddr, setSelectedAddr] = useState<SavedAddress | null>(null);
   const [showAddrModal, setShowAddrModal] = useState(false);
@@ -202,13 +213,23 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
     setAddSvcCart([]);
   }, [route?.params?.services]);
 
-  // Auto-select default address once profile loads
+  // Auto-select default address once profile loads — only from addresses within the
+  // selected city, so an out-of-city default never gets silently picked.
   useEffect(() => {
-    if (addresses.length > 0 && !selectedAddr) {
-      const def = addresses.find(a => a.isDefault) ?? addresses[0];
+    if (selectableAddresses.length > 0 && !selectedAddr) {
+      const def = selectableAddresses.find(a => a.isDefault) ?? selectableAddresses[0];
       setSelectedAddr(def);
     }
-  }, [addresses]);
+  }, [addresses, selectedCity]);
+
+  // If the app-wide selected city changes to somewhere the current address doesn't
+  // belong, drop it rather than silently letting an out-of-city booking through.
+  useEffect(() => {
+    if (selectedAddr && !isLocationAvailable(selectedAddr.city)) {
+      setSelectedAddr(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCity]);
 
   // Package-tagged items keep the package's own fixed price; anything else (a regular
   // booking's items, or extra services added on top of a package) bills at its own price.
@@ -250,7 +271,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
   const couponDiscount = appliedCoupon?.discountAmount ?? 0;
   const taxableAmount = Math.max(0, subtotal - couponDiscount);
   const tax = Math.round(taxableAmount * 0.05); // GST — backend recomputes the authoritative weighted rate on submit
-  const total = taxableAmount + tax + PLATFORM_FEE;
+  const total = taxableAmount + tax;
 
   const increment = (id: string | number) => {
     if (isCartMode) dispatch(incrementServiceQty(String(id)));
@@ -406,6 +427,13 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
     }
     if (!selectedAddr) {
       Alert.alert('Address Required', 'Please select a delivery address.');
+      return;
+    }
+    if (!isLocationAvailable(selectedAddr.city)) {
+      Alert.alert(
+        'Outside serviceable area',
+        `This address is outside ${selectedCity?.name ?? 'your serviceable area'}. Please choose or add an address in that location.`,
+      );
       return;
     }
     const err = validateDate(selectedDate);
@@ -638,6 +666,16 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
               onPress={() => navigation?.navigate('MyAddresses')}>
               <Ionicons name="add-circle-outline" size={sw(20)} color="#105641" />
               <Text style={styles.addAddrText}>Add a saved address to continue</Text>
+            </TouchableOpacity>
+          ) : selectableAddresses.length === 0 ? (
+            <TouchableOpacity
+              style={styles.addAddrBtn}
+              activeOpacity={0.8}
+              onPress={() => navigation?.navigate('MyAddresses')}>
+              <Ionicons name="warning-outline" size={sw(20)} color="#FB1616" />
+              <Text style={styles.addAddrText}>
+                No saved addresses in {selectedCity?.name}. Add one to continue.
+              </Text>
             </TouchableOpacity>
           ) : selectedAddr ? (
             <View style={styles.addrBlock}>
@@ -1054,10 +1092,6 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
                 </View>
               )}
               <View style={styles.billRow}>
-                <Text style={styles.billLabel}>Platform Fee</Text>
-                <Text style={styles.billValue}>₹{PLATFORM_FEE}</Text>
-              </View>
-              <View style={styles.billRow}>
                 <Text style={styles.billLabel}>Taxes & GST (5%)</Text>
                 <Text style={styles.billValue}>₹{tax}</Text>
               </View>
@@ -1125,9 +1159,17 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
         <View style={[styles.modalSheet, {paddingBottom: insets.bottom + sw(16)}]}>
           <View style={styles.modalHandle} />
           <Text style={styles.modalTitle}>Select Address</Text>
+          {selectedCity && (
+            <Text style={styles.modalSubtitle}>Showing addresses in {selectedCity.name}</Text>
+          )}
 
           <ScrollView showsVerticalScrollIndicator={false}>
-            {addresses.map(addr => {
+            {selectedCity && selectableAddresses.length === 0 && (
+              <Text style={styles.modalEmptyText}>
+                No saved addresses in {selectedCity.name} yet. Add one below.
+              </Text>
+            )}
+            {selectableAddresses.map(addr => {
               const addrId = addr._id ?? addr.id;
               const selId  = selectedAddr?._id ?? selectedAddr?.id;
               const active = addrId === selId;
@@ -1219,6 +1261,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
               data={filteredAddSvcs}
               keyExtractor={item => String(item.id)}
               style={{flex: 1}}
+              keyboardShouldPersistTaps="handled"
               contentContainerStyle={styles.addSvcListContent}
               renderItem={({item}) => {
                 const cartItem = addSvcCart.find(c => c.svc.id === item.id);
@@ -1423,9 +1466,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: sw(6),
     paddingVertical: sw(1),
   },
-  defaultChipText: {fontFamily: fonts.textFont, fontSize: sw(10), color: '#105641'},
+  defaultChipText: {fontFamily: fonts.textFont, fontSize: sw(12), color: '#105641'},
   addrLine1: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#171816', fontWeight: '500'},
-  addrLine2: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#777'},
+  addrLine2: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#777'},
   changeBtn: {
     borderWidth: 1,
     borderColor: '#105641',
@@ -1441,7 +1484,7 @@ const styles = StyleSheet.create({
     gap: sw(8),
     paddingVertical: sw(10),
   },
-  addAddrText: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#105641', fontWeight: '500'},
+  addAddrText: {flex: 1, flexShrink: 1, fontFamily: fonts.textFont, fontSize: sw(13), color: '#105641', fontWeight: '500'},
 
   /* ── Service card ── */
   serviceCard: {
@@ -1494,7 +1537,7 @@ const styles = StyleSheet.create({
   },
   includedTagText: {
     fontFamily: fonts.textFont,
-    fontSize: sw(11),
+    fontSize: sw(13),
     fontWeight: '600',
     color: '#105641',
   },
@@ -1520,7 +1563,7 @@ const styles = StyleSheet.create({
   },
   packageBadgeText: {
     fontFamily: fonts.title,
-    fontSize: sw(10),
+    fontSize: sw(12),
     fontWeight: '800',
     color: '#012823',
     letterSpacing: 0.5,
@@ -1558,14 +1601,14 @@ const styles = StyleSheet.create({
   },
   packageSavingChipText: {
     fontFamily: fonts.title,
-    fontSize: sw(11),
+    fontSize: sw(13),
     fontWeight: '700',
     color: '#FDD77A',
   },
   packageBannerSub: {
     flex: 1,
     fontFamily: fonts.textFont,
-    fontSize: sw(11),
+    fontSize: sw(13),
     color: 'rgba(255,255,255,0.55)',
   },
   packageQtyRow: {
@@ -1651,7 +1694,7 @@ const styles = StyleSheet.create({
     borderColor: '#FEFEFE',
   },
   dateCardError: {borderWidth: 1, borderColor: '#FF2F2F'},
-  dateErrorText: {fontFamily: fonts.textFont, fontSize: sw(10), color: '#FF2F2F', marginTop: sw(2)},
+  dateErrorText: {fontFamily: fonts.textFont, fontSize: sw(12), color: '#FF2F2F', marginTop: sw(2)},
   dateLabel: {fontFamily: fonts.textFont, fontSize: sw(12), color: '#012823'},
   dateValue: {fontFamily: fonts.textFont, fontSize: sw(14), fontWeight: '500', color: '#171816'},
 
@@ -1669,7 +1712,7 @@ const styles = StyleSheet.create({
   offerBannerLeft: {flexDirection: 'row', alignItems: 'center', gap: sw(8), flex: 1},
   offerBannerGift: {fontSize: sw(24)},
   offerBannerTitle: {fontFamily: fonts.title, fontSize: sw(12), fontWeight: '700', color: '#105641'},
-  offerBannerSub: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#444', marginTop: sw(2)},
+  offerBannerSub: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#444', marginTop: sw(2)},
   offerAddBtn: {
     backgroundColor: '#105641',
     borderRadius: sw(8),
@@ -1700,7 +1743,7 @@ const styles = StyleSheet.create({
   paymentModeOptionDisabled: {opacity: 0.45},
   paymentModeLabel: {fontFamily: fonts.textFont, fontSize: sw(13), fontWeight: '600', color: '#171816'},
   paymentModeLabelActive: {color: '#105641'},
-  paymentModeSub: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#888', marginTop: sw(2)},
+  paymentModeSub: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#888', marginTop: sw(2)},
 
   /* ── Coupon ── */
   couponCard: {
@@ -1721,8 +1764,8 @@ const styles = StyleSheet.create({
   },
   couponAppliedLeft: {flexDirection: 'row', alignItems: 'center', gap: sw(8), flex: 1},
   couponAppliedCode: {fontFamily: fonts.title, fontSize: sw(13), fontWeight: '700', color: '#105641'},
-  couponAppliedDesc: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#555', marginTop: sw(2)},
-  couponErrorText: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#FF2F2F'},
+  couponAppliedDesc: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#555', marginTop: sw(2)},
+  couponErrorText: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#FF2F2F'},
   browseCouponsBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1761,7 +1804,7 @@ const styles = StyleSheet.create({
   toPayRow: {flexDirection: 'row', alignItems: 'center', gap: sw(8)},
   toPayTextBlock: {flex: 1},
   toPayLabel: {fontFamily: fonts.textFont, fontSize: sw(14), fontWeight: '700', color: '#303030'},
-  toPaySub: {fontFamily: fonts.textFont, fontSize: sw(10), color: '#575757'},
+  toPaySub: {fontFamily: fonts.textFont, fontSize: sw(12), color: '#575757'},
   toPayAmount: {fontFamily: fonts.textFont, fontSize: sw(14), fontWeight: '700', color: '#303030'},
 
   /* ── Address picker modal ── */
@@ -1790,7 +1833,20 @@ const styles = StyleSheet.create({
     fontSize: sw(16),
     fontWeight: '700',
     color: '#171816',
-    marginBottom: sw(14),
+    marginBottom: sw(4),
+  },
+  modalSubtitle: {
+    fontFamily: fonts.textFont,
+    fontSize: sw(12),
+    color: '#888',
+    marginBottom: sw(10),
+  },
+  modalEmptyText: {
+    fontFamily: fonts.textFont,
+    fontSize: sw(13),
+    color: '#A3A3A3',
+    textAlign: 'center',
+    paddingVertical: sw(20),
   },
   modalAddrCard: {
     flexDirection: 'row',
@@ -1887,7 +1943,7 @@ const styles = StyleSheet.create({
   addSvcItemSelected: {borderColor: '#105641', backgroundColor: 'rgba(16,86,65,0.05)'},
   addSvcItemName: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#171816', fontWeight: '500', marginBottom: sw(2)},
   addSvcItemNameSelected: {color: '#105641', fontWeight: '700'},
-  addSvcItemMeta: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#5C5C5C'},
+  addSvcItemMeta: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#5C5C5C'},
   addSvcInlineQty: {flexDirection: 'row', alignItems: 'center', gap: sw(6)},
   addSvcInlineQtyNum: {fontFamily: fonts.title, fontSize: sw(14), fontWeight: '700', color: '#105641', minWidth: sw(20), textAlign: 'center'},
   addSvcEmptyText: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#888', textAlign: 'center', paddingVertical: sw(32)},

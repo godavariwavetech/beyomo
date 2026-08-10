@@ -266,7 +266,7 @@ const styles = StyleSheet.create({
   offerIconBox: {justifyContent: 'center', alignItems: 'center', backgroundColor: '#FFF8E7'},
   rowBody: {flex: 1, gap: sw(2)},
   rowTitle: {fontFamily: fonts.textFont, fontSize: sw(13), fontWeight: '600', color: '#012823'},
-  rowSub: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#8C8C8C'},
+  rowSub: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#8C8C8C'},
   rowPrice: {fontFamily: fonts.title, fontSize: sw(13), color: '#105641'},
 });
 

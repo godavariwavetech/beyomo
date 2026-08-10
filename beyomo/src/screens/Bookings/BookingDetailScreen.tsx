@@ -72,7 +72,7 @@ const SvcTag = ({type}: {type: 'admin' | 'partner' | 'user' | 'removed' | 'free'
   }[type];
   return (
     <View style={{backgroundColor: cfg.bg, borderRadius: sw(4), paddingHorizontal: sw(5), paddingVertical: sw(1)}}>
-      <Text style={{fontSize: sw(9), fontWeight: '700', color: cfg.text}}>{cfg.label}</Text>
+      <Text style={{fontSize: sw(11), fontWeight: '700', color: cfg.text}}>{cfg.label}</Text>
     </View>
   );
 };
@@ -280,8 +280,7 @@ const BookingDetailScreen = ({navigation, route}: any) => {
   const services: any[] = booking.services ?? [];
   const activeServices = services.filter((s: any) => !s.removed);
   const subtotal = activeServices.reduce((s: number, i: any) => s + (i.price ?? 0), 0);
-  const platformFee = booking.platformFee ?? booking.convenienceFee ?? 0;
-  const total = booking.totalAmount ?? (subtotal + platformFee);
+  const total = booking.totalAmount ?? subtotal;
   const partner = booking.partner ?? {};
   const partnerName = partner.name ?? booking.partnerName ?? '';
   const partnerAvatar = resolveImageUrl(partner.profilePicture ?? partner.avatar ?? partner.photo) ?? '';
@@ -465,12 +464,6 @@ const BookingDetailScreen = ({navigation, route}: any) => {
               <Text style={styles.billVal}>₹{subtotal}</Text>
             </View>
           )}
-          {platformFee > 0 && (
-            <View style={styles.billRow}>
-              <Text style={styles.billKey}>Platform Fee</Text>
-              <Text style={styles.billVal}>₹{platformFee}</Text>
-            </View>
-          )}
           <View style={[styles.billRow, styles.billTotal]}>
             <Text style={styles.billTotalKey}>Total Paid</Text>
             <Text style={styles.billTotalVal}>₹{total}</Text>
@@ -564,6 +557,7 @@ const BookingDetailScreen = ({navigation, route}: any) => {
                 data={filteredSvcs}
                 keyExtractor={item => String(item.id)}
                 style={{flex: 1}}
+                keyboardShouldPersistTaps="handled"
                 contentContainerStyle={styles.svcListContent}
                 renderItem={({item}) => {
                   const cartItem = svcCart.find(c => c.svc.id === item.id);
@@ -748,7 +742,7 @@ const styles = StyleSheet.create({
     padding: sw(14),
   },
   paymentDueTitle: {fontFamily: fonts.title, fontSize: sw(13), fontWeight: '700', color: '#C87B1A'},
-  paymentDueSub: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#6B4C0A', marginTop: sw(2)},
+  paymentDueSub: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#6B4C0A', marginTop: sw(2)},
   paymentDueBtn: {
     backgroundColor: '#105641',
     borderRadius: sw(8),
@@ -790,8 +784,8 @@ const styles = StyleSheet.create({
     paddingVertical: sw(2),
     gap: sw(3),
   },
-  ratingText: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#171816', fontWeight: '600'},
-  expertExp: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#656565'},
+  ratingText: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#171816', fontWeight: '600'},
+  expertExp: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#656565'},
   callBtn: {
     width: sw(44),
     height: sw(44),
@@ -807,13 +801,13 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: '#105641', borderRadius: sw(20),
     paddingHorizontal: sw(10), paddingVertical: sw(4),
   },
-  addServiceBtnText: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#105641', fontWeight: '600'},
+  addServiceBtnText: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#105641', fontWeight: '600'},
 
   serviceRow: {flexDirection: 'row', alignItems: 'center', paddingVertical: sw(8), gap: sw(10)},
   serviceRowBorder: {borderTopWidth: 1, borderTopColor: '#F0F0F0'},
   serviceThumb: {width: sw(44), height: sw(44), borderRadius: sw(8), backgroundColor: '#EEEDED'},
   serviceName: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#171816', fontWeight: '500'},
-  serviceDuration: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#656565', marginTop: sw(2)},
+  serviceDuration: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#656565', marginTop: sw(2)},
   servicePrice: {fontFamily: fonts.title, fontSize: sw(14), color: '#105641', fontWeight: '700'},
 
   modalOverlay: {flex:1, backgroundColor:'rgba(0,0,0,0.45)', justifyContent:'flex-end'},
@@ -833,7 +827,7 @@ const styles = StyleSheet.create({
   svcItemSelected: {borderColor:'#105641', backgroundColor:'rgba(16,86,65,0.05)'},
   svcItemName: {fontFamily:fonts.textFont, fontSize:sw(13), color:'#171816', fontWeight:'500', marginBottom:sw(2)},
   svcItemNameSelected: {color:'#105641', fontWeight:'700'},
-  svcItemMeta: {fontFamily:fonts.textFont, fontSize:sw(11), color:'#5C5C5C'},
+  svcItemMeta: {fontFamily:fonts.textFont, fontSize:sw(13), color:'#5C5C5C'},
   inlineQty: {flexDirection:'row', alignItems:'center', gap:sw(6)},
   inlineQtyNum: {fontFamily:fonts.title, fontSize:sw(14), fontWeight:'700', color:'#105641', minWidth:sw(20), textAlign:'center'},
   emptyText: {fontFamily:fonts.textFont, fontSize:sw(13), color:'#888', textAlign:'center', paddingVertical:sw(32)},
@@ -891,7 +885,7 @@ const styles = StyleSheet.create({
   },
   reschedDateBoxError: {borderColor: '#FB1616'},
   reschedDateText: {fontFamily: fonts.title, fontSize: sw(14), fontWeight: '700', color: '#171816'},
-  reschedErrorText: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#FB1616'},
+  reschedErrorText: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#FB1616'},
   cancelBtn: {
     flex: 1,
     height: sw(46),
