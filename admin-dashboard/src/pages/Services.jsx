@@ -17,7 +17,7 @@ const DEFAULT_CATEGORIES = [
   'Manicure', 'Mehndi', 'Nail Art', 'Bridal Services',
 ];
 
-const ImagePicker = ({ value, onChange, label = 'Image', hint = 'JPEG, PNG or WebP · Max 1 MB', exactWidth, exactHeight }) => {
+const ImagePicker = ({ value, onChange, label = 'Image', hint = 'JPEG, PNG or WebP · Max 2 MB', exactWidth, exactHeight }) => {
   const [uploading, setUploading] = useState(false);
 
   const checkDimensions = (file) =>
@@ -36,8 +36,8 @@ const ImagePicker = ({ value, onChange, label = 'Image', hint = 'JPEG, PNG or We
     if (!file) return;
     setDimError('');
 
-    if (file.size > 1 * 1024 * 1024) {
-      setDimError('File too large — max 1 MB.');
+    if (file.size > 2 * 1024 * 1024) {
+      setDimError('File too large — max 2 MB.');
       e.target.value = '';
       return;
     }
@@ -727,7 +727,7 @@ export default function Services() {
       >
         {editing && (
           <div className="form-grid">
-            <ImagePicker label="Service Image" value={form.image || ''} onChange={url => setForm(f => ({ ...f, image: url }))} hint="JPG/PNG/WebP · max 1 MB · 128×128 px" exactWidth={128} exactHeight={128} />
+            <ImagePicker label="Service Image" value={form.image || ''} onChange={url => setForm(f => ({ ...f, image: url }))} hint="JPG/PNG/WebP · max 2 MB · 128×128 px" exactWidth={128} exactHeight={128} />
             <div className="form-group">
               <label className="form-label">Service Name</label>
               <input className="form-input" value={form.name || ''} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
@@ -768,7 +768,7 @@ export default function Services() {
         }
       >
         <div className="form-grid">
-            <ImagePicker label="Service Image" value={form.image || ''} onChange={url => setForm(f => ({ ...f, image: url }))} hint="JPG/PNG/WebP · max 1 MB · 128×128 px" exactWidth={128} exactHeight={128} />
+            <ImagePicker label="Service Image" value={form.image || ''} onChange={url => setForm(f => ({ ...f, image: url }))} hint="JPG/PNG/WebP · max 2 MB · 128×128 px" exactWidth={128} exactHeight={128} />
           <div className="form-group">
             <label className="form-label">Service Name *</label>
             <input className="form-input" placeholder="e.g. Deep Tissue Massage" value={form.name || ''} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
@@ -816,7 +816,7 @@ export default function Services() {
               label="Category Image"
               value={catForm.image || ''}
               onChange={url => setCatForm(f => ({ ...f, image: url }))}
-              hint="JPG/PNG/WebP · max 1 MB · 193×193 px"
+              hint="JPG/PNG/WebP · max 2 MB · 193×193 px"
               exactWidth={193}
               exactHeight={193}
             />

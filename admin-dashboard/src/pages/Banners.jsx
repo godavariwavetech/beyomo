@@ -113,7 +113,7 @@ export default function Banners() {
             const slot = SLOTS.find(s => s.type === editingSlot);
             return (
               <div className="form-group">
-                <label className="form-label">Banner Image <span style={{ fontWeight: 400, color: 'var(--c-text-muted)', fontSize: 12 }}>JPG/PNG/WebP · max 1 MB · {slot?.w}×{slot?.h} px</span></label>
+                <label className="form-label">Banner Image <span style={{ fontWeight: 400, color: 'var(--c-text-muted)', fontSize: 12 }}>JPG/PNG/WebP · max 2 MB · {slot?.w}×{slot?.h} px</span></label>
                 <ImageUploader value={form.image} onChange={v => setForm(f => ({ ...f, image: v }))} exactWidth={slot?.w} exactHeight={slot?.h} />
               </div>
             );

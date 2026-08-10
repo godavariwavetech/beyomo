@@ -438,7 +438,7 @@ export default function Packages() {
           </div>
 
           <div>
-            <label className="form-label">Banner Image <span style={{ fontWeight: 400, color: 'var(--c-text-muted)', fontSize: 11 }}>JPG/PNG/WebP · max 1 MB · 384×175 px</span></label>
+            <label className="form-label">Banner Image <span style={{ fontWeight: 400, color: 'var(--c-text-muted)', fontSize: 11 }}>JPG/PNG/WebP · max 2 MB · 384×175 px</span></label>
             <ImageUploader value={form.image} onChange={url => setForm(f => ({ ...f, image: url }))} width={140} height={74} exactWidth={384} exactHeight={175} />
           </div>
 

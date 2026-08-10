@@ -42,8 +42,8 @@ const ImageUploader = ({
     if (!file) return;
 
     // Size check
-    if (file.size > 1 * 1024 * 1024) {
-      setError('File too large — max 1 MB.');
+    if (file.size > 2 * 1024 * 1024) {
+      setError('File too large — max 2 MB.');
       return;
     }
 
@@ -83,8 +83,8 @@ const ImageUploader = ({
   // Default hint text
   const hint = sizeHint ||
     (exactWidth && exactHeight
-      ? `JPG/PNG/WebP · max 1 MB · ${exactWidth}×${exactHeight} px`
-      : 'JPG/PNG/WebP · max 1 MB');
+      ? `JPG/PNG/WebP · max 2 MB · ${exactWidth}×${exactHeight} px`
+      : 'JPG/PNG/WebP · max 2 MB');
 
   return (
     <div>
