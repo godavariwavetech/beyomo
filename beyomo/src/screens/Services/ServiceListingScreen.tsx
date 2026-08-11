@@ -32,6 +32,7 @@ const normalizeService = (s: any) => ({
   originalPrice: s.originalPrice ?? s.mrp ?? s.price ?? 0,
   discountPct:   s.discountPercent ?? s.discountPct ?? (s.originalPrice && s.price ? Math.round(((s.originalPrice - s.price) / s.originalPrice) * 100) : 0),
   image:         s.image ?? s.photo ?? s.thumbnail ?? '',
+  priceStartsFrom: s.priceStartsFrom ?? false,
 });
 
 interface Props {
@@ -494,7 +495,7 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
                 />
                 {/* Price badge over image */}
                 <View style={styles.sheetHeroPriceBadge}>
-                  <Text style={styles.sheetHeroPrice}>Starts at ₹{detailItem.price?.toLocaleString('en-IN')}</Text>
+                  <Text style={styles.sheetHeroPrice}>{detailItem.priceStartsFrom ? 'Starts at ' : ''}₹{detailItem.price?.toLocaleString('en-IN')}</Text>
                   {detailItem.originalPrice > detailItem.price && (
                     <Text style={styles.sheetHeroOriginal}>₹{detailItem.originalPrice?.toLocaleString('en-IN')}</Text>
                   )}
@@ -663,7 +664,7 @@ const ServiceCard = ({
         ) : (
           <>
             <View style={styles.priceBlock}>
-              <Text style={styles.startsAtLabel}>Starts at</Text>
+              {item.priceStartsFrom && <Text style={styles.startsAtLabel}>Starts at</Text>}
               <View style={styles.priceRow}>
                 <Text style={styles.currentPrice}>₹{item.price.toLocaleString('en-IN')}</Text>
                 {item.originalPrice > item.price && (

@@ -12,6 +12,7 @@ import {
   ScrollView,
   Alert,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -61,12 +62,11 @@ const LoginScreen = ({navigation}: any) => {
           showsVerticalScrollIndicator={false}>
 
           <View style={styles.logoSection}>
-            <Text style={styles.appName}>BEYOMO</Text>
-            <View style={styles.taglineRow}>
-              <View style={styles.taglineLine} />
-              <Text style={styles.tagline}>SALON COMES HOME</Text>
-              <View style={styles.taglineLine} />
-            </View>
+            <Image
+              source={require('../../assets/beyomo_logo.png')}
+              style={styles.logo}
+              resizeMode="contain"
+            />
           </View>
 
           <View style={styles.card}>
@@ -151,26 +151,7 @@ const styles = StyleSheet.create({
     paddingVertical: sw(60),
   },
   logoSection: {alignItems: 'center', marginBottom: sw(48)},
-  appName: {
-    fontFamily: fonts.title,
-    fontSize: sw(42),
-    fontWeight: '700',
-    color: '#FEFEFE',
-    letterSpacing: sw(4),
-  },
-  taglineRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: sw(8),
-    marginTop: sw(4),
-  },
-  taglineLine: {height: 1, width: sw(30), backgroundColor: '#C8A84C'},
-  tagline: {
-    fontFamily: fonts.textFont,
-    fontSize: sw(13),
-    color: '#C8A84C',
-    letterSpacing: sw(2),
-  },
+  logo: {width: sw(220), height: sw(80)},
   card: {
     backgroundColor: 'rgba(255,255,255,0.07)',
     borderRadius: sw(20),

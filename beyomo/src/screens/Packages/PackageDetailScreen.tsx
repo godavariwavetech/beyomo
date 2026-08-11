@@ -55,6 +55,7 @@ interface PickableService {
   duration?: number;
   image?: string;
   categoryId?: number;
+  priceStartsFrom?: boolean;
 }
 
 const PackageDetailScreen = ({navigation, route}: {navigation: any; route: any}) => {
@@ -288,7 +289,7 @@ const PackageDetailScreen = ({navigation, route}: {navigation: any; route: any})
                     <View style={styles.serviceInfo}>
                       <Text style={styles.serviceName}>{svc.name}</Text>
                       <Text style={styles.serviceMeta}>
-                        {svc.duration ? `${svc.duration} min · ` : ''}Starts at ₹{Math.round(svc.basePrice)}
+                        {svc.duration ? `${svc.duration} min · ` : ''}{svc.priceStartsFrom ? 'Starts at ' : ''}₹{Math.round(svc.basePrice)}
                       </Text>
                     </View>
                     <View style={[styles.checkCircle, selected && styles.checkCircleActive]}>

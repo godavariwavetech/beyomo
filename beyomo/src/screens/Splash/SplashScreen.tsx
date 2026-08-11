@@ -71,34 +71,37 @@ const SplashScreen = ({navigation}: any) => {
       // City already persisted — skip all checks, go straight to the app
       if (savedCity) return {dest: mainDest};
 
-      // First launch or city was cleared — detect via GPS or ask manually
+      // First launch or city was cleared — detect via GPS, falling back to
+      // Nellore (the only serviceable city) if detection fails or the device
+      // is outside it, rather than blocking on a manual picker.
+      const cities = await fetchActiveCities();
+      const fallbackCity = cities.find((c: any) => c.name === 'Nellore') ?? cities[0] ?? null;
+
       try {
-        const cities = await fetchActiveCities();
-        if (cities.length === 0) return {dest: mainDest};
+        if (cities.length > 0) {
+          const permission =
+            Platform.OS === 'ios'
+              ? PERMISSIONS.IOS.LOCATION_WHEN_IN_USE
+              : PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION;
 
-        const permission =
-          Platform.OS === 'ios'
-            ? PERMISSIONS.IOS.LOCATION_WHEN_IN_USE
-            : PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION;
+          let status = await check(permission);
+          if (status === RESULTS.NOT_DETERMINED || status === RESULTS.DENIED) {
+            status = await request(permission);
+          }
 
-        let status = await check(permission);
-        if (status === RESULTS.NOT_DETERMINED || status === RESULTS.DENIED) {
-          status = await request(permission);
-        }
-
-        if (status === RESULTS.GRANTED) {
-          try {
+          if (status === RESULTS.GRANTED) {
             const pos = await getPosition();
             const matched = findCityForLocation(pos.lat, pos.lng, cities);
             if (matched) {
               dispatch(setSelectedCity(matched));
+              return {dest: mainDest};
             }
-          } catch { /* GPS timeout */ }
+          }
         }
-        return {dest: mainDest};
-      } catch {
-        return {dest: 'CitySelector'};
-      }
+      } catch { /* permission denied or GPS timeout */ }
+
+      if (fallbackCity) dispatch(setSelectedCity(fallbackCity));
+      return {dest: mainDest};
     })();
 
     Promise.all([minWait, run]).then(([, result]) => go(result.dest, result.params));
