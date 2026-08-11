@@ -117,6 +117,13 @@ const connectDB = async () => {
     // Additional banner image slots (image2, image3) for extra images per banner
     await sequelize.query("ALTER TABLE banners ADD COLUMN IF NOT EXISTS image2 TEXT NULL").catch(() => {});
     await sequelize.query("ALTER TABLE banners ADD COLUMN IF NOT EXISTS image3 TEXT NULL").catch(() => {});
+    // Rate-card "Starts From" price indicator — was previously only encoded as free-text
+    // inside services.description (e.g. "Starts From", "Women, Starts From") by the
+    // 2026-07-17 rate-card import script; promote it to a real flag and strip the marker
+    // text back out of the description so it reads like a normal description again.
+    await sequelize.query("ALTER TABLE services ADD COLUMN IF NOT EXISTS priceStartsFrom TINYINT(1) NOT NULL DEFAULT 0").catch(() => {});
+    await sequelize.query("UPDATE services SET priceStartsFrom = 1 WHERE description LIKE '%Starts From%' AND priceStartsFrom = 0").catch(() => {});
+    await sequelize.query("UPDATE services SET description = TRIM(TRAILING ', ' FROM REPLACE(description, 'Starts From', '')) WHERE description LIKE '%Starts From%'").catch(() => {});
     logger.info("Column migrations applied");
 
     // Seed cities — INSERT IGNORE skips if name already exists (unique constraint)
