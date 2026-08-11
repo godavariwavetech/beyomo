@@ -129,18 +129,15 @@ const connectDB = async () => {
     // Seed cities — INSERT IGNORE skips if name already exists (unique constraint)
     await sequelize.query(`
       INSERT IGNORE INTO cities (name, state, lat, lng, radius, isActive, createdAt, updatedAt) VALUES
-        ('Hyderabad',  'Telangana',       17.3850,  78.4867,  30, 1, NOW(), NOW()),
-        ('Bangalore',  'Karnataka',       12.9716,  77.5946,  30, 1, NOW(), NOW()),
-        ('Chennai',    'Tamil Nadu',      13.0827,  80.2707,  30, 1, NOW(), NOW()),
-        ('Mumbai',     'Maharashtra',     19.0760,  72.8777,  40, 1, NOW(), NOW()),
-        ('Pune',       'Maharashtra',     18.5204,  73.8567,  25, 1, NOW(), NOW()),
-        ('Delhi',      'Delhi',           28.6139,  77.2090,  40, 1, NOW(), NOW()),
-        ('Kolkata',    'West Bengal',     22.5726,  88.3639,  35, 1, NOW(), NOW()),
-        ('Ahmedabad',  'Gujarat',         23.0225,  72.5714,  25, 1, NOW(), NOW()),
-        ('Jaipur',     'Rajasthan',       26.9124,  75.7873,  25, 1, NOW(), NOW()),
-        ('Visakhapatnam', 'Andhra Pradesh', 17.6868, 83.2185, 25, 1, NOW(), NOW())
+        ('Nellore', 'Andhra Pradesh', 14.4494, 79.9874, 30, 1, NOW(), NOW())
     `).catch(() => {});
     logger.info("City seeds applied");
+
+    // Service area restricted to Nellore only — deactivate every other city
+    // (not deleted: services/coupons may still reference their ids in cityIds JSON,
+    // and isActive is already the mechanism getActiveCities() filters on).
+    await sequelize.query("UPDATE cities SET isActive = 0 WHERE name != 'Nellore'").catch(() => {});
+    await sequelize.query("UPDATE cities SET isActive = 1 WHERE name = 'Nellore'").catch(() => {});
   } catch (error) {
     logger.error(`MySQL connection error: ${error.message}`);
     process.exit(1);
