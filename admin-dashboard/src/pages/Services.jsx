@@ -278,6 +278,7 @@ export default function Services() {
         color: s.color ?? 'var(--c-border-light)',
         image: s.image ?? null,
         description: s.description ?? '',
+        priceStartsFrom: s.priceStartsFrom ?? false,
         cityIds: Array.isArray(s.cityIds) ? s.cityIds : [],
       })));
     });
@@ -435,6 +436,7 @@ export default function Services() {
       basePrice: svc.basePrice,
       description: svc.description ?? '',
       image: svc.image ?? '',
+      priceStartsFrom: svc.priceStartsFrom ?? false,
     });
   };
 
@@ -467,6 +469,7 @@ export default function Services() {
       categoryId: form.categoryId || String(editing.categoryId ?? ''),
       basePrice: +form.basePrice,
       description: form.description ?? '',
+      priceStartsFrom: !!form.priceStartsFrom,
       cityMappings: editMappings,
       ...(form.image ? { image: form.image } : {}),
     };
@@ -496,6 +499,7 @@ export default function Services() {
       categoryId: String(form.categoryId),
       basePrice: +form.basePrice,
       description: form.description ?? '',
+      priceStartsFrom: !!form.priceStartsFrom,
       isActive: true,
       cityIds: form.cityIds ?? [],
       ...(form.image ? { image: form.image } : {}),
@@ -515,6 +519,7 @@ export default function Services() {
         color: 'var(--c-border-light)',
         image: form.image ?? null,
         description: form.description ?? '',
+        priceStartsFrom: payload.priceStartsFrom,
         cityIds: payload.cityIds,
       }]);
       showToast('Service added successfully!', 'success');
@@ -617,7 +622,9 @@ export default function Services() {
                               <span style={{ fontSize: 20, flexShrink: 0 }}>{svc.icon}</span>
                             )}
                             <div style={{ flex: 1, minWidth: 0, fontWeight: 600, fontSize: 13 }}>{svc.name}</div>
-                            <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--c-text-secondary)' }}>₹{svc.basePrice.toLocaleString()}</div>
+                            <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--c-text-secondary)' }}>
+                              {svc.priceStartsFrom && <span style={{ fontWeight: 400 }}>Starts from </span>}₹{svc.basePrice.toLocaleString()}
+                            </div>
                           </div>
                         )}
                       </Draggable>
@@ -677,7 +684,10 @@ export default function Services() {
               <div className="form-grid form-grid-2" style={{ padding: '14px 20px', gap: 12 }}>
                 <div>
                   <div style={{ fontSize: 11, color: 'var(--c-text-secondary)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Price</div>
-                  <div style={{ fontWeight: 700, fontSize: 14 }}>₹{svc.basePrice.toLocaleString()}</div>
+                  <div style={{ fontWeight: 700, fontSize: 14 }}>
+                    {svc.priceStartsFrom && <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--c-text-muted)', display: 'block' }}>Starts from</span>}
+                    ₹{svc.basePrice.toLocaleString()}
+                  </div>
                 </div>
                 <div>
                   <div style={{ fontSize: 11, color: 'var(--c-text-secondary)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Rating</div>
@@ -750,6 +760,19 @@ export default function Services() {
               <label className="form-label">Base Price (₹)</label>
               <input className="form-input" type="number" value={form.basePrice || ''} onChange={e => setForm(f => ({ ...f, basePrice: e.target.value }))} />
             </div>
+            <label style={{
+              display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+              background: form.priceStartsFrom ? 'rgba(6,64,129,0.06)' : 'var(--c-border-light)',
+              border: `1px solid ${form.priceStartsFrom ? 'var(--c-brand-primary)' : 'var(--c-border)'}`,
+              borderRadius: 8, padding: '10px 12px',
+            }}>
+              <input type="checkbox" checked={form.priceStartsFrom ?? false}
+                onChange={e => setForm(f => ({ ...f, priceStartsFrom: e.target.checked }))} />
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>Show as "Starts from" price</div>
+                <div style={{ fontSize: 11, color: 'var(--c-text-muted)' }}>Rate-card services whose actual price can vary (hair length, add-ons, etc.) — shows "Starts from ₹{form.basePrice || 'X'}" instead of a flat price on the app and website.</div>
+              </div>
+            </label>
             <div className="form-group">
               <label className="form-label">Description</label>
               <textarea className="form-input" rows={3} placeholder="Describe what this service includes…" value={form.description || ''} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} style={{ resize: 'vertical' }} />
@@ -790,6 +813,19 @@ export default function Services() {
             <label className="form-label">Base Price (₹) *</label>
             <input className="form-input" type="number" placeholder="500" value={form.basePrice || ''} onChange={e => setForm(f => ({ ...f, basePrice: e.target.value }))} />
           </div>
+          <label style={{
+            display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+            background: form.priceStartsFrom ? 'rgba(6,64,129,0.06)' : 'var(--c-border-light)',
+            border: `1px solid ${form.priceStartsFrom ? 'var(--c-brand-primary)' : 'var(--c-border)'}`,
+            borderRadius: 8, padding: '10px 12px',
+          }}>
+            <input type="checkbox" checked={form.priceStartsFrom ?? false}
+              onChange={e => setForm(f => ({ ...f, priceStartsFrom: e.target.checked }))} />
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>Show as "Starts from" price</div>
+              <div style={{ fontSize: 11, color: 'var(--c-text-muted)' }}>Rate-card services whose actual price can vary (hair length, add-ons, etc.) — shows "Starts from ₹{form.basePrice || 'X'}" instead of a flat price on the app and website.</div>
+            </div>
+          </label>
           <div className="form-group">
             <label className="form-label">Description</label>
             <textarea className="form-input" rows={3} placeholder="Describe what this service includes…" value={form.description || ''} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} style={{ resize: 'vertical' }} />
