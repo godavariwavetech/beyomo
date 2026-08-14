@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import { Plus, Edit2, Power, Search, Users, ShoppingBag, DollarSign, Trash2, FolderOpen, Upload, RefreshCw, MapPin, CheckCircle, XCircle, GripVertical, ListOrdered } from 'lucide-react';
+import { Plus, Edit2, Power, Search, Users, ShoppingBag, DollarSign, Trash2, FolderOpen, Upload, RefreshCw, MapPin, CheckCircle, XCircle, GripVertical, ListOrdered, Flame } from 'lucide-react';
 import { Badge, StarRating } from '../components/common/Badge';
 import Modal from '../components/common/Modal';
 import RevenueSplitFields from '../components/common/RevenueSplitFields';
@@ -279,6 +279,7 @@ export default function Services() {
         image: s.image ?? null,
         description: s.description ?? '',
         priceStartsFrom: s.priceStartsFrom ?? false,
+        isPopular: s.isPopular ?? false,
         cityIds: Array.isArray(s.cityIds) ? s.cityIds : [],
       })));
     });
@@ -437,6 +438,7 @@ export default function Services() {
       description: svc.description ?? '',
       image: svc.image ?? '',
       priceStartsFrom: svc.priceStartsFrom ?? false,
+      isPopular: svc.isPopular ?? false,
     });
   };
 
@@ -470,6 +472,7 @@ export default function Services() {
       basePrice: +form.basePrice,
       description: form.description ?? '',
       priceStartsFrom: !!form.priceStartsFrom,
+      isPopular: !!form.isPopular,
       cityMappings: editMappings,
       ...(form.image ? { image: form.image } : {}),
     };
@@ -500,6 +503,7 @@ export default function Services() {
       basePrice: +form.basePrice,
       description: form.description ?? '',
       priceStartsFrom: !!form.priceStartsFrom,
+      isPopular: !!form.isPopular,
       isActive: true,
       cityIds: form.cityIds ?? [],
       ...(form.image ? { image: form.image } : {}),
@@ -520,6 +524,7 @@ export default function Services() {
         image: form.image ?? null,
         description: form.description ?? '',
         priceStartsFrom: payload.priceStartsFrom,
+        isPopular: payload.isPopular,
         cityIds: payload.cityIds,
       }]);
       showToast('Service added successfully!', 'success');
@@ -656,7 +661,14 @@ export default function Services() {
                       <div style={{ fontWeight: 700, fontSize: 15 }}>{svc.name}</div>
                       <div style={{ fontSize: 12, opacity: 0.8 }}>{svc.category}</div>
                     </div>
-                    <div style={{ position: 'absolute', top: 8, right: 8 }}><Badge status={svc.status} /></div>
+                    <div style={{ position: 'absolute', top: 8, right: 8, display: 'flex', gap: 4 }}>
+                      {svc.isPopular && (
+                        <div style={{ background: '#F97316', color: 'white', fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 'var(--r-full)', display: 'flex', alignItems: 'center', gap: 3 }}>
+                          <Flame size={10}/> Popular
+                        </div>
+                      )}
+                      <Badge status={svc.status} />
+                    </div>
                     {svc.cityIds?.length > 0 && (
                       <div style={{ position: 'absolute', top: 8, left: 8, background: 'rgba(6,64,129,0.85)', color: 'white', fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 'var(--r-full)', display: 'flex', alignItems: 'center', gap: 4 }}>
                         <MapPin size={10}/> {getCityNames(svc.cityIds)}
@@ -675,7 +687,14 @@ export default function Services() {
                         </div>
                       )}
                     </div>
-                    <Badge status={svc.status} />
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                      {svc.isPopular && (
+                        <div style={{ background: '#F97316', color: 'white', fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 'var(--r-full)', display: 'flex', alignItems: 'center', gap: 3 }}>
+                          <Flame size={10}/> Popular
+                        </div>
+                      )}
+                      <Badge status={svc.status} />
+                    </div>
                   </>
                 )}
               </div>
@@ -773,6 +792,19 @@ export default function Services() {
                 <div style={{ fontSize: 11, color: 'var(--c-text-muted)' }}>Rate-card services whose actual price can vary (hair length, add-ons, etc.) — shows "Starts from ₹{form.basePrice || 'X'}" instead of a flat price on the app and website.</div>
               </div>
             </label>
+            <label style={{
+              display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+              background: form.isPopular ? 'rgba(249,115,22,0.06)' : 'var(--c-border-light)',
+              border: `1px solid ${form.isPopular ? '#F97316' : 'var(--c-border)'}`,
+              borderRadius: 8, padding: '10px 12px',
+            }}>
+              <input type="checkbox" checked={form.isPopular ?? false}
+                onChange={e => setForm(f => ({ ...f, isPopular: e.target.checked }))} />
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>Show in "Most Booked Services"</div>
+                <div style={{ fontSize: 11, color: 'var(--c-text-muted)' }}>Featured in the app's home screen "Most Booked Services" section.</div>
+              </div>
+            </label>
             <div className="form-group">
               <label className="form-label">Description</label>
               <textarea className="form-input" rows={3} placeholder="Describe what this service includes…" value={form.description || ''} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} style={{ resize: 'vertical' }} />
@@ -824,6 +856,19 @@ export default function Services() {
             <div>
               <div style={{ fontSize: 13, fontWeight: 600 }}>Show as "Starts from" price</div>
               <div style={{ fontSize: 11, color: 'var(--c-text-muted)' }}>Rate-card services whose actual price can vary (hair length, add-ons, etc.) — shows "Starts from ₹{form.basePrice || 'X'}" instead of a flat price on the app and website.</div>
+            </div>
+          </label>
+          <label style={{
+            display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+            background: form.isPopular ? 'rgba(249,115,22,0.06)' : 'var(--c-border-light)',
+            border: `1px solid ${form.isPopular ? '#F97316' : 'var(--c-border)'}`,
+            borderRadius: 8, padding: '10px 12px',
+          }}>
+            <input type="checkbox" checked={form.isPopular ?? false}
+              onChange={e => setForm(f => ({ ...f, isPopular: e.target.checked }))} />
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>Show in "Most Booked Services"</div>
+              <div style={{ fontSize: 11, color: 'var(--c-text-muted)' }}>Featured in the app's home screen "Most Booked Services" section.</div>
             </div>
           </label>
           <div className="form-group">

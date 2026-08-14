@@ -16,6 +16,8 @@ const { sendPushNotification } = require("../../../../utils/firebaseUtils");
 const { haversineKm } = require("../../../../utils/geoUtils");
 const { resolveRatesForBooking, resolveRatesForMultiPackageBooking } = require("../../../../utils/revenueSplit");
 
+const MIN_BOOKING_AMOUNT = 500;
+
 // Multi-package path: bookingData.packages = [{ packageId, qty, services: [{id, qty}] }, ...].
 // Each package keeps its own price/discount/revenue-split intact instead of collapsing
 // into one flat packageId (which can only ever represent a single package).
@@ -137,6 +139,10 @@ const createBooking = async (userId, bookingData) => {
     enrichedExtraServices.forEach(s => { s.addedByUser = true; });
     baseAmount += enrichedExtraServices.reduce((sum, s) => sum + s.price * s.qty, 0);
     enrichedServices = [...enrichedServices, ...enrichedExtraServices];
+  }
+
+  if (baseAmount < MIN_BOOKING_AMOUNT) {
+    throw new AppError(`Minimum booking amount is ₹${MIN_BOOKING_AMOUNT}. Please add more services to continue.`, 400);
   }
 
   let couponDiscount = 0;
@@ -559,6 +565,9 @@ const updateServiceQty = async (userId, bookingId, index, qty) => {
 
   const updatedServices = existing.map((s, i) => (i === index ? { ...s, qty } : s));
   const { newBase, tax, total, partnerEarning } = await recomputeBookingAmounts(booking, updatedServices);
+  if (newBase < MIN_BOOKING_AMOUNT) {
+    throw new AppError(`Booking total can't go below the ₹${MIN_BOOKING_AMOUNT} minimum — cancel the booking instead`, 400);
+  }
   await booking.update({ services: updatedServices, baseAmount: newBase, taxAmount: tax, totalAmount: total, partnerEarning });
 
   return booking;
@@ -580,6 +589,9 @@ const removeService = async (userId, bookingId, index) => {
 
   const updatedServices = existing.filter((_, i) => i !== index);
   const { newBase, tax, total, partnerEarning } = await recomputeBookingAmounts(booking, updatedServices);
+  if (newBase < MIN_BOOKING_AMOUNT) {
+    throw new AppError(`Booking total can't go below the ₹${MIN_BOOKING_AMOUNT} minimum — cancel the booking instead`, 400);
+  }
   await booking.update({ services: updatedServices, baseAmount: newBase, taxAmount: tax, totalAmount: total, partnerEarning });
 
   return booking;

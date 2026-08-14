@@ -204,6 +204,17 @@ export default function Bookings() {
     if (selected?.id === id) setSelected(prev => ({ ...prev, status:'cancelled', commission:0 }));
   };
 
+  const acceptBooking = async (id) => {
+    const res = await action('patch', `/api/v1/admin/bookings/${id}/accept`);
+    if (res.ok) {
+      setBookings(prev => prev.map(b => b.id === id ? { ...b, status:'confirmed' } : b));
+      showToast('Booking accepted.', 'success');
+      if (selected?.id === id) setSelected(prev => ({ ...prev, status:'confirmed' }));
+    } else {
+      showToast(res.error ?? 'Failed to accept booking.', 'danger');
+    }
+  };
+
   const handleAddServices = async (bookingId) => {
     if (!svcCart.length) { showToast('Please select at least one service.', 'warning'); return; }
     setAddingSvc(true);
@@ -523,6 +534,9 @@ export default function Bookings() {
                   <td>
                     <div style={{ display:'flex', gap:4 }}>
                       <button className="btn btn-ghost btn-icon" title="View Details" onClick={() => openDetail(b)}><Eye size={15}/></button>
+                      {b.status === 'pending' && (
+                        <button className="btn btn-ghost btn-icon" title="Accept Booking" onClick={() => acceptBooking(b.id)} style={{ color:'#22C55E' }}><CheckCircle2 size={15}/></button>
+                      )}
                       {!['completed','cancelled'].includes(b.status) && (
                         <button className="btn btn-ghost btn-icon" title="Cancel Booking" onClick={() => cancelBooking(b.id)} style={{ color:'var(--c-danger)' }}><XCircle size={15}/></button>
                       )}
@@ -558,6 +572,11 @@ export default function Bookings() {
         footer={
           <>
             <button className="btn btn-outline" onClick={() => { setSelected(null); setReassignId(''); }}>Close</button>
+            {selected && selected.status === 'pending' && (
+              <button className="btn btn-primary" onClick={() => acceptBooking(selected.id)} style={{ display:'flex', alignItems:'center', gap:6, background:'#22C55E', borderColor:'#22C55E' }}>
+                <CheckCircle2 size={15}/> Accept Booking
+              </button>
+            )}
             {selected && !['completed','cancelled'].includes(selected.status) && (
               <button className="btn btn-danger" onClick={() => cancelBooking(selected.id)} style={{ display:'flex', alignItems:'center', gap:6 }}>
                 <XCircle size={15}/> Cancel Booking

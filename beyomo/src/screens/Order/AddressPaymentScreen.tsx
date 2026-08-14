@@ -77,6 +77,7 @@ const getDefaultDate = () => {
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
 const ONE_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
+const MIN_BOOKING_AMOUNT = 500;
 const formatDate = (d: Date) =>
   d.toLocaleDateString('en-IN', {month: 'short', day: 'numeric', year: 'numeric'});
 const formatTime = (d: Date) =>
@@ -423,6 +424,13 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
   const handleBooking = async () => {
     if (isCartMode ? cartItems.length === 0 && cartServices.length === 0 : services.length === 0) {
       Alert.alert('No services', 'Please add at least one service.');
+      return;
+    }
+    if (subtotal < MIN_BOOKING_AMOUNT) {
+      Alert.alert(
+        'Minimum Booking Amount',
+        `Please add services worth at least ₹${MIN_BOOKING_AMOUNT} to continue. You're ₹${MIN_BOOKING_AMOUNT - subtotal} away.`,
+      );
       return;
     }
     if (!selectedAddr) {
@@ -1317,6 +1325,14 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
       </Modal>
 
       {/* Bottom bar */}
+      {subtotal > 0 && subtotal < MIN_BOOKING_AMOUNT && (
+        <View style={styles.minAmountBanner}>
+          <Ionicons name="information-circle" size={sw(14)} color="#B45309" />
+          <Text style={styles.minAmountText}>
+            Add ₹{MIN_BOOKING_AMOUNT - subtotal} more to reach the ₹{MIN_BOOKING_AMOUNT} minimum booking amount
+          </Text>
+        </View>
+      )}
       <View style={[styles.bottomBar, {paddingBottom: insets.bottom + sw(8)}]}>
         <View>
           <Text style={styles.bottomPrice}>₹{total}</Text>
@@ -1326,9 +1342,9 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
           </View>
         </View>
         <TouchableOpacity
-          style={[styles.continueBtn, (booking || !selectedAddr) && {opacity: 0.6}]}
+          style={[styles.continueBtn, (booking || !selectedAddr || subtotal < MIN_BOOKING_AMOUNT) && {opacity: 0.6}]}
           activeOpacity={0.85}
-          disabled={booking || !selectedAddr}
+          disabled={booking || !selectedAddr || subtotal < MIN_BOOKING_AMOUNT}
           onPress={handleBooking}>
           {booking ? (
             <ActivityIndicator color="#FFFFFF" />
@@ -1960,6 +1976,23 @@ const styles = StyleSheet.create({
   addSvcConfirmBtn: {flex: 2, height: sw(46), borderRadius: sw(10), backgroundColor: '#105641', alignItems: 'center', justifyContent: 'center'},
   addSvcConfirmBtnDisabled: {backgroundColor: '#AAAAAA'},
   addSvcConfirmText: {fontFamily: fonts.title, fontSize: sw(14), fontWeight: '700', color: '#FFFFFF'},
+
+  /* ── Minimum booking amount banner ── */
+  minAmountBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: sw(6),
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: sw(16),
+    paddingVertical: sw(8),
+  },
+  minAmountText: {
+    flex: 1,
+    fontFamily: fonts.textFont,
+    fontSize: sw(12),
+    color: '#B45309',
+    fontWeight: '600',
+  },
 
   /* ── Bottom bar ── */
   bottomBar: {

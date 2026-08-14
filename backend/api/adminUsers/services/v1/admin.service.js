@@ -588,6 +588,33 @@ const assignPartner = async (bookingId, partnerId) => {
   return booking;
 };
 
+// Explicit admin acknowledgement of a new booking — moves it out of "pending" without
+// necessarily assigning a partner yet (that stays a separate step via assignPartner).
+const acceptBooking = async (bookingId) => {
+  const booking = await Booking.findByPk(bookingId);
+  if (!booking) throw new AppError("Booking not found", 404);
+  if (booking.status !== "pending") {
+    throw new AppError(`Only a pending booking can be accepted (current status: "${booking.status}")`, 400);
+  }
+  await booking.update({ status: "confirmed" });
+
+  const user = await User.findByPk(booking.userId);
+  const userMsg = `Your booking ${booking.bookingCode} has been accepted and is being arranged.`;
+  if (user?.fcmToken) {
+    await sendPushNotification([user.fcmToken], "Booking Accepted", userMsg,
+      { bookingId: String(booking.id), type: "booking" }, "beyomo_booking").catch(() => {});
+  }
+  await Notification.create({
+    userId: booking.userId,
+    title: "Booking Accepted",
+    body: userMsg,
+    data: { bookingId: String(booking.id) },
+    type: "booking",
+  });
+
+  return booking;
+};
+
 const editBookingServices = async (bookingId, serviceItems = [], removeIndices = [], updateQty = []) => {
   const booking = await Booking.findByPk(bookingId);
   if (!booking) throw new AppError("Booking not found", 404);
@@ -991,6 +1018,7 @@ const createCity = async (data) => {
   if (existing) throw new AppError("A city with this name already exists", 400);
   return City.create({
     name: data.name,
+    code: data.code ? data.code.toUpperCase() : null,
     state: data.state || null,
     lat: data.lat ?? null,
     lng: data.lng ?? null,
@@ -1049,7 +1077,7 @@ module.exports = {
   listCategories, createCategory, updateCategory, deleteCategory, reorderCategories,
   listServices, createService, updateService, deleteService, toggleServiceCityStatus, reorderServices,
   createBookingForCustomer,
-  listBookings, getBookingDetail, assignPartner, cancelBooking, rescheduleBooking, editBookingServices,
+  listBookings, getBookingDetail, assignPartner, acceptBooking, cancelBooking, rescheduleBooking, editBookingServices,
   listCoupons, createCoupon, updateCoupon, deleteCoupon, getReferralProgram, updateReferralProgram,
   listReviews, updateReviewStatus,
   listNotifications, broadcastNotification,

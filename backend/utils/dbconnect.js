@@ -124,6 +124,11 @@ const connectDB = async () => {
     await sequelize.query("ALTER TABLE services ADD COLUMN IF NOT EXISTS priceStartsFrom TINYINT(1) NOT NULL DEFAULT 0").catch(() => {});
     await sequelize.query("UPDATE services SET priceStartsFrom = 1 WHERE description LIKE '%Starts From%' AND priceStartsFrom = 0").catch(() => {});
     await sequelize.query("UPDATE services SET description = TRIM(TRAILING ', ' FROM REPLACE(description, 'Starts From', '')) WHERE description LIKE '%Starts From%'").catch(() => {});
+    // Admin-curated "Most Booked Services" flag for the app home screen
+    await sequelize.query("ALTER TABLE services ADD COLUMN IF NOT EXISTS isPopular TINYINT(1) NOT NULL DEFAULT 0").catch(() => {});
+    // City prefix code for the new city+year+series booking ID format (e.g. NLR2600001)
+    await sequelize.query("ALTER TABLE cities ADD COLUMN IF NOT EXISTS code VARCHAR(5) NULL").catch(() => {});
+    await sequelize.query("UPDATE cities SET code = 'NLR' WHERE name = 'Nellore' AND (code IS NULL OR code = '')").catch(() => {});
     logger.info("Column migrations applied");
 
     // Seed cities — INSERT IGNORE skips if name already exists (unique constraint)

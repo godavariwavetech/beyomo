@@ -1,5 +1,6 @@
-﻿const { DataTypes } = require("sequelize");
+﻿const { DataTypes, Op } = require("sequelize");
 const { sequelize } = require("../../../utils/dbconnect");
+const City = require("../../cities/models/city.model");
 
 const Booking = sequelize.define("Booking", {
   id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
@@ -73,13 +74,9 @@ const Booking = sequelize.define("Booking", {
   timestamps: true,
   tableName: "bookings",
   hooks: {
-    beforeCreate(booking) {
+    async beforeCreate(booking) {
       if (!booking.bookingCode) {
-        const now = new Date();
-        const year = now.getFullYear();
-        const month = String(now.getMonth() + 1).padStart(2, "0");
-        const random = Math.floor(100000 + Math.random() * 900000);
-        booking.bookingCode = `BYM-${year}${month}-${random}`;
+        booking.bookingCode = await generateBookingCode(booking.cityId);
       }
       if (booking.partnerEarning == null) {
         booking.partnerEarning = booking.totalAmount;
@@ -87,6 +84,36 @@ const Booking = sequelize.define("Booking", {
     },
   },
 });
+
+// Booking code format: {cityCode}{2-digit year}{5-digit series}, e.g. "NLR2600001" —
+// series resets per city per calendar year. Falls back to "GEN" when the booking has
+// no resolved city (shouldn't normally happen once a city's serviceable). The
+// count-then-check loop guards against a rare race between two concurrent bookings
+// landing on the same series number (the unique index on bookingCode is the real
+// backstop; this just avoids a wasted failed insert in the common case).
+const generateBookingCode = async (cityId) => {
+  let cityCode = "GEN";
+  if (cityId) {
+    const city = await City.findByPk(cityId, { attributes: ["code"] });
+    if (city?.code) cityCode = city.code.toUpperCase();
+  }
+  const now = new Date();
+  const yy = String(now.getFullYear()).slice(-2);
+  const yearStart = new Date(now.getFullYear(), 0, 1);
+  const yearEnd = new Date(now.getFullYear() + 1, 0, 1);
+
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const count = await Booking.count({
+      where: { cityId: cityId ?? null, createdAt: { [Op.gte]: yearStart, [Op.lt]: yearEnd } },
+    });
+    const series = String(count + 1 + attempt).padStart(5, "0");
+    const candidate = `${cityCode}${yy}${series}`;
+    const exists = await Booking.findOne({ where: { bookingCode: candidate }, attributes: ["id"] });
+    if (!exists) return candidate;
+  }
+  // Extremely unlikely fallback — timestamp suffix guarantees uniqueness.
+  return `${cityCode}${yy}${String(Date.now()).slice(-5)}`;
+};
 
 module.exports = Booking;
 

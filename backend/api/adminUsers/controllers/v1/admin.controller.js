@@ -141,6 +141,7 @@ const serviceSchema = Joi.object({
   tags: Joi.array().items(Joi.string()),
   image: Joi.string().allow(null, ""),
   priceStartsFrom: Joi.boolean().default(false),
+  isPopular: Joi.boolean().default(false),
   isActive: Joi.boolean().default(true),
   cityIds: Joi.array().items(Joi.number().integer()).default([]),
   cityMappings: Joi.array().items(cityMappingItem).default([]),
@@ -164,6 +165,7 @@ const serviceUpdateSchema = Joi.object({
   tags: Joi.array().items(Joi.string()),
   image: Joi.string().allow(null, ""),
   priceStartsFrom: Joi.boolean(),
+  isPopular: Joi.boolean(),
   isActive: Joi.boolean(),
   cityIds: Joi.array().items(Joi.number().integer()),
   cityMappings: Joi.array().items(cityMappingItem),
@@ -468,6 +470,11 @@ const assignPartner = catchAsync(async (req, res, next) => {
 const cancelBooking = catchAsync(async (req, res, next) => {
   const booking = await adminService.cancelBooking(req.params.id);
   res.status(200).json({ status: true, message: "Booking cancelled", data: booking });
+});
+
+const acceptBooking = catchAsync(async (req, res, next) => {
+  const booking = await adminService.acceptBooking(req.params.id);
+  res.status(200).json({ status: true, message: "Booking accepted", data: booking });
 });
 
 const rescheduleBookingSchema = Joi.object({
@@ -819,6 +826,7 @@ const deleteZone = catchAsync(async (req, res) => {
 
 const citySchema = Joi.object({
   name:     Joi.string().trim().required(),
+  code:     Joi.string().trim().uppercase().min(2).max(5).allow("", null),
   state:    Joi.string().trim().allow("", null),
   lat:      Joi.number().min(-90).max(90).allow(null),
   lng:      Joi.number().min(-180).max(180).allow(null),
@@ -996,7 +1004,7 @@ module.exports = {
   listCategories, createCategory, updateCategory, deleteCategory, reorderCategories,
   listServices, createService, updateService, deleteService, patchService, patchServiceCity, reorderServices,
   createBookingForCustomer,
-  listBookings, getBookingDetail, assignPartner, cancelBooking, rescheduleBooking, editBookingServices,
+  listBookings, getBookingDetail, assignPartner, acceptBooking, cancelBooking, rescheduleBooking, editBookingServices,
   listPartnerBalances, getPartnerLedger, recordSettlement, voidLedgerEntry,
   listCoupons, createCoupon, updateCoupon, deleteCoupon, getReferral, updateReferral,
   listReviews, updateReviewStatus,

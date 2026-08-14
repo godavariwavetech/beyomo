@@ -17,9 +17,32 @@ import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useDispatch, useSelector} from 'react-redux';
 import {fonts} from '../../config/theme';
 import {fetchCategories} from '../../redux/reducers/services';
+import {addServicesToCart} from '../../redux/reducers/cart';
 import type {AppDispatch, RootState} from '../../redux/store';
 import api from '../../utils/api';
 import {endpoints} from '../../config/config';
+
+const BRAND_LOGOS = [
+  require('../../assets/brands/b1.png'),
+  require('../../assets/brands/b2.png'),
+  require('../../assets/brands/b4.png'),
+  require('../../assets/brands/b5.png'),
+  require('../../assets/brands/b6.png'),
+  require('../../assets/brands/b7.png'),
+  require('../../assets/brands/b9.png'),
+  require('../../assets/brands/b10.png'),
+  require('../../assets/brands/b11.png'),
+  require('../../assets/brands/b12.png'),
+  require('../../assets/brands/b13.png'),
+  require('../../assets/brands/b14.png'),
+  require('../../assets/brands/b15.png'),
+  require('../../assets/brands/b16.png'),
+  require('../../assets/brands/b17.png'),
+  require('../../assets/brands/b18.png'),
+  require('../../assets/brands/b19.png'),
+  require('../../assets/brands/b20.png'),
+  require('../../assets/brands/b21.png'),
+];
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
@@ -56,6 +79,20 @@ const CTA_CARD_GAP = sw(12);
 const CTA_CARD_W = (width - sw(32) - CTA_CARD_GAP) / 2;
 const CTA_CARD_H = CTA_CARD_W / CTA_CARD_ASPECT;
 
+// "Most Booked Services" horizontal cards
+const POPULAR_CARD_W = sw(150);
+const POPULAR_IMG_H = sw(110);
+
+// "Why Beyomo?" banner — same checklist graphic as the website (868×414px)
+const WHY_BEYOMO_ASPECT = 868 / 414;
+const WHY_BEYOMO_W = width - sw(32);
+const WHY_BEYOMO_H = WHY_BEYOMO_W / WHY_BEYOMO_ASPECT;
+
+// "Top Brands" logo grid — 3 columns, square cards
+const BRAND_COLUMNS = 3;
+const BRAND_GAP = sw(10);
+const BRAND_CARD_W = (width - sw(32) - BRAND_GAP * (BRAND_COLUMNS - 1)) / BRAND_COLUMNS;
+
 const chunkArray = <T,>(arr: T[], size: number): T[][] => {
   const chunks: T[][] = [];
   for (let i = 0; i < arr.length; i += size) {
@@ -70,19 +107,41 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
   const {categories, loading} = useSelector((state: RootState) => state.Services);
   const selectedCity = useSelector((state: RootState) => state.City?.selectedCity);
   const [banners, setBanners] = useState<any[]>([]);
+  const [popularServices, setPopularServices] = useState<any[]>([]);
+  const [addedPopular, setAddedPopular] = useState<Set<string>>(new Set());
 
   const [loadedServices, setLoadedServices] = useState<Set<string>>(new Set());
   const [refreshing, setRefreshing] = useState(false);
 
   const loadHomeData = () => {
     setLoadedServices(new Set());
+    setAddedPopular(new Set());
     const bannersPromise = api.get(endpoints.BANNERS).then(res => {
       if (res.data?.status) setBanners(res.data.data ?? []);
+    }).catch(() => {});
+    const popularPromise = api.get(endpoints.SERVICES, {
+      params: {isPopular: true, limit: 8, cityId: selectedCity?.id},
+    }).then(res => {
+      if (res.data?.status) setPopularServices(res.data.data ?? []);
     }).catch(() => {});
     return Promise.all([
       dispatch(fetchCategories()),
       bannersPromise,
+      popularPromise,
     ]);
+  };
+
+  const handleAddPopular = (svc: any) => {
+    const id = String(svc.id ?? svc._id);
+    dispatch(addServicesToCart([{
+      id,
+      name: svc.name,
+      duration: svc.duration ? `${svc.duration} mins` : '',
+      price: parseFloat(svc.basePrice) || 0,
+      image: svc.image,
+      qty: 1,
+    }]));
+    setAddedPopular(prev => new Set(prev).add(id));
   };
 
   useEffect(() => {
@@ -107,6 +166,10 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
   // Same admin-managed hero banner the website's homepage shows — replaces the old
   // featured-packages carousel in the header.
   const heroBanner = banners.find(b => b.type === 'hero');
+
+  // "Why Beyomo?" section image — admin-overridable, falls back to the same static
+  // checklist graphic the website uses.
+  const whyBeyomoBanner = banners.find(b => b.type === 'why_beyomo');
 
   if (loading && categories.length === 0) {
     return (
@@ -276,6 +339,94 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
                     </Text>
                   </TouchableOpacity>
                 ))}
+              </View>
+            ))}
+          </View>
+        </View>
+
+        {/* ══════════════════════════════════
+            MOST BOOKED SERVICES
+        ══════════════════════════════════ */}
+        {popularServices.length > 0 && (
+          <View style={styles.popularSection}>
+            <View style={styles.sectionHeaderBlock}>
+              <Text style={styles.sectionTitle}>Most Booked Services</Text>
+              <View style={styles.titleUnderline} />
+              {selectedCity?.name ? (
+                <View style={styles.popularCityRow}>
+                  <Ionicons name="location-sharp" size={sw(12)} color="#105641" />
+                  <Text style={styles.popularCityText}>In {selectedCity.name}</Text>
+                </View>
+              ) : null}
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.popularScrollContent}>
+              {popularServices.map((svc: any) => {
+                const id = String(svc.id ?? svc._id);
+                const isAdded = addedPopular.has(id);
+                return (
+                  <View key={id} style={styles.popularCard}>
+                    <Image
+                      source={{uri: svc.image ?? FALLBACK_IMAGE}}
+                      style={styles.popularImg}
+                      resizeMode="cover"
+                    />
+                    <View style={styles.popularCardBody}>
+                      <Text style={styles.popularName} numberOfLines={2}>{svc.name}</Text>
+                      {svc.duration ? (
+                        <View style={styles.popularDurationRow}>
+                          <Ionicons name="time-outline" size={sw(11)} color="#6B6B6B" />
+                          <Text style={styles.popularDuration}>{svc.duration} mins</Text>
+                        </View>
+                      ) : null}
+                      <Text style={styles.popularPrice}>
+                        {svc.priceStartsFrom ? 'From ' : ''}₹{Math.round(parseFloat(svc.basePrice) || 0).toLocaleString('en-IN')}
+                      </Text>
+                      <TouchableOpacity
+                        style={[styles.popularAddBtn, isAdded && styles.popularAddBtnDone]}
+                        activeOpacity={0.8}
+                        disabled={isAdded}
+                        onPress={() => handleAddPopular(svc)}>
+                        <Text style={[styles.popularAddText, isAdded && styles.popularAddTextDone]}>
+                          {isAdded ? 'ADDED' : 'ADD'}
+                        </Text>
+                        {!isAdded && <Ionicons name="add" size={sw(14)} color="#105641" />}
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                );
+              })}
+            </ScrollView>
+          </View>
+        )}
+
+        {/* ══════════════════════════════════
+            WHY BEYOMO?
+        ══════════════════════════════════ */}
+        <View style={styles.whyBeyomoSection}>
+          <View style={styles.whyBeyomoImgWrap}>
+            <Image
+              source={whyBeyomoBanner?.image ? {uri: whyBeyomoBanner.image} : require('../../assets/why_beyomo.png')}
+              style={styles.whyBeyomoImg}
+              resizeMode="cover"
+            />
+          </View>
+        </View>
+
+        {/* ══════════════════════════════════
+            TOP BRANDS
+        ══════════════════════════════════ */}
+        <View style={styles.brandsSection}>
+          <View style={styles.brandsTag}>
+            <Text style={styles.brandsTagText}>Top Brands</Text>
+          </View>
+          <Text style={styles.brandsTitle}>We use best Brands in 1-Time use packs</Text>
+          <View style={styles.brandsGrid}>
+            {BRAND_LOGOS.map((img, i) => (
+              <View key={i} style={styles.brandCard}>
+                <Image source={img} style={styles.brandImg} resizeMode="contain" />
               </View>
             ))}
           </View>
@@ -496,6 +647,163 @@ const styles = StyleSheet.create({
     color: '#000000',
     textAlign: 'center',
     lineHeight: sw(14),
+  },
+
+  /* ── Most Booked Services ──────────────────────── */
+  popularSection: {
+    paddingTop: sw(24),
+  },
+  popularCityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: sw(4),
+    marginTop: sw(2),
+  },
+  popularCityText: {
+    fontFamily: fonts.secondry,
+    fontSize: sw(12),
+    color: '#105641',
+    fontWeight: '600',
+  },
+  popularScrollContent: {
+    paddingHorizontal: sw(16),
+    gap: sw(12),
+  },
+  popularCard: {
+    width: POPULAR_CARD_W,
+    borderRadius: sw(14),
+    backgroundColor: '#FFFFFF',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 3},
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  popularImg: {
+    width: '100%',
+    height: POPULAR_IMG_H,
+  },
+  popularCardBody: {
+    padding: sw(10),
+    gap: sw(4),
+  },
+  popularName: {
+    fontFamily: fonts.secondry,
+    fontSize: sw(13),
+    fontWeight: '600',
+    color: '#171816',
+    lineHeight: sw(16),
+    minHeight: sw(32),
+  },
+  popularDurationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: sw(3),
+  },
+  popularDuration: {
+    fontFamily: fonts.secondry,
+    fontSize: sw(11),
+    color: '#6B6B6B',
+  },
+  popularPrice: {
+    fontFamily: fonts.title,
+    fontSize: sw(15),
+    fontWeight: '700',
+    color: '#171816',
+    marginTop: sw(2),
+  },
+  popularAddBtn: {
+    marginTop: sw(6),
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: sw(2),
+    borderWidth: 1,
+    borderColor: '#105641',
+    borderRadius: sw(8),
+    paddingVertical: sw(6),
+  },
+  popularAddBtnDone: {
+    borderColor: '#C8A84C',
+    backgroundColor: '#FCF3DD',
+  },
+  popularAddText: {
+    fontFamily: fonts.title,
+    fontSize: sw(12),
+    fontWeight: '700',
+    color: '#105641',
+  },
+  popularAddTextDone: {
+    color: '#8A6D1F',
+  },
+
+  /* ── Why Beyomo? ──────────────────────── */
+  whyBeyomoSection: {
+    paddingHorizontal: sw(16),
+    paddingTop: sw(24),
+  },
+  whyBeyomoImgWrap: {
+    width: WHY_BEYOMO_W,
+    height: WHY_BEYOMO_H,
+    borderRadius: sw(16),
+    overflow: 'hidden',
+  },
+  whyBeyomoImg: {
+    width: '100%',
+    height: '100%',
+  },
+
+  /* ── Top Brands ──────────────────────── */
+  brandsSection: {
+    paddingHorizontal: sw(16),
+    paddingTop: sw(28),
+  },
+  brandsTag: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#E8F3EF',
+    borderRadius: sw(20),
+    paddingHorizontal: sw(12),
+    paddingVertical: sw(4),
+    marginBottom: sw(8),
+  },
+  brandsTagText: {
+    fontFamily: fonts.secondry,
+    fontSize: sw(11),
+    fontWeight: '700',
+    color: '#105641',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  brandsTitle: {
+    fontFamily: 'serif',
+    fontSize: sw(18),
+    lineHeight: sw(22),
+    color: '#171816',
+    marginBottom: sw(16),
+  },
+  brandsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: BRAND_GAP,
+  },
+  brandCard: {
+    width: BRAND_CARD_W,
+    height: BRAND_CARD_W,
+    borderRadius: sw(12),
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: sw(12),
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  brandImg: {
+    width: '100%',
+    height: '100%',
   },
 });
 
