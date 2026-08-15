@@ -3,9 +3,11 @@ const AppError = require("../../../../utils/errorHandlers/appError");
 const bookingsService = require("../../services/v1/bookings.service");
 const Joi = require("joi");
 
+const MAX_SERVICE_QTY = 5;
+
 const serviceItemSchema = Joi.object({
   id: Joi.alternatives().try(Joi.number(), Joi.string()).required(),
-  qty: Joi.number().integer().min(1).default(1),
+  qty: Joi.number().integer().min(1).max(MAX_SERVICE_QTY).default(1),
 });
 
 const createBookingSchema = Joi.object({
@@ -19,7 +21,7 @@ const createBookingSchema = Joi.object({
   packages: Joi.array().items(
     Joi.object({
       packageId: Joi.number().integer().positive().required(),
-      qty: Joi.number().integer().min(1).default(1),
+      qty: Joi.number().integer().min(1).max(MAX_SERVICE_QTY).default(1),
       services: Joi.array().items(serviceItemSchema).min(1).required(),
     })
   ).optional(),
@@ -41,7 +43,7 @@ const createBookingSchema = Joi.object({
   couponCode: Joi.string().trim().uppercase().allow("", null),
   offerId:    Joi.number().integer().allow(null),
   packageId:  Joi.number().integer().positive().allow(null),
-  packageQty: Joi.number().integer().min(1).default(1),
+  packageQty: Joi.number().integer().min(1).max(MAX_SERVICE_QTY).default(1),
   paymentMode: Joi.string().valid("online", "cod").default("online"),
   notes: Joi.string().trim().max(500).allow("", null),
 }).unknown(true);
@@ -142,12 +144,7 @@ const submitReview = catchAsync(async (req, res, next) => {
 });
 
 const addServicesSchema = Joi.object({
-  services: Joi.array().items(
-    Joi.object({
-      id: Joi.alternatives().try(Joi.number(), Joi.string()).required(),
-      qty: Joi.number().integer().min(1).default(1),
-    })
-  ).min(1).required(),
+  services: Joi.array().items(serviceItemSchema).min(1).required(),
 });
 
 const addUserServices = catchAsync(async (req, res, next) => {
@@ -159,7 +156,7 @@ const addUserServices = catchAsync(async (req, res, next) => {
 
 const updateServiceQtySchema = Joi.object({
   index: Joi.number().integer().min(0).required(),
-  qty: Joi.number().integer().min(1).required(),
+  qty: Joi.number().integer().min(1).max(MAX_SERVICE_QTY).required(),
 });
 
 const updateServiceQty = catchAsync(async (req, res, next) => {

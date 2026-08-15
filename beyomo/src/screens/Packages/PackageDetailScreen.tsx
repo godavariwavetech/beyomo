@@ -21,6 +21,8 @@ import {endpoints} from '../../config/config';
 import {addPackageToCart} from '../../redux/reducers/cart';
 import CartBar from '../../components/CartBar/CartBar';
 
+const MAX_SERVICE_QTY = 5;
+
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
 
@@ -348,8 +350,9 @@ const PackageDetailScreen = ({navigation, route}: {navigation: any; route: any})
           <TouchableOpacity
             style={styles.qtyStepBtn}
             activeOpacity={0.7}
-            onPress={() => setPackageQty(q => q + 1)}>
-            <Ionicons name="add" size={sw(16)} color="#105641" />
+            disabled={packageQty >= MAX_SERVICE_QTY}
+            onPress={() => setPackageQty(q => Math.min(q + 1, MAX_SERVICE_QTY))}>
+            <Ionicons name="add" size={sw(16)} color={packageQty >= MAX_SERVICE_QTY ? '#B7CFC4' : '#105641'} />
           </TouchableOpacity>
         </View>
       </View>

@@ -19,6 +19,8 @@ import {useDispatch, useSelector} from 'react-redux';
 import {fetchCategories, fetchServices} from '../../redux/reducers/services';
 import {addServicesToCart} from '../../redux/reducers/cart';
 
+const MAX_SERVICE_QTY = 5;
+
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
 
@@ -200,7 +202,7 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
   };
 
   const increment = (id: string) => {
-    setQuantities(prev => ({...prev, [id]: (prev[id] ?? 0) + 1}));
+    setQuantities(prev => ({...prev, [id]: Math.min((prev[id] ?? 0) + 1, MAX_SERVICE_QTY)}));
     // Persist the full service object so it survives category switches
     if (!addedServicesMap[id]) {
       const svc = currentServices.find((s: any) => String(s.id) === id);
@@ -574,8 +576,8 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
                         <Ionicons name="remove" size={sw(18)} color="#105641" />
                       </TouchableOpacity>
                       <Text style={styles.sheetStepCount}>{quantities[String(detailItem.id)]}</Text>
-                      <TouchableOpacity style={styles.sheetStepBtn} activeOpacity={0.7} onPress={() => increment(String(detailItem.id))}>
-                        <Ionicons name="add" size={sw(18)} color="#105641" />
+                      <TouchableOpacity style={styles.sheetStepBtn} activeOpacity={0.7} onPress={() => increment(String(detailItem.id))} disabled={(quantities[String(detailItem.id)] ?? 0) >= MAX_SERVICE_QTY}>
+                        <Ionicons name="add" size={sw(18)} color={(quantities[String(detailItem.id)] ?? 0) >= MAX_SERVICE_QTY ? '#B7CFC4' : '#105641'} />
                       </TouchableOpacity>
                     </View>
                     <TouchableOpacity style={styles.sheetDoneBtn} activeOpacity={0.85} onPress={() => setDetailItem(null)}>
@@ -689,8 +691,8 @@ const ServiceCard = ({
                   <Ionicons name="remove" size={sw(14)} color="#105641" />
                 </TouchableOpacity>
                 <Text style={styles.stepCount}>{qty}</Text>
-                <TouchableOpacity style={styles.stepBtn} activeOpacity={0.7} onPress={onIncrement}>
-                  <Ionicons name="add" size={sw(14)} color="#105641" />
+                <TouchableOpacity style={styles.stepBtn} activeOpacity={0.7} onPress={onIncrement} disabled={qty >= MAX_SERVICE_QTY}>
+                  <Ionicons name="add" size={sw(14)} color={qty >= MAX_SERVICE_QTY ? '#B7CFC4' : '#105641'} />
                 </TouchableOpacity>
               </View>
             )}

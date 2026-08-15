@@ -34,6 +34,7 @@ const sw = (px: number) => (px / 393) * width;
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
 const ONE_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
+const MAX_SERVICE_QTY = 5;
 const FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=200&q=80&fit=crop';
 
 const formatDateTime = (dateStr: string) => {
@@ -580,7 +581,7 @@ const BookingDetailScreen = ({navigation, route}: any) => {
                             <Ionicons name="remove-circle" size={sw(22)} color="#105641" />
                           </TouchableOpacity>
                           <Text style={styles.inlineQtyNum}>{cartItem.qty}</Text>
-                          <TouchableOpacity onPress={() => setSvcCart(prev => prev.map(c => c.svc.id === item.id ? {...c, qty: c.qty + 1} : c))}>
+                          <TouchableOpacity onPress={() => setSvcCart(prev => prev.map(c => c.svc.id === item.id ? {...c, qty: Math.min(c.qty + 1, MAX_SERVICE_QTY)} : c))}>
                             <Ionicons name="add-circle" size={sw(22)} color="#105641" />
                           </TouchableOpacity>
                         </View>

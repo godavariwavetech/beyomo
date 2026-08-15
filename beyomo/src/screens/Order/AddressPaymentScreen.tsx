@@ -78,6 +78,7 @@ const getDefaultDate = () => {
 const ONE_HOUR_MS = 60 * 60 * 1000;
 const ONE_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
 const MIN_BOOKING_AMOUNT = 500;
+const MAX_SERVICE_QTY = 5;
 const formatDate = (d: Date) =>
   d.toLocaleDateString('en-IN', {month: 'short', day: 'numeric', year: 'numeric'});
 const formatTime = (d: Date) =>
@@ -276,7 +277,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
 
   const increment = (id: string | number) => {
     if (isCartMode) dispatch(incrementServiceQty(String(id)));
-    else setServices(prev => prev.map(s => s.id === id ? {...s, qty: s.qty + 1} : s));
+    else setServices(prev => prev.map(s => s.id === id ? {...s, qty: Math.min(s.qty + 1, MAX_SERVICE_QTY)} : s));
   };
 
   const decrement = (id: string | number) => {
@@ -287,7 +288,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
   };
 
   const incrementPackageQty = () =>
-    setServices(prev => prev.map(s => (s as any).isPackageItem ? {...s, qty: s.qty + 1} : s));
+    setServices(prev => prev.map(s => (s as any).isPackageItem ? {...s, qty: Math.min(s.qty + 1, MAX_SERVICE_QTY)} : s));
 
   const decrementPackageQty = () =>
     setServices(prev => prev.map(s => (s as any).isPackageItem && s.qty > 1 ? {...s, qty: s.qty - 1} : s));
@@ -1294,7 +1295,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
                           <Ionicons name="remove-circle" size={sw(22)} color="#105641" />
                         </TouchableOpacity>
                         <Text style={styles.addSvcInlineQtyNum}>{cartItem.qty}</Text>
-                        <TouchableOpacity onPress={() => setAddSvcCart(prev => prev.map(c => c.svc.id === item.id ? {...c, qty: c.qty + 1} : c))}>
+                        <TouchableOpacity onPress={() => setAddSvcCart(prev => prev.map(c => c.svc.id === item.id ? {...c, qty: Math.min(c.qty + 1, MAX_SERVICE_QTY)} : c))}>
                           <Ionicons name="add-circle" size={sw(22)} color="#105641" />
                         </TouchableOpacity>
                       </View>
