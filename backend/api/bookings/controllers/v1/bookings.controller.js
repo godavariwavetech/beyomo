@@ -178,8 +178,21 @@ const removeService = catchAsync(async (req, res, next) => {
 });
 
 const removePackage = catchAsync(async (req, res, next) => {
-  const booking = await bookingsService.removePackage(req.user.userId, req.params.id);
+  const booking = await bookingsService.removePackage(req.user.userId, req.params.id, req.body?.packageId);
   res.status(200).json({ status: true, message: 'Package removed from booking', data: booking });
 });
 
-module.exports = { createBooking, getBookingById, cancelBooking, rescheduleBooking, submitReview, addUserServices, updateServiceQty, removeService, removePackage };
+const addPackageSchema = Joi.object({
+  packageId: Joi.number().integer().positive().required(),
+  qty: Joi.number().integer().min(1).max(MAX_SERVICE_QTY).default(1),
+  services: Joi.array().items(serviceItemSchema).min(1).required(),
+});
+
+const addPackage = catchAsync(async (req, res, next) => {
+  const { error, value } = addPackageSchema.validate(req.body);
+  if (error) return next(new AppError(error.details[0].message, 400));
+  const booking = await bookingsService.addPackage(req.user.userId, req.params.id, value.packageId, value.qty, value.services);
+  res.status(200).json({ status: true, message: 'Package added to booking', data: booking });
+});
+
+module.exports = { createBooking, getBookingById, cancelBooking, rescheduleBooking, submitReview, addUserServices, updateServiceQty, removeService, removePackage, addPackage };

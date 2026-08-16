@@ -312,6 +312,7 @@ const createBooking = async (userId, bookingData) => {
     include: [
       { model: Service, as: "service", attributes: ["name", "image", "basePrice", "duration"] },
       { model: Partner, as: "partner", attributes: ["name", "profilePicture", "phone"] },
+      { model: ServicePackage, as: "package", attributes: ["id", "title", "price", "image"] },
     ],
   });
 };
@@ -321,6 +322,7 @@ const BOOKING_DETAIL_INCLUDES = [
   { model: Partner, as: "partner", attributes: ["name", "profilePicture", "phone", "ratingsAverage", "ratingsCount", "experience"] },
   { model: Payment, as: "payment", attributes: ["razorpayOrderId", "razorpayPaymentId", "amount", "status", "method"] },
   { model: Review, as: "review", attributes: ["rating", "comment", "createdAt"] },
+  { model: ServicePackage, as: "package", attributes: ["id", "title", "price", "image"] },
 ];
 
 const getBookingById = async (userId, bookingId) => {
@@ -494,18 +496,41 @@ const parseServicesField = (s) => {
 // Entries the admin has soft-removed (`removed: true`, kept in the array for its own
 // audit trail) are excluded here too, so acting on a booking via these endpoints never
 // resurrects a removed item's price into the total.
-const recomputeBookingAmounts = async (booking, updatedServices) => {
+//
+// `packagesOverride`, when passed, is used instead of `booking.packages` — callers that
+// are themselves in the middle of changing the multi-package set (e.g. dropping one
+// package) pass the already-updated array here rather than relying on the stale one
+// still on the booking row.
+const recomputeBookingAmounts = async (booking, updatedServices, packagesOverride) => {
   const activeServices = updatedServices.filter(s => !s.removed);
-  const pkg = booking.packageId ? await ServicePackage.findByPk(booking.packageId) : null;
-  const nonPackageAmount = activeServices
-    .filter(s => !s.addedByPackage)
-    .reduce((sum, s) => sum + (parseFloat(s.price) || 0) * (s.qty || 1), 0);
-  const newBase = pkg
-    ? parseFloat(pkg.price) + nonPackageAmount
-    : activeServices.reduce((sum, s) => sum + (parseFloat(s.price) || 0) * (s.qty || 1), 0);
+  const multiPackages = packagesOverride !== undefined ? packagesOverride : parseServicesField(booking.packages);
   const couponDiscount = parseFloat(booking.couponDiscountAmount || 0);
+
+  let newBase, partnerPercent, gstPercent;
+
+  if (Array.isArray(multiPackages) && multiPackages.length > 0) {
+    const nonPackageAmount = activeServices
+      .filter(s => !s.packageId)
+      .reduce((sum, s) => sum + (parseFloat(s.price) || 0) * (s.qty || 1), 0);
+    const packageAmount = multiPackages.reduce((sum, p) => sum + (parseFloat(p.price) || 0) * (p.qty || 1), 0);
+    newBase = packageAmount + nonPackageAmount;
+
+    const pkgModels = await ServicePackage.findAll({ where: { id: multiPackages.map(p => p.packageId) } });
+    const ratePools = multiPackages.map(p => ({ package: pkgModels.find(pk => pk.id === p.packageId), qty: p.qty || 1 }))
+      .filter(p => p.package);
+    ({ partnerPercent, gstPercent } = await resolveRatesForMultiPackageBooking({ packages: ratePools, serviceItems: activeServices }));
+  } else {
+    const pkg = booking.packageId ? await ServicePackage.findByPk(booking.packageId) : null;
+    const nonPackageAmount = activeServices
+      .filter(s => !s.addedByPackage)
+      .reduce((sum, s) => sum + (parseFloat(s.price) || 0) * (s.qty || 1), 0);
+    newBase = pkg
+      ? parseFloat(pkg.price) + nonPackageAmount
+      : activeServices.reduce((sum, s) => sum + (parseFloat(s.price) || 0) * (s.qty || 1), 0);
+    ({ partnerPercent, gstPercent } = await resolveRatesForBooking({ serviceItems: activeServices, package: pkg }));
+  }
+
   const taxable = newBase - couponDiscount;
-  const { partnerPercent, gstPercent } = await resolveRatesForBooking({ serviceItems: activeServices, package: pkg });
   const tax = parseFloat((taxable * gstPercent / 100).toFixed(2));
   const total = parseFloat((taxable + tax).toFixed(2));
   const partnerEarning = parseFloat((taxable * partnerPercent / 100).toFixed(2));
@@ -597,17 +622,40 @@ const removeService = async (userId, bookingId, index) => {
   return booking;
 };
 
-// Drops the whole package from a booking: strips every addedByPackage-tagged service in
-// one go, clears packageId, and re-prices the remaining (non-package) items at their real
-// catalog prices instead of the package's fixed price.
-const removePackage = async (userId, bookingId) => {
-  const booking = await Booking.findOne({ where: { id: bookingId, userId } });
-  if (!booking) throw new AppError("Booking not found", 404);
-  if (!["pending", "confirmed"].includes(booking.status))
-    throw new AppError("The package can only be removed from a pending or confirmed booking", 400);
-  if (!booking.packageId) throw new AppError("This booking doesn't have a package attached", 400);
-
+// Drops a package from a booking: strips its services, drops it from `packages` (or
+// clears `packageId` for the legacy single-package case), and re-prices whatever's left.
+// A booking can hold more than one package/combo booked together (see `packages` on the
+// model) — `packageId` then identifies *which* one to remove; for a legacy single-package
+// booking (packageId column set, `packages` empty) it's not needed since there's only one.
+// Exported so admin's own remove-package action can reuse the same array-surgery + repricing
+// logic without duplicating it (admin skips the userId ownership check user bookings need).
+const buildPackageRemoval = async (booking, packageId) => {
+  const multiPackages = parseServicesField(booking.packages);
   const existing = parseServicesField(booking.services);
+
+  if (multiPackages.length > 0) {
+    if (!packageId) throw new AppError("packageId is required to remove a package from a multi-package booking", 400);
+    const targetId = parseInt(packageId);
+    if (!multiPackages.some(p => p.packageId === targetId))
+      throw new AppError("This booking doesn't include that package", 404);
+
+    const remainingPackages = multiPackages.filter(p => p.packageId !== targetId);
+    const remainingServices = existing.filter(s => s.packageId !== targetId);
+    if (remainingPackages.length === 0 && remainingServices.filter(s => !s.removed && !s.addedByPackage).length === 0)
+      throw new AppError("Removing this package would leave the booking with no services — cancel the booking instead", 400);
+
+    const { newBase, tax, total, partnerEarning } = await recomputeBookingAmounts(booking, remainingServices, remainingPackages);
+    if (newBase < MIN_BOOKING_AMOUNT)
+      throw new AppError(`Booking total can't go below the ₹${MIN_BOOKING_AMOUNT} minimum — cancel the booking instead`, 400);
+
+    return {
+      services: remainingServices,
+      packages: remainingPackages.length > 0 ? remainingPackages : null,
+      baseAmount: newBase, taxAmount: tax, totalAmount: total, partnerEarning,
+    };
+  }
+
+  if (!booking.packageId) throw new AppError("This booking doesn't have a package attached", 400);
   const remaining = existing.filter(s => !s.addedByPackage);
   if (remaining.filter(s => !s.removed).length === 0)
     throw new AppError("Removing this package would leave the booking with no services — cancel the booking instead", 400);
@@ -616,9 +664,89 @@ const removePackage = async (userId, bookingId) => {
     { packageId: null, couponDiscountAmount: booking.couponDiscountAmount },
     remaining
   );
-  await booking.update({ services: remaining, packageId: null, baseAmount: newBase, taxAmount: tax, totalAmount: total, partnerEarning });
+  return { services: remaining, packageId: null, packages: null, baseAmount: newBase, taxAmount: tax, totalAmount: total, partnerEarning };
+};
+
+const removePackage = async (userId, bookingId, packageId) => {
+  const booking = await Booking.findOne({ where: { id: bookingId, userId } });
+  if (!booking) throw new AppError("Booking not found", 404);
+  if (!["pending", "confirmed"].includes(booking.status))
+    throw new AppError("The package can only be removed from a pending or confirmed booking", 400);
+
+  const updates = await buildPackageRemoval(booking, packageId);
+  await booking.update(updates);
 
   return booking;
 };
 
-module.exports = { createBooking, getBookingById, cancelBooking, rescheduleBooking, submitReview, addUserServices, updateServiceQty, removeService, removePackage };
+// Adds a new package/combo to a booking that already exists. The client resolves which
+// services the package covers (its own fixed list for a "fixed" package, or the user's
+// N picks for a "flexible" one — same contract createBooking's multi-package path already
+// uses) and sends them here; this function doesn't re-derive that itself.
+// A booking already on the legacy single-package shape (packageId/packageQty columns,
+// empty `packages`) gets folded into the array the first time a second package is added,
+// so from then on `packages` is the one source of truth for every package on it.
+// Exported for admin's own add-package action to reuse, same as buildPackageRemoval.
+const buildPackageAddition = async (booking, packageId, qty, serviceItems) => {
+  const appliedPackage = await packagesService.validateForBooking(packageId);
+  const packageQty = qty || 1;
+
+  const serviceIds = [...new Set((serviceItems || []).map(s => parseInt(s.id)))];
+  if (serviceIds.length === 0) throw new AppError("Select at least one service for this package", 400);
+  const foundServices = await Service.findAll({ where: { id: serviceIds, isActive: true } });
+  if (foundServices.length !== serviceIds.length) throw new AppError("One or more services not found or unavailable", 404);
+  const serviceMap = Object.fromEntries(foundServices.map(s => [s.id, s]));
+
+  const newItems = serviceItems.map(item => {
+    const svc = serviceMap[parseInt(item.id)];
+    return {
+      serviceId: svc.id, name: svc.name, price: parseFloat(svc.basePrice), qty: item.qty || 1,
+      duration: svc.duration || null, image: svc.image || null,
+      serviceStatus: 'unassigned', assignedPartnerId: null, assignedPartnerName: null,
+      addedByPackage: true, packageId: appliedPackage.id,
+    };
+  });
+
+  let existingServices = parseServicesField(booking.services);
+  let existingPackages = parseServicesField(booking.packages);
+
+  if (existingPackages.length === 0 && booking.packageId) {
+    const currentPkg = await ServicePackage.findByPk(booking.packageId);
+    if (currentPkg) {
+      existingPackages = [{
+        packageId: currentPkg.id, title: currentPkg.title, qty: booking.packageQty || 1,
+        price: parseFloat(currentPkg.price), originalPrice: currentPkg.originalPrice != null ? parseFloat(currentPkg.originalPrice) : null,
+      }];
+      // Legacy items only carry `addedByPackage: true`, no `packageId` — backfill it now
+      // that they're joining the array shape, so grouping/removal keeps working for them.
+      existingServices = existingServices.map(s => (s.addedByPackage && s.packageId == null) ? { ...s, packageId: currentPkg.id } : s);
+    }
+  }
+
+  if (existingPackages.some(p => p.packageId === appliedPackage.id))
+    throw new AppError("This package is already part of the booking", 400);
+
+  const updatedPackages = [...existingPackages, {
+    packageId: appliedPackage.id, title: appliedPackage.title, qty: packageQty,
+    price: parseFloat(appliedPackage.price), originalPrice: appliedPackage.originalPrice != null ? parseFloat(appliedPackage.originalPrice) : null,
+  }];
+  const updatedServices = [...existingServices, ...newItems];
+
+  const { newBase, tax, total, partnerEarning } = await recomputeBookingAmounts(booking, updatedServices, updatedPackages);
+
+  return { services: updatedServices, packages: updatedPackages, baseAmount: newBase, taxAmount: tax, totalAmount: total, partnerEarning };
+};
+
+const addPackage = async (userId, bookingId, packageId, qty, serviceItems) => {
+  const booking = await Booking.findOne({ where: { id: bookingId, userId } });
+  if (!booking) throw new AppError("Booking not found", 404);
+  if (!["pending", "confirmed"].includes(booking.status))
+    throw new AppError("A package can only be added to a pending or confirmed booking", 400);
+
+  const updates = await buildPackageAddition(booking, packageId, qty, serviceItems);
+  await booking.update(updates);
+
+  return booking;
+};
+
+module.exports = { createBooking, getBookingById, cancelBooking, rescheduleBooking, submitReview, addUserServices, updateServiceQty, removeService, removePackage, buildPackageRemoval, addPackage, buildPackageAddition };

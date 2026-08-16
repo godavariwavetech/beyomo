@@ -24,7 +24,7 @@ import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {fonts} from '../../config/theme';
 import {useDispatch, useSelector} from 'react-redux';
 import {useFocusEffect} from '@react-navigation/native';
-import {fetchBookingById, cancelBooking, rescheduleBooking, addUserServices} from '../../redux/reducers/bookings';
+import {fetchBookingById, cancelBooking, rescheduleBooking, addUserServices, removePackage, addPackage} from '../../redux/reducers/bookings';
 import networkCall from '../../utils/networkCall';
 import {payWithRazorpay} from '../../utils/payments';
 import {resolveImageUrl} from '../../utils/utils';
@@ -63,13 +63,14 @@ const STATUS_BANNER: Record<string, {icon: string; title: string; color: string}
 interface AvailableSvc { id: number; name: string; basePrice: string; duration: number; }
 type CartItem = {svc: AvailableSvc; qty: number};
 
-const SvcTag = ({type}: {type: 'admin' | 'partner' | 'user' | 'removed' | 'free'}) => {
+const SvcTag = ({type}: {type: 'admin' | 'partner' | 'user' | 'removed' | 'free' | 'package'}) => {
   const cfg = {
     admin:   {label: 'Admin +',   bg: '#EDE9FE', text: '#7C3AED'},
     partner: {label: 'Partner +', bg: '#E0F2FE', text: '#0369A1'},
     user:    {label: 'You +',     bg: '#FEF3C7', text: '#D97706'},
     removed: {label: 'Removed',   bg: '#FEE2E2', text: '#B91C1C'},
     free:    {label: 'FREE',      bg: '#E6F4EC', text: '#1B6B3A'},
+    package: {label: 'Package',   bg: '#E4E1D8', text: '#292524'},
   }[type];
   return (
     <View style={{backgroundColor: cfg.bg, borderRadius: sw(4), paddingHorizontal: sw(5), paddingVertical: sw(1)}}>
@@ -92,6 +93,13 @@ const BookingDetailScreen = ({navigation, route}: any) => {
   const [loadingSvcs, setLoadingSvcs] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [svcCart, setSvcCart] = useState<CartItem[]>([]);
+
+  const [showAddPackageModal, setShowAddPackageModal] = useState(false);
+  const [availablePackages, setAvailablePackages] = useState<any[]>([]);
+  const [loadingPkgs, setLoadingPkgs] = useState(false);
+  const [pickingPackage, setPickingPackage] = useState<any>(null);
+  const [flexiblePicks, setFlexiblePicks] = useState<number[]>([]);
+  const [addPkgError, setAddPkgError] = useState('');
 
   const [showRescheduleModal, setShowRescheduleModal] = useState(false);
   const [rescheduleDate, setRescheduleDate] = useState<Date>(new Date(Date.now() + ONE_HOUR_MS * 2));
@@ -118,6 +126,68 @@ const BookingDetailScreen = ({navigation, route}: any) => {
     setShowAddModal(true);
   };
 
+  const fetchPackages = useCallback(async () => {
+    if (availablePackages.length > 0) return;
+    setLoadingPkgs(true);
+    try {
+      const result = await networkCall('api/v1/packages', 'GET');
+      const raw = result.response?.data?.data ?? result.response?.data ?? [];
+      setAvailablePackages(Array.isArray(raw) ? raw : []);
+    } catch {}
+    setLoadingPkgs(false);
+  }, [availablePackages.length]);
+
+  const openAddPackageModal = () => {
+    setPickingPackage(null);
+    setFlexiblePicks([]);
+    setAddPkgError('');
+    fetchPackages();
+    setShowAddPackageModal(true);
+  };
+
+  const submitAddPackage = async (packageId: number, services: {id: number; qty: number}[]) => {
+    setAddPkgError('');
+    const result = await dispatch(addPackage({bookingId: booking?.id ?? booking?._id, packageId, services}));
+    if (result.meta.requestStatus === 'fulfilled') {
+      setShowAddPackageModal(false);
+      setPickingPackage(null);
+      setFlexiblePicks([]);
+    } else {
+      // Most likely cause is the package having just been added elsewhere (another device,
+      // or a stale package list) — drop back to the picker list and refresh the booking so
+      // it reflects reality instead of leaving the user stuck mid-pick on it.
+      setAddPkgError(result.payload ?? 'Failed to add package. Please try again.');
+      setPickingPackage(null);
+      setFlexiblePicks([]);
+      if (passedBookingId) dispatch(fetchBookingById(passedBookingId));
+    }
+  };
+
+  const handleAddFixedPackage = (pkg: any) => {
+    const services = (pkg.services || []).map((s: any) => ({id: s.serviceId ?? s.id, qty: 1}));
+    submitAddPackage(pkg.id, services);
+  };
+
+  const handlePickFlexible = (pkg: any) => {
+    setPickingPackage(pkg);
+    setFlexiblePicks([]);
+    setAddPkgError('');
+    fetchServices();
+  };
+
+  const toggleFlexiblePick = (serviceId: number) => {
+    setFlexiblePicks(prev => {
+      if (prev.includes(serviceId)) return prev.filter(id => id !== serviceId);
+      if (prev.length >= (pickingPackage?.serviceCount ?? 0)) return prev;
+      return [...prev, serviceId];
+    });
+  };
+
+  const handleConfirmFlexiblePackage = () => {
+    if (!pickingPackage || flexiblePicks.length !== pickingPackage.serviceCount) return;
+    submitAddPackage(pickingPackage.id, flexiblePicks.map(id => ({id, qty: 1})));
+  };
+
   const handleConfirmAdd = async () => {
     if (!svcCart.length || !booking?.id) return;
     const result = await dispatch(addUserServices({
@@ -135,6 +205,26 @@ const BookingDetailScreen = ({navigation, route}: any) => {
     } else {
       Alert.alert('Error', result.payload ?? 'Failed to add services. Please try again.');
     }
+  };
+
+  const handleRemovePackage = (packageId: number | null, title: string) => {
+    Alert.alert(
+      'Remove Package',
+      `Remove "${title}" from this booking? Its services will be dropped and any remaining services will be billed at their normal price.`,
+      [
+        {text: 'Cancel', style: 'cancel'},
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            const result = await dispatch(removePackage({bookingId: booking?.id ?? booking?._id, packageId}));
+            if (result.meta.requestStatus !== 'fulfilled') {
+              Alert.alert('Error', result.payload ?? 'Failed to remove package. Please try again.');
+            }
+          },
+        },
+      ],
+    );
   };
 
   const filteredSvcs = availableServices.filter(s => s.name.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -280,7 +370,38 @@ const BookingDetailScreen = ({navigation, route}: any) => {
   const bookingId = booking.bookingCode ?? `#${(booking._id ?? booking.id)?.slice(-10).toUpperCase()}`;
   const services: any[] = booking.services ?? [];
   const activeServices = services.filter((s: any) => !s.removed);
-  const subtotal = activeServices.reduce((s: number, i: any) => s + (i.price ?? 0), 0);
+  const packageItems = activeServices.filter((s: any) => s.addedByPackage);
+  const otherItems = activeServices.filter((s: any) => !s.addedByPackage);
+  // baseAmount is the source of truth for the subtotal — it already accounts for the
+  // package's fixed price, unlike summing each line item's own catalog price (which,
+  // for a package, adds up to more than what was actually charged).
+  const subtotal = booking.baseAmount ?? activeServices.reduce((s: number, i: any) => s + (i.price ?? 0) * (i.qty || 1), 0);
+  const otherItemsTotal = otherItems.reduce((s: number, i: any) => s + (i.price ?? 0) * (i.qty || 1), 0);
+  // A booking can contain more than one package/combo booked together — each keeps its
+  // own title and price, so they must be grouped separately rather than merged into one.
+  const multiPackages: any[] = Array.isArray(booking.packages) ? booking.packages : [];
+  const packageGroups = multiPackages.length > 0
+    ? multiPackages.map((pkg: any) => ({
+        key: pkg.packageId,
+        title: pkg.title,
+        price: Number(pkg.price || 0) * (pkg.qty || 1),
+        items: packageItems.filter((s: any) => s.packageId === pkg.packageId),
+      }))
+    : packageItems.length > 0
+      ? [{
+          key: booking.packageId,
+          title: booking.package?.title ?? 'Package Deal',
+          price: Math.max(0, subtotal - otherItemsTotal),
+          items: packageItems,
+        }]
+      : [];
+  // A package already on the booking can't be added again (the backend rejects it) —
+  // filter it out of the "Add Package" picker up front instead of letting the user hit that error.
+  const existingPackageIds = new Set<number>([
+    ...(booking.packageId != null ? [booking.packageId] : []),
+    ...multiPackages.map((p: any) => p.packageId),
+  ]);
+  const addablePackages = availablePackages.filter((p: any) => !existingPackageIds.has(p.id));
   const total = booking.totalAmount ?? subtotal;
   const partner = booking.partner ?? {};
   const partnerName = partner.name ?? booking.partnerName ?? '';
@@ -413,13 +534,46 @@ const BookingDetailScreen = ({navigation, route}: any) => {
             <View style={styles.cardHeaderRow}>
               <Text style={styles.cardLabel}>Services Booked</Text>
               {['pending', 'confirmed'].includes(booking.status?.toLowerCase() ?? '') && (
-                <TouchableOpacity style={styles.addServiceBtn} activeOpacity={0.8} onPress={openAddModal}>
-                  <Ionicons name="add-circle-outline" size={sw(14)} color="#105641" />
-                  <Text style={styles.addServiceBtnText}>Add Services</Text>
-                </TouchableOpacity>
+                <View style={{flexDirection: 'row', gap: sw(8)}}>
+                  <TouchableOpacity style={styles.addServiceBtn} activeOpacity={0.8} onPress={openAddPackageModal}>
+                    <Ionicons name="gift-outline" size={sw(14)} color="#105641" />
+                    <Text style={styles.addServiceBtnText}>Add Package</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.addServiceBtn} activeOpacity={0.8} onPress={openAddModal}>
+                    <Ionicons name="add-circle-outline" size={sw(14)} color="#105641" />
+                    <Text style={styles.addServiceBtnText}>Add Services</Text>
+                  </TouchableOpacity>
+                </View>
               )}
             </View>
-            {services.map((svc: any, idx: number) => {
+            {packageGroups.map((group) => (
+              <View key={group.key ?? group.title} style={styles.serviceRowBorder}>
+                <View style={[styles.serviceRow, {alignItems: 'flex-start', borderTopWidth: 0}]}>
+                  <View style={{flex: 1}}>
+                    <View style={{flexDirection: 'row', alignItems: 'center', gap: sw(6), flexWrap: 'wrap'}}>
+                      <Text style={styles.serviceName}>{group.title}</Text>
+                      <SvcTag type="package" />
+                    </View>
+                    <View style={{marginTop: sw(4)}}>
+                      {group.items.map((s: any, i: number) => (
+                        <Text key={s._id ?? s.id ?? i} style={styles.serviceDuration}>{i + 1}. {s.name}</Text>
+                      ))}
+                    </View>
+                  </View>
+                  <Text style={styles.servicePrice}>₹{group.price}</Text>
+                </View>
+                {['pending', 'confirmed'].includes(booking.status?.toLowerCase() ?? '') && (
+                  <TouchableOpacity
+                    style={styles.removePkgBtn}
+                    activeOpacity={0.8}
+                    disabled={actionLoading}
+                    onPress={() => handleRemovePackage(group.key, group.title)}>
+                    <Text style={styles.removePkgBtnText}>Remove Package</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            ))}
+            {services.filter((svc: any) => !svc.addedByPackage).map((svc: any, idx: number) => {
               const isRemoved = !!svc.removed;
               const isFreeOffer = !!svc.addedByOffer;
               const tagType: 'admin' | 'partner' | 'user' | 'removed' | 'free' | null =
@@ -429,7 +583,7 @@ const BookingDetailScreen = ({navigation, route}: any) => {
                 svc.addedByPartner ? 'partner' :
                 svc.addedByUser ? 'user' : null;
               return (
-                <View key={svc._id ?? svc.id ?? idx} style={[styles.serviceRow, idx > 0 && styles.serviceRowBorder, isRemoved && {opacity: 0.5}]}>
+                <View key={svc._id ?? svc.id ?? idx} style={[styles.serviceRow, (idx > 0 || packageItems.length > 0) && styles.serviceRowBorder, isRemoved && {opacity: 0.5}]}>
                   <Image
                     source={{uri: svc.image || FALLBACK_IMAGE}}
                     style={styles.serviceThumb}
@@ -461,8 +615,20 @@ const BookingDetailScreen = ({navigation, route}: any) => {
           <Text style={styles.cardLabel}>Bill Summary</Text>
           {subtotal > 0 && (
             <View style={styles.billRow}>
-              <Text style={styles.billKey}>Services Total</Text>
+              <Text style={styles.billKey}>Subtotal</Text>
               <Text style={styles.billVal}>₹{subtotal}</Text>
+            </View>
+          )}
+          {!!Number(booking.couponDiscountAmount) && (
+            <View style={styles.billRow}>
+              <Text style={styles.billKey}>Coupon Discount</Text>
+              <Text style={styles.billVal}>−₹{booking.couponDiscountAmount}</Text>
+            </View>
+          )}
+          {!!Number(booking.taxAmount) && (
+            <View style={styles.billRow}>
+              <Text style={styles.billKey}>GST</Text>
+              <Text style={styles.billVal}>₹{booking.taxAmount}</Text>
             </View>
           )}
           <View style={[styles.billRow, styles.billTotal]}>
@@ -610,6 +776,120 @@ const BookingDetailScreen = ({navigation, route}: any) => {
                   : <Text style={styles.modalAddText}>Add {svcCart.length || ''} Service{svcCart.length !== 1 ? 's' : ''}</Text>}
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Add Package Modal */}
+      <Modal visible={showAddPackageModal} animationType="slide" transparent onRequestClose={() => setShowAddPackageModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{pickingPackage ? pickingPackage.title : 'Add Package'}</Text>
+              <TouchableOpacity onPress={() => setShowAddPackageModal(false)} hitSlop={{top:8,bottom:8,left:8,right:8}}>
+                <Ionicons name="close" size={sw(22)} color="#171816" />
+              </TouchableOpacity>
+            </View>
+
+            {!!addPkgError && <Text style={{color: '#FB1616', fontSize: sw(12), paddingHorizontal: sw(16), paddingTop: sw(10)}}>{addPkgError}</Text>}
+
+            {!pickingPackage ? (
+              loadingPkgs ? (
+                <View style={styles.loadingWrap}><ActivityIndicator color="#105641" size="large" /></View>
+              ) : (
+                <FlatList
+                  data={addablePackages}
+                  keyExtractor={item => String(item.id)}
+                  style={{flex: 1}}
+                  contentContainerStyle={styles.pkgListContent}
+                  renderItem={({item}) => (
+                    <View style={styles.pkgCard}>
+                      <View style={styles.pkgCardTop}>
+                        <Text style={styles.pkgCardTitle} numberOfLines={2}>{item.title}</Text>
+                        <View style={[styles.pkgBadge, item.packageType === 'fixed' ? styles.pkgBadgeFixed : styles.pkgBadgeFlexible]}>
+                          <Text style={[styles.pkgBadgeText, {color: item.packageType === 'fixed' ? '#105641' : '#1D4ED8'}]}>
+                            {item.packageType === 'fixed' ? 'FIXED' : 'FLEXIBLE'}
+                          </Text>
+                        </View>
+                      </View>
+                      <Text style={styles.pkgCardPrice}>₹{parseFloat(item.price).toLocaleString('en-IN')}</Text>
+                      <Text style={styles.pkgCardIncludes} numberOfLines={3}>
+                        {item.packageType === 'fixed'
+                          ? (item.services || []).map((s: any) => s.name).join(', ')
+                          : `Pick any ${item.serviceCount} service${item.serviceCount !== 1 ? 's' : ''}${item.categoryId ? ' from this category' : ''}.`}
+                      </Text>
+                      <TouchableOpacity
+                        style={styles.pkgCardBtn}
+                        activeOpacity={0.85}
+                        disabled={actionLoading}
+                        onPress={() => item.packageType === 'fixed' ? handleAddFixedPackage(item) : handlePickFlexible(item)}>
+                        <Text style={styles.pkgCardBtnText}>{item.packageType === 'fixed' ? 'Add to Booking' : 'Choose Services →'}</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                  ListEmptyComponent={
+                    <Text style={styles.emptyText}>
+                      {availablePackages.length === 0 ? 'No packages available' : 'All available packages are already on this booking'}
+                    </Text>
+                  }
+                />
+              )
+            ) : (
+              <>
+                <View style={{paddingHorizontal: sw(16), paddingTop: sw(12), paddingBottom: sw(8)}}>
+                  <View style={{flexDirection: 'row', justifyContent: 'space-between', marginBottom: sw(6)}}>
+                    <Text style={styles.pkgProgressLabel}>
+                      Pick {pickingPackage.serviceCount} service{pickingPackage.serviceCount !== 1 ? 's' : ''}
+                    </Text>
+                    <Text style={[styles.pkgProgressLabel, {fontWeight: '700', color: flexiblePicks.length === pickingPackage.serviceCount ? '#105641' : '#171816'}]}>
+                      {flexiblePicks.length} / {pickingPackage.serviceCount}
+                    </Text>
+                  </View>
+                  <View style={styles.pkgProgressTrack}>
+                    <View style={[styles.pkgProgressFill, {width: `${Math.min(100, (flexiblePicks.length / pickingPackage.serviceCount) * 100)}%`}]} />
+                  </View>
+                </View>
+                {loadingSvcs ? (
+                  <View style={styles.loadingWrap}><ActivityIndicator color="#105641" size="large" /></View>
+                ) : (
+                  <FlatList
+                    data={availableServices.filter((s: any) => !pickingPackage.categoryId || s.categoryId === pickingPackage.categoryId)}
+                    keyExtractor={item => String(item.id)}
+                    style={{flex: 1}}
+                    contentContainerStyle={styles.svcListContent}
+                    renderItem={({item}) => {
+                      const picked = flexiblePicks.includes(item.id);
+                      return (
+                        <TouchableOpacity
+                          style={[styles.svcItem, picked && styles.svcItemSelected]}
+                          activeOpacity={0.8}
+                          onPress={() => toggleFlexiblePick(item.id)}>
+                          <View style={{flex: 1}}>
+                            <Text style={[styles.svcItemName, picked && styles.svcItemNameSelected]}>{item.name}</Text>
+                            <Text style={styles.svcItemMeta}>{item.duration} min  •  ₹{parseFloat(item.basePrice).toLocaleString('en-IN')}</Text>
+                          </View>
+                          <Ionicons name={picked ? 'checkmark-circle' : 'add-circle-outline'} size={sw(22)} color={picked ? '#105641' : '#CCCCCC'} />
+                        </TouchableOpacity>
+                      );
+                    }}
+                    ListEmptyComponent={<Text style={styles.emptyText}>No services found</Text>}
+                  />
+                )}
+                <View style={styles.modalFooter}>
+                  <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setPickingPackage(null)}>
+                    <Text style={styles.modalCancelText}>Back</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.modalAddBtn, (flexiblePicks.length !== pickingPackage.serviceCount || actionLoading) && styles.modalAddBtnDisabled]}
+                    disabled={flexiblePicks.length !== pickingPackage.serviceCount || actionLoading}
+                    onPress={handleConfirmFlexiblePackage}>
+                    {actionLoading
+                      ? <ActivityIndicator color="#FFFFFF" size="small" />
+                      : <Text style={styles.modalAddText}>Add Package (₹{parseFloat(pickingPackage.price).toLocaleString('en-IN')})</Text>}
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
           </View>
         </View>
       </Modal>
@@ -810,6 +1090,17 @@ const styles = StyleSheet.create({
   serviceName: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#171816', fontWeight: '500'},
   serviceDuration: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#656565', marginTop: sw(2)},
   servicePrice: {fontFamily: fonts.title, fontSize: sw(14), color: '#105641', fontWeight: '700'},
+  removePkgBtn: {
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+    backgroundColor: '#FEE2E2',
+    borderRadius: sw(20),
+    paddingHorizontal: sw(12),
+    paddingVertical: sw(6),
+    marginBottom: sw(8),
+  },
+  removePkgBtnText: {fontFamily: fonts.title, fontSize: sw(11), fontWeight: '700', color: '#B91C1C', textTransform: 'uppercase'},
 
   modalOverlay: {flex:1, backgroundColor:'rgba(0,0,0,0.45)', justifyContent:'flex-end'},
   modalSheet: {backgroundColor:'#FFFFFF', borderTopLeftRadius:sw(20), borderTopRightRadius:sw(20), maxHeight:'85%', flex:1, paddingBottom:sw(16)},
@@ -832,6 +1123,22 @@ const styles = StyleSheet.create({
   inlineQty: {flexDirection:'row', alignItems:'center', gap:sw(6)},
   inlineQtyNum: {fontFamily:fonts.title, fontSize:sw(14), fontWeight:'700', color:'#105641', minWidth:sw(20), textAlign:'center'},
   emptyText: {fontFamily:fonts.textFont, fontSize:sw(13), color:'#888', textAlign:'center', paddingVertical:sw(32)},
+
+  pkgListContent: {paddingHorizontal:sw(16), paddingTop:sw(8), paddingBottom:sw(16), gap:sw(12)},
+  pkgCard: {backgroundColor:'#FFFFFF', borderRadius:sw(14), padding:sw(16), borderWidth:1.5, borderColor:'#EEEDED', gap:sw(8)},
+  pkgCardTop: {flexDirection:'row', alignItems:'flex-start', justifyContent:'space-between', gap:sw(8)},
+  pkgCardTitle: {flex:1, fontFamily:fonts.title, fontSize:sw(15), fontWeight:'700', color:'#171816'},
+  pkgBadge: {borderRadius:sw(20), paddingHorizontal:sw(9), paddingVertical:sw(3)},
+  pkgBadgeFixed: {backgroundColor:'#E6F4EC'},
+  pkgBadgeFlexible: {backgroundColor:'#DBEAFE'},
+  pkgBadgeText: {fontFamily:fonts.title, fontSize:sw(10), fontWeight:'800', letterSpacing:0.4},
+  pkgCardPrice: {fontFamily:fonts.title, fontSize:sw(22), fontWeight:'800', color:'#105641'},
+  pkgCardIncludes: {fontFamily:fonts.textFont, fontSize:sw(12), color:'#656565', lineHeight:sw(18)},
+  pkgCardBtn: {backgroundColor:'#105641', borderRadius:sw(10), paddingVertical:sw(10), alignItems:'center', marginTop:sw(4)},
+  pkgCardBtnText: {fontFamily:fonts.title, fontSize:sw(13), fontWeight:'700', color:'#FFFFFF'},
+  pkgProgressLabel: {fontFamily:fonts.textFont, fontSize:sw(12.5), color:'#5C5C5C'},
+  pkgProgressTrack: {height:sw(6), borderRadius:sw(3), backgroundColor:'#EEEDED', overflow:'hidden'},
+  pkgProgressFill: {height:'100%', backgroundColor:'#105641', borderRadius:sw(3)},
   modalFooter: {flexDirection:'row', gap:sw(10), paddingHorizontal:sw(16), paddingTop:sw(12), borderTopWidth:1, borderTopColor:'#EEEDED'},
   modalCancelBtn: {flex:1, height:sw(46), borderRadius:sw(10), borderWidth:1.5, borderColor:'#EEEDED', alignItems:'center', justifyContent:'center'},
   modalCancelText: {fontFamily:fonts.textFont, fontSize:sw(13), fontWeight:'600', color:'#5C5C5C'},

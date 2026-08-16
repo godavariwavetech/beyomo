@@ -526,6 +526,7 @@ const getBookingDetail = async (bookingId) => {
       { model: Payment, as: "payment" },
       { model: Coupon, as: "coupon", attributes: ["code", "type", "discount"] },
       { model: Offer, as: "offer", attributes: ["title"] },
+      { model: ServicePackage, as: "package", attributes: ["id", "title", "price", "image"] },
     ],
   });
   if (!booking) throw new AppError("Booking not found", 404);
@@ -708,6 +709,66 @@ const editBookingServices = async (bookingId, serviceItems = [], removeIndices =
         { bookingId: String(booking.id), type: "booking" }).catch(() => {});
     }
   }
+
+  return booking;
+};
+
+// Reuses the same array-surgery + repricing logic as the user-facing remove-package
+// endpoint (handles both a single legacy package and one package out of several booked
+// together) — admin just skips the userId ownership check a customer action needs.
+const removeBookingPackage = async (bookingId, packageId) => {
+  const { buildPackageRemoval } = require("../../../bookings/services/v1/bookings.service");
+  const booking = await Booking.findByPk(bookingId);
+  if (!booking) throw new AppError("Booking not found", 404);
+  if (!["pending", "confirmed"].includes(booking.status))
+    throw new AppError("The package can only be removed from a pending or confirmed booking", 400);
+
+  const updates = await buildPackageRemoval(booking, packageId);
+  await booking.update(updates);
+
+  const userRecord = await User.findByPk(booking.userId);
+  if (userRecord?.fcmToken) {
+    await sendPushNotification([userRecord.fcmToken], "Booking Updated",
+      `A package on your booking ${booking.bookingCode} was removed by support. New total: ₹${updates.totalAmount}.`,
+      { bookingId: String(booking.id), type: "booking" }, "beyomo_booking").catch(() => {});
+  }
+  await Notification.create({
+    userId: booking.userId,
+    title: "Booking Updated",
+    body: `A package on your booking ${booking.bookingCode} was removed by support. New total: ₹${updates.totalAmount}.`,
+    data: { bookingId: String(booking.id) },
+    type: "booking",
+  });
+
+  return booking;
+};
+
+// Reuses the same array-surgery + repricing logic as the user-facing add-package
+// endpoint — admin skips the userId ownership check and resolves the service selection
+// itself (the client still tells us which services, same contract as user booking/adding).
+const addBookingPackage = async (bookingId, packageId, qty, serviceItems) => {
+  const { buildPackageAddition } = require("../../../bookings/services/v1/bookings.service");
+  const booking = await Booking.findByPk(bookingId);
+  if (!booking) throw new AppError("Booking not found", 404);
+  if (!["pending", "confirmed"].includes(booking.status))
+    throw new AppError("A package can only be added to a pending or confirmed booking", 400);
+
+  const updates = await buildPackageAddition(booking, packageId, qty, serviceItems);
+  await booking.update(updates);
+
+  const userRecord = await User.findByPk(booking.userId);
+  if (userRecord?.fcmToken) {
+    await sendPushNotification([userRecord.fcmToken], "Booking Updated",
+      `A package was added to your booking ${booking.bookingCode} by support. New total: ₹${updates.totalAmount}.`,
+      { bookingId: String(booking.id), type: "booking" }, "beyomo_booking").catch(() => {});
+  }
+  await Notification.create({
+    userId: booking.userId,
+    title: "Booking Updated",
+    body: `A package was added to your booking ${booking.bookingCode} by support. New total: ₹${updates.totalAmount}.`,
+    data: { bookingId: String(booking.id) },
+    type: "booking",
+  });
 
   return booking;
 };
@@ -1077,7 +1138,7 @@ module.exports = {
   listCategories, createCategory, updateCategory, deleteCategory, reorderCategories,
   listServices, createService, updateService, deleteService, toggleServiceCityStatus, reorderServices,
   createBookingForCustomer,
-  listBookings, getBookingDetail, assignPartner, acceptBooking, cancelBooking, rescheduleBooking, editBookingServices,
+  listBookings, getBookingDetail, assignPartner, acceptBooking, cancelBooking, rescheduleBooking, editBookingServices, removeBookingPackage, addBookingPackage,
   listCoupons, createCoupon, updateCoupon, deleteCoupon, getReferralProgram, updateReferralProgram,
   listReviews, updateReviewStatus,
   listNotifications, broadcastNotification,

@@ -229,6 +229,7 @@ const getBookingById = async (partnerId, bookingId) => {
     include: [
       { model: User, as: "user", attributes: ["name", "phone", "profilePicture"] },
       { model: Service, as: "service", attributes: ["name", "image", "basePrice", "duration"] },
+      { model: ServicePackage, as: "package", attributes: ["id", "title", "price", "image"] },
     ],
   });
   if (!booking) throw new AppError("Booking not found", 404);
@@ -518,6 +519,7 @@ const getAvailableBookings = async (partnerId) => {
     include: [
       { model: Service, as: 'service', attributes: ['name', 'image', 'duration', 'basePrice'] },
       { model: User, as: 'user', attributes: ['name', 'phone'] },
+      { model: ServicePackage, as: 'package', attributes: ['id', 'title', 'price', 'image'] },
     ],
   });
 

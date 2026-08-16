@@ -532,6 +532,27 @@ const editBookingServices = catchAsync(async (req, res, next) => {
   res.status(200).json({ status: true, message: "Booking services updated", data: booking });
 });
 
+const removeBookingPackage = catchAsync(async (req, res, next) => {
+  const booking = await adminService.removeBookingPackage(req.params.id, req.body?.packageId);
+  res.status(200).json({ status: true, message: "Package removed from booking", data: booking });
+});
+
+const addBookingPackageSchema = Joi.object({
+  packageId: Joi.number().integer().positive().required(),
+  qty: Joi.number().integer().min(1).max(5).default(1),
+  services: Joi.array().items(Joi.object({
+    id: Joi.alternatives().try(Joi.number(), Joi.string()).required(),
+    qty: Joi.number().integer().min(1).max(5).default(1),
+  })).min(1).required(),
+});
+
+const addBookingPackage = catchAsync(async (req, res, next) => {
+  const { error, value } = addBookingPackageSchema.validate(req.body);
+  if (error) return next(new AppError(error.details[0].message, 400));
+  const booking = await adminService.addBookingPackage(req.params.id, value.packageId, value.qty, value.services);
+  res.status(200).json({ status: true, message: "Package added to booking", data: booking });
+});
+
 // ==================== SETTLEMENTS ====================
 
 const listPartnerBalances = catchAsync(async (req, res, next) => {
@@ -1004,7 +1025,7 @@ module.exports = {
   listCategories, createCategory, updateCategory, deleteCategory, reorderCategories,
   listServices, createService, updateService, deleteService, patchService, patchServiceCity, reorderServices,
   createBookingForCustomer,
-  listBookings, getBookingDetail, assignPartner, acceptBooking, cancelBooking, rescheduleBooking, editBookingServices,
+  listBookings, getBookingDetail, assignPartner, acceptBooking, cancelBooking, rescheduleBooking, editBookingServices, removeBookingPackage, addBookingPackage,
   listPartnerBalances, getPartnerLedger, recordSettlement, voidLedgerEntry,
   listCoupons, createCoupon, updateCoupon, deleteCoupon, getReferral, updateReferral,
   listReviews, updateReviewStatus,

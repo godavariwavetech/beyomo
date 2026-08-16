@@ -11,6 +11,7 @@ const {
   updateServiceQty,
   removeService,
   removePackage,
+  addPackage,
 } = require("../../controllers/v1/bookings.controller");
 
 router.use(authenticate);
@@ -24,5 +25,6 @@ router.patch("/:id/add-services", addUserServices);
 router.patch("/:id/update-service", updateServiceQty);
 router.patch("/:id/remove-service", removeService);
 router.patch("/:id/remove-package", removePackage);
+router.patch("/:id/add-package", addPackage);
 
 module.exports = router;
