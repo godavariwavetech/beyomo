@@ -280,6 +280,7 @@ export default function Services() {
         description: s.description ?? '',
         priceStartsFrom: s.priceStartsFrom ?? false,
         isPopular: s.isPopular ?? false,
+        showOnHome: s.showOnHome ?? false,
         cityIds: Array.isArray(s.cityIds) ? s.cityIds : [],
       })));
     });
@@ -439,6 +440,7 @@ export default function Services() {
       image: svc.image ?? '',
       priceStartsFrom: svc.priceStartsFrom ?? false,
       isPopular: svc.isPopular ?? false,
+      showOnHome: svc.showOnHome ?? false,
     });
   };
 
@@ -473,6 +475,7 @@ export default function Services() {
       description: form.description ?? '',
       priceStartsFrom: !!form.priceStartsFrom,
       isPopular: !!form.isPopular,
+      showOnHome: !!form.showOnHome,
       cityMappings: editMappings,
       ...(form.image ? { image: form.image } : {}),
     };
@@ -504,6 +507,7 @@ export default function Services() {
       description: form.description ?? '',
       priceStartsFrom: !!form.priceStartsFrom,
       isPopular: !!form.isPopular,
+      showOnHome: !!form.showOnHome,
       isActive: true,
       cityIds: form.cityIds ?? [],
       ...(form.image ? { image: form.image } : {}),
@@ -525,6 +529,7 @@ export default function Services() {
         description: form.description ?? '',
         priceStartsFrom: payload.priceStartsFrom,
         isPopular: payload.isPopular,
+        showOnHome: payload.showOnHome,
         cityIds: payload.cityIds,
       }]);
       showToast('Service added successfully!', 'success');
@@ -662,6 +667,11 @@ export default function Services() {
                       <div style={{ fontSize: 12, opacity: 0.8 }}>{svc.category}</div>
                     </div>
                     <div style={{ position: 'absolute', top: 8, right: 8, display: 'flex', gap: 4 }}>
+                      {svc.showOnHome && (
+                        <div title="Featured in Special Offers" style={{ background: 'var(--c-brand-primary)', color: 'white', fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 'var(--r-full)' }}>
+                          HOME
+                        </div>
+                      )}
                       {svc.isPopular && (
                         <div style={{ background: '#F97316', color: 'white', fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 'var(--r-full)', display: 'flex', alignItems: 'center', gap: 3 }}>
                           <Flame size={10}/> Popular
@@ -688,6 +698,11 @@ export default function Services() {
                       )}
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                      {svc.showOnHome && (
+                        <div title="Featured in Special Offers" style={{ background: 'var(--c-brand-primary)', color: 'white', fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 'var(--r-full)' }}>
+                          HOME
+                        </div>
+                      )}
                       {svc.isPopular && (
                         <div style={{ background: '#F97316', color: 'white', fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 'var(--r-full)', display: 'flex', alignItems: 'center', gap: 3 }}>
                           <Flame size={10}/> Popular
@@ -805,6 +820,19 @@ export default function Services() {
                 <div style={{ fontSize: 11, color: 'var(--c-text-muted)' }}>Featured in the app's home screen "Most Booked Services" section.</div>
               </div>
             </label>
+            <label style={{
+              display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+              background: form.showOnHome ? 'rgba(6,64,129,0.06)' : 'var(--c-border-light)',
+              border: `1px solid ${form.showOnHome ? 'var(--c-brand-primary)' : 'var(--c-border)'}`,
+              borderRadius: 8, padding: '10px 12px',
+            }}>
+              <input type="checkbox" checked={form.showOnHome ?? false}
+                onChange={e => setForm(f => ({ ...f, showOnHome: e.target.checked }))} />
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>Feature in Special Offers</div>
+                <div style={{ fontSize: 11, color: 'var(--c-text-muted)' }}>Shows this service in the website's home screen "Special Offers" section.</div>
+              </div>
+            </label>
             <div className="form-group">
               <label className="form-label">Description</label>
               <textarea className="form-input" rows={3} placeholder="Describe what this service includes…" value={form.description || ''} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} style={{ resize: 'vertical' }} />
@@ -869,6 +897,19 @@ export default function Services() {
             <div>
               <div style={{ fontSize: 13, fontWeight: 600 }}>Show in "Most Booked Services"</div>
               <div style={{ fontSize: 11, color: 'var(--c-text-muted)' }}>Featured in the app's home screen "Most Booked Services" section.</div>
+            </div>
+          </label>
+          <label style={{
+            display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+            background: form.showOnHome ? 'rgba(6,64,129,0.06)' : 'var(--c-border-light)',
+            border: `1px solid ${form.showOnHome ? 'var(--c-brand-primary)' : 'var(--c-border)'}`,
+            borderRadius: 8, padding: '10px 12px',
+          }}>
+            <input type="checkbox" checked={form.showOnHome ?? false}
+              onChange={e => setForm(f => ({ ...f, showOnHome: e.target.checked }))} />
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>Feature in Special Offers</div>
+              <div style={{ fontSize: 11, color: 'var(--c-text-muted)' }}>Shows this service in the website's home screen "Special Offers" section.</div>
             </div>
           </label>
           <div className="form-group">
