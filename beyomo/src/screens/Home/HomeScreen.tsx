@@ -1,15 +1,18 @@
-import React, {useEffect, useState} from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 import {
   View,
   Text,
   ScrollView,
   Image,
+  TextInput,
   TouchableOpacity,
   StyleSheet,
   Dimensions,
   StatusBar,
   Linking,
   RefreshControl,
+  Keyboard,
+  ActivityIndicator,
 } from 'react-native';
 import {HomeScreenSkeleton, SkeletonBox} from '../../components/Skeleton/Skeleton';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -80,8 +83,8 @@ const CTA_CARD_W = (width - sw(32) - CTA_CARD_GAP) / 2;
 const CTA_CARD_H = CTA_CARD_W / CTA_CARD_ASPECT;
 
 // "Most Booked Services" horizontal cards
-const POPULAR_CARD_W = sw(150);
-const POPULAR_IMG_H = sw(110);
+const POPULAR_CARD_W = sw(155);
+const POPULAR_IMG_H = sw(140);
 
 // "Why Beyomo?" banner — same checklist graphic as the website (868×414px)
 const WHY_BEYOMO_ASPECT = 868 / 414;
@@ -113,8 +116,55 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
   const [loadedServices, setLoadedServices] = useState<Set<string>>(new Set());
   const [refreshing, setRefreshing] = useState(false);
 
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<any>({categories: [], services: [], packages: [], offers: []});
+  const [searchLoading, setSearchLoading] = useState(false);
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    const q = searchQuery.trim();
+    if (q.length < 2) {
+      setSearchResults({categories: [], services: [], packages: [], offers: []});
+      setSearchLoading(false);
+      return;
+    }
+    setSearchLoading(true);
+    searchDebounceRef.current = setTimeout(() => {
+      const cityParam = selectedCity?.id ? `&cityId=${selectedCity.id}` : '';
+      api
+        .get(`${endpoints.SEARCH}?q=${encodeURIComponent(q)}${cityParam}`)
+        .then(res => {
+          if (res.data?.status) setSearchResults(res.data.data ?? {categories: [], services: [], packages: [], offers: []});
+        })
+        .catch(() => {})
+        .finally(() => setSearchLoading(false));
+    }, 400);
+    return () => {
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    };
+  }, [searchQuery, selectedCity?.id]);
+
+  const goToServiceListing = (categoryId: any, categoryName: string) => {
+    Keyboard.dismiss();
+    setSearchQuery('');
+    navigation.navigate('ServiceListing', {categoryId, category: categoryName});
+  };
+
+  const goToPackage = (pkg: any) => {
+    Keyboard.dismiss();
+    setSearchQuery('');
+    navigation.navigate('PackageDetail', {packageId: pkg.id});
+  };
+
+  const searchActive = searchQuery.trim().length >= 2;
+  const hasSearchResults =
+    (searchResults.categories?.length ?? 0) > 0 ||
+    (searchResults.services?.length ?? 0) > 0 ||
+    (searchResults.packages?.length ?? 0) > 0 ||
+    (searchResults.offers?.length ?? 0) > 0;
+
   const loadHomeData = () => {
-    setLoadedServices(new Set());
     setAddedPopular(new Set());
     const bannersPromise = api.get(endpoints.BANNERS).then(res => {
       if (res.data?.status) setBanners(res.data.data ?? []);
@@ -221,10 +271,6 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
           />
 
           <View style={styles.iconsGroup}>
-            <TouchableOpacity activeOpacity={0.7} style={styles.bellBtn} onPress={() => navigation.navigate('Search')}>
-              <Ionicons name="search-outline" size={sw(22)} color="#FDD77A" />
-            </TouchableOpacity>
-
             <View style={styles.whatsappCol}>
               <TouchableOpacity activeOpacity={0.7} style={styles.bellBtn} onPress={() => Linking.openURL('https://wa.me/919885909192')}>
                 <Ionicons name="logo-whatsapp" size={sw(24)} color="#25D366" />
@@ -234,6 +280,24 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
               </View>
             </View>
           </View>
+        </View>
+
+        {/* ── Global search bar ── */}
+        <View style={styles.searchBar}>
+          <Ionicons name="search-outline" size={sw(18)} color="#8A8A8A" />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search for Hair Spa"
+            placeholderTextColor="#8A8A8A"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            returnKeyType="search"
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => { setSearchQuery(''); Keyboard.dismiss(); }} activeOpacity={0.7}>
+              <Ionicons name="close-circle" size={sw(18)} color="#B5B5B5" />
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* ── Hero banner — same admin-managed image the website's homepage shows ── */}
@@ -255,20 +319,76 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
       <ScrollView
         style={styles.scroll}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.contentContainer}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#105641']} tintColor="#105641" />
         }>
+
+        {searchActive && (
+          <View style={styles.searchResultsCard}>
+            {searchLoading && <ActivityIndicator color="#105641" style={{marginVertical: sw(16)}} />}
+            {!searchLoading && !hasSearchResults && (
+              <Text style={styles.searchEmpty}>No results for "{searchQuery.trim()}"</Text>
+            )}
+            {!searchLoading && (searchResults.categories?.length ?? 0) > 0 && (
+              <>
+                <Text style={styles.searchResultLabel}>Categories</Text>
+                <View style={styles.searchChipsWrap}>
+                  {searchResults.categories.map((cat: any) => (
+                    <TouchableOpacity key={`cat-${cat.id}`} style={styles.searchChip} activeOpacity={0.7}
+                      onPress={() => goToServiceListing(cat.id, cat.name)}>
+                      <Text style={styles.searchChipText}>{cat.name}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </>
+            )}
+            {!searchLoading && (searchResults.services?.length ?? 0) > 0 && (
+              <>
+                <Text style={styles.searchResultLabel}>Services</Text>
+                {searchResults.services.map((svc: any) => (
+                  <TouchableOpacity key={`svc-${svc.id}`} style={styles.searchRow} activeOpacity={0.7}
+                    onPress={() => goToServiceListing(svc.categoryId ?? svc.category?.id, svc.category?.name ?? '')}>
+                    <Image source={{uri: svc.image || FALLBACK_IMAGE}} style={styles.searchRowImg} />
+                    <View style={{flex: 1}}>
+                      <Text style={styles.searchRowTitle} numberOfLines={1}>{svc.name}</Text>
+                      <Text style={styles.searchRowSub} numberOfLines={1}>
+                        {svc.category?.name ?? ''}{svc.duration ? ` · ${svc.duration} mins` : ''}
+                      </Text>
+                    </View>
+                    <Text style={styles.searchRowPrice}>₹{Math.round(svc.price ?? svc.basePrice ?? 0)}</Text>
+                  </TouchableOpacity>
+                ))}
+              </>
+            )}
+            {!searchLoading && (searchResults.packages?.length ?? 0) > 0 && (
+              <>
+                <Text style={styles.searchResultLabel}>Packages</Text>
+                {searchResults.packages.map((pkg: any) => (
+                  <TouchableOpacity key={`pkg-${pkg.id}`} style={styles.searchRow} activeOpacity={0.7}
+                    onPress={() => goToPackage(pkg)}>
+                    <Image source={{uri: pkg.image || FALLBACK_IMAGE}} style={styles.searchRowImg} />
+                    <View style={{flex: 1}}>
+                      <Text style={styles.searchRowTitle} numberOfLines={1}>{pkg.title}</Text>
+                    </View>
+                    <Text style={styles.searchRowPrice}>₹{Math.round(pkg.price ?? 0)}</Text>
+                  </TouchableOpacity>
+                ))}
+              </>
+            )}
+          </View>
+        )}
 
         {/* ══════════════════════════════════
             PACKAGES & COMBOS — pick a flexible build-your-own package, or a
             ready-made combo, same split the website offers ('flexible' vs 'fixed')
         ══════════════════════════════════ */}
         <View style={styles.packagesCtaSection}>
-          <View style={styles.sectionHeaderBlock}>
+          {/* <View style={styles.sectionHeaderBlock}>
             <Text style={styles.sectionTitle}>Packages & Combos</Text>
             <View style={styles.titleUnderline} />
-          </View>
+          </View> */}
 
           <View style={styles.ctaRow}>
             <TouchableOpacity
@@ -323,9 +443,11 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
                           source={{uri: item.image ?? FALLBACK_IMAGE}}
                           style={styles.serviceImg}
                           resizeMode="cover"
-                          onLoad={() =>
+                          onLoadEnd={() =>
                             setLoadedServices(prev =>
-                              new Set(prev).add(String(item._id ?? item.id))
+                              prev.has(String(item._id ?? item.id))
+                                ? prev
+                                : new Set(prev).add(String(item._id ?? item.id))
                             )
                           }
                         />
@@ -349,12 +471,11 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
         ══════════════════════════════════ */}
         {popularServices.length > 0 && (
           <View style={styles.popularSection}>
-            <View style={styles.sectionHeaderBlock}>
-              <Text style={styles.sectionTitle}>Most Booked Services</Text>
-              <View style={styles.titleUnderline} />
+            <View style={styles.popularHeader}>
+              <Text style={styles.popularTitle}>Most Booked Services</Text>
               {selectedCity?.name ? (
                 <View style={styles.popularCityRow}>
-                  <Ionicons name="location-sharp" size={sw(12)} color="#105641" />
+                  <Ionicons name="location-sharp" size={sw(20)} color="#105641" />
                   <Text style={styles.popularCityText}>In {selectedCity.name}</Text>
                 </View>
               ) : null}
@@ -587,6 +708,103 @@ const styles = StyleSheet.create({
     fontFamily: fonts.textFont,
     lineHeight: sw(10),
   },
+  searchBar: {
+    marginTop: sw(10),
+    marginHorizontal: sw(12),
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: sw(10),
+    backgroundColor: '#FFFFFF',
+    borderRadius: sw(28),
+    paddingHorizontal: sw(16),
+    paddingVertical: sw(12),
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  searchBarText: {
+    fontFamily: fonts.secondry,
+    fontSize: sw(14),
+    color: '#8A8A8A',
+  },
+  searchInput: {
+    flex: 1,
+    fontFamily: fonts.secondry,
+    fontSize: sw(14),
+    color: '#171816',
+    padding: 0,
+  },
+  searchResultsCard: {
+    marginHorizontal: sw(12),
+    marginTop: sw(12),
+    padding: sw(12),
+    backgroundColor: '#FFFFFF',
+    borderRadius: sw(12),
+    gap: sw(8),
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  searchEmpty: {
+    fontFamily: fonts.secondry,
+    fontSize: sw(13),
+    color: '#8A8A8A',
+    textAlign: 'center',
+    paddingVertical: sw(12),
+  },
+  searchResultLabel: {
+    fontFamily: fonts.title,
+    fontSize: sw(11),
+    color: '#5C5C5C',
+    marginTop: sw(6),
+  },
+  searchChipsWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: sw(6),
+  },
+  searchChip: {
+    backgroundColor: '#E8F3EF',
+    borderRadius: sw(16),
+    paddingHorizontal: sw(12),
+    paddingVertical: sw(6),
+  },
+  searchChipText: {
+    fontFamily: fonts.secondry,
+    fontSize: sw(12),
+    color: '#105641',
+  },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: sw(10),
+    paddingVertical: sw(6),
+  },
+  searchRowImg: {
+    width: sw(40),
+    height: sw(40),
+    borderRadius: sw(8),
+    backgroundColor: '#F0F0F0',
+  },
+  searchRowTitle: {
+    fontFamily: fonts.secondry,
+    fontSize: sw(13),
+    color: '#171816',
+  },
+  searchRowSub: {
+    fontFamily: fonts.secondry,
+    fontSize: sw(11),
+    color: '#8A8A8A',
+  },
+  searchRowPrice: {
+    fontFamily: fonts.title,
+    fontSize: sw(13),
+    color: '#105641',
+  },
   /* ── Services section ──────────────────────── */
   servicesSection: {
     paddingHorizontal: sw(16),
@@ -628,18 +846,19 @@ const styles = StyleSheet.create({
     shadowOffset: {width: 0, height: sw(2.1)},
     shadowOpacity: 0.1,
     shadowRadius: sw(10.5),
-    backgroundColor: '#FCF8F3',
+    backgroundColor: '#F5D4B0',
   },
   serviceImgInner: {
     width: '100%',
     height: '100%',
     borderRadius: sw(12.63),
     overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   serviceImg: {
     width: '100%',
     height: '100%',
-    transform: [{scale: 1.35}],
   },
   serviceLabel: {
     fontFamily: fonts.secondry,
@@ -651,17 +870,37 @@ const styles = StyleSheet.create({
 
   /* ── Most Booked Services ──────────────────────── */
   popularSection: {
-    paddingTop: sw(24),
+    marginTop: sw(24),
+    paddingTop: sw(18),
+    paddingBottom: sw(20),
+    backgroundColor: '#E8F3EF',
+  },
+  popularHeader: {
+    alignItems: 'center',
+    gap: sw(6),
+    marginBottom: sw(14),
+    paddingHorizontal: sw(16),
+  },
+  popularTitle: {
+    fontFamily: 'serif',
+    fontSize: sw(20),
+    lineHeight: sw(24),
+    color: '#171816',
+    textAlign: 'center',
   },
   popularCityRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: sw(4),
-    marginTop: sw(2),
+    backgroundColor: '#D5E8DE',
+    alignSelf: 'stretch',
+    marginHorizontal: -sw(16),
+    paddingVertical: sw(6),
   },
   popularCityText: {
     fontFamily: fonts.secondry,
-    fontSize: sw(12),
+    fontSize: sw(13),
     color: '#105641',
     fontWeight: '600',
   },
@@ -671,21 +910,15 @@ const styles = StyleSheet.create({
   },
   popularCard: {
     width: POPULAR_CARD_W,
-    borderRadius: sw(14),
-    backgroundColor: '#FFFFFF',
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 3},
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
   },
   popularImg: {
     width: '100%',
     height: POPULAR_IMG_H,
+    borderRadius: sw(14),
   },
   popularCardBody: {
-    padding: sw(10),
+    paddingTop: sw(8),
+    paddingHorizontal: sw(2),
     gap: sw(4),
   },
   popularName: {
@@ -718,11 +951,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: sw(2),
+    gap: sw(4),
     borderWidth: 1,
     borderColor: '#105641',
     borderRadius: sw(8),
     paddingVertical: sw(6),
+    paddingHorizontal: sw(10),
   },
   popularAddBtnDone: {
     borderColor: '#C8A84C',
@@ -731,7 +965,6 @@ const styles = StyleSheet.create({
   popularAddText: {
     fontFamily: fonts.title,
     fontSize: sw(12),
-    fontWeight: '700',
     color: '#105641',
   },
   popularAddTextDone: {
@@ -756,30 +989,30 @@ const styles = StyleSheet.create({
 
   /* ── Top Brands ──────────────────────── */
   brandsSection: {
+    marginTop: sw(28),
     paddingHorizontal: sw(16),
-    paddingTop: sw(28),
+    paddingTop: sw(24),
+    paddingBottom: sw(24),
+    backgroundColor: '#012823',
   },
   brandsTag: {
     alignSelf: 'flex-start',
-    backgroundColor: '#E8F3EF',
+    backgroundColor: '#FFFFFF',
     borderRadius: sw(20),
-    paddingHorizontal: sw(12),
-    paddingVertical: sw(4),
-    marginBottom: sw(8),
+    paddingHorizontal: sw(14),
+    paddingVertical: sw(5),
+    marginBottom: sw(10),
   },
   brandsTagText: {
-    fontFamily: fonts.secondry,
-    fontSize: sw(11),
-    fontWeight: '700',
-    color: '#105641',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    fontFamily: fonts.title,
+    fontSize: sw(12),
+    color: '#012823',
   },
   brandsTitle: {
     fontFamily: 'serif',
     fontSize: sw(18),
     lineHeight: sw(22),
-    color: '#171816',
+    color: '#FFFFFF',
     marginBottom: sw(16),
   },
   brandsGrid: {
