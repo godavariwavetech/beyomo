@@ -11,6 +11,7 @@ import OTPScreen from '../screens/Auth/OTPScreen';
 import RegisterScreen from '../screens/Auth/RegisterScreen';
 
 import HomeScreen from '../screens/Home/HomeScreen';
+import AllCategoriesScreen from '../screens/Home/AllCategoriesScreen';
 import BookingsScreen from '../screens/Bookings/BookingsScreen';
 import ProfileScreen from '../screens/Profile/ProfileScreen';
 
@@ -84,6 +85,7 @@ const AppNavigation = () => {
         <Stack.Screen name="Register" component={RegisterScreen} />
         <Stack.Screen name="Main" component={MainTabs} />
         <Stack.Screen name="ServiceListing" component={ServiceListingScreen} />
+        <Stack.Screen name="AllCategories" component={AllCategoriesScreen} />
         <Stack.Screen name="Search" component={SearchScreen} />
         <Stack.Screen name="PackageDetail" component={PackageDetailScreen} />
         <Stack.Screen name="PackageListing" component={PackageListingScreen} />

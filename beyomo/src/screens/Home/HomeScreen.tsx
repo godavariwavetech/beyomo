@@ -21,6 +21,9 @@ import {useDispatch, useSelector} from 'react-redux';
 import {fonts} from '../../config/theme';
 import {fetchCategories} from '../../redux/reducers/services';
 import {addServicesToCart} from '../../redux/reducers/cart';
+import {fetchNotifications} from '../../redux/reducers/notifications';
+import {fetchUserBookings} from '../../redux/reducers/bookings';
+import CartBar from '../../components/CartBar/CartBar';
 import type {AppDispatch, RootState} from '../../redux/store';
 import api from '../../utils/api';
 import {endpoints} from '../../config/config';
@@ -61,7 +64,7 @@ const ELLIPSE_SCALE_X = ELLIPSE_W / ELLIPSE_H;
 
 const FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=800&q=90&fit=crop';
 
-const HEADER_CARD_ASPECT = 2.2;
+const HEADER_CARD_ASPECT = 2.6;
 // Slightly narrower than the full slide width, with matching side margins below, so the
 // card has breathing room from the device edges instead of touching them directly.
 const HEADER_CARD_W = width - sw(24);
@@ -82,19 +85,21 @@ const CTA_CARD_GAP = sw(12);
 const CTA_CARD_W = (width - sw(32) - CTA_CARD_GAP) / 2;
 const CTA_CARD_H = CTA_CARD_W / CTA_CARD_ASPECT;
 
-// "Most Booked Services" horizontal cards
-const POPULAR_CARD_W = sw(155);
-const POPULAR_IMG_H = sw(140);
+// "Most Booked Services" horizontal cards — sized so exactly 2 fit the visible
+// scroll area, matching the getlook.in web layout (no 3rd-card peek)
+const POPULAR_CARD_W = (width - sw(16) * 2 - sw(12)) / 2;
+const POPULAR_IMG_H = POPULAR_CARD_W * 1.15;
 
 // "Why Beyomo?" banner — same checklist graphic as the website (868×414px)
-const WHY_BEYOMO_ASPECT = 868 / 414;
+const WHY_BEYOMO_ASPECT = 628 / 355;
 const WHY_BEYOMO_W = width - sw(32);
 const WHY_BEYOMO_H = WHY_BEYOMO_W / WHY_BEYOMO_ASPECT;
 
-// "Top Brands" logo grid — 3 columns, square cards
+// "Top Brands" logo grid — 3 columns, compact rectangular cards for a premium look
 const BRAND_COLUMNS = 3;
-const BRAND_GAP = sw(10);
+const BRAND_GAP = sw(12);
 const BRAND_CARD_W = (width - sw(32) - BRAND_GAP * (BRAND_COLUMNS - 1)) / BRAND_COLUMNS;
+const BRAND_CARD_H = BRAND_CARD_W * 0.95;
 
 const chunkArray = <T,>(arr: T[], size: number): T[][] => {
   const chunks: T[][] = [];
@@ -109,9 +114,14 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
   const dispatch = useDispatch<AppDispatch>();
   const {categories, loading} = useSelector((state: RootState) => state.Services);
   const selectedCity = useSelector((state: RootState) => state.City?.selectedCity);
+  const userProfile = useSelector((state: RootState) => (state as any).User?.profile ?? (state as any).Auth?.user);
+  const authToken = useSelector((state: RootState) => (state as any).Auth?.token);
+  const unreadCount = useSelector((state: RootState) => (state as any).Notifications?.unreadCount ?? 0);
+  const userBookings = useSelector((state: RootState) => (state as any).Bookings?.list ?? []);
   const [banners, setBanners] = useState<any[]>([]);
   const [popularServices, setPopularServices] = useState<any[]>([]);
   const [addedPopular, setAddedPopular] = useState<Set<string>>(new Set());
+  const [packageStats, setPackageStats] = useState<{flexibleMinPrice: number | null; flexibleCount: number; fixedMinPrice: number | null; fixedCount: number}>({flexibleMinPrice: null, flexibleCount: 0, fixedMinPrice: null, fixedCount: 0});
 
   const [loadedServices, setLoadedServices] = useState<Set<string>>(new Set());
   const [refreshing, setRefreshing] = useState(false);
@@ -158,6 +168,29 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
   };
 
   const searchActive = searchQuery.trim().length >= 2;
+
+  const currentHour = new Date().getHours();
+  const greetingText = currentHour < 12 ? 'Good morning' : currentHour < 17 ? 'Good afternoon' : 'Good evening';
+  const firstName = (userProfile?.name ?? '').trim().split(/\s+/)[0] ?? '';
+
+  const bookAgainList = (userBookings as any[])
+    .filter(b => (b?.status ?? '').toLowerCase() === 'completed' && (b?.services?.length ?? 0) > 0)
+    .slice(0, 3);
+
+  const rebookServices = (booking: any) => {
+    const services = (booking.services ?? []).map((s: any) => ({
+      id: String(s.id ?? s.serviceId ?? ''),
+      name: s.name,
+      duration: s.duration ? `${s.duration} mins` : '',
+      price: parseFloat(s.price ?? s.basePrice) || 0,
+      image: s.image,
+      qty: 1,
+    })).filter((s: any) => s.id);
+    if (services.length > 0) {
+      dispatch(addServicesToCart(services));
+      navigation.navigate('AddressPayment');
+    }
+  };
   const hasSearchResults =
     (searchResults.categories?.length ?? 0) > 0 ||
     (searchResults.services?.length ?? 0) > 0 ||
@@ -174,10 +207,31 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
     }).then(res => {
       if (res.data?.status) setPopularServices(res.data.data ?? []);
     }).catch(() => {});
+    const packagesPromise = api.get(endpoints.PACKAGES, {
+      params: selectedCity?.id ? {cityId: selectedCity.id} : {},
+    }).then(res => {
+      if (res.data?.status) {
+        const all = (res.data.data ?? []) as any[];
+        const flexible = all.filter(p => p.packageType === 'flexible');
+        const fixed = all.filter(p => p.packageType === 'fixed');
+        const minPrice = (arr: any[]) => arr.length ? Math.min(...arr.map(p => Math.round(parseFloat(p.price) || 0))) : null;
+        setPackageStats({
+          flexibleCount: flexible.length,
+          flexibleMinPrice: minPrice(flexible),
+          fixedCount: fixed.length,
+          fixedMinPrice: minPrice(fixed),
+        });
+      }
+    }).catch(() => {});
+    const authedPromises: Promise<any>[] = authToken
+      ? [dispatch(fetchNotifications()) as any, dispatch(fetchUserBookings()) as any]
+      : [];
     return Promise.all([
       dispatch(fetchCategories()),
       bannersPromise,
       popularPromise,
+      packagesPromise,
+      ...authedPromises,
     ]);
   };
 
@@ -255,12 +309,12 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
             activeOpacity={0.7}
             style={styles.locationBtn}
             onPress={() => navigation.navigate('CitySelector', {returnToHome: true})}>
-            <Ionicons name="location-sharp" size={sw(12)} color="#FDD77A" />
+            <Ionicons name="location-sharp" size={sw(12)} color="#FFFFFF" />
             <View style={styles.locationNameRow}>
               <Text style={styles.locationName} numberOfLines={1}>
                 {selectedCity?.name ?? 'Select City'}
               </Text>
-              <Ionicons name="chevron-down-outline" size={sw(10)} color="#FDD77A" />
+              <Ionicons name="chevron-down-outline" size={sw(10)} color="#FFFFFF" />
             </View>
           </TouchableOpacity>
 
@@ -271,14 +325,15 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
           />
 
           <View style={styles.iconsGroup}>
-            <View style={styles.whatsappCol}>
-              <TouchableOpacity activeOpacity={0.7} style={styles.bellBtn} onPress={() => Linking.openURL('https://wa.me/919885909192')}>
-                <Ionicons name="logo-whatsapp" size={sw(24)} color="#25D366" />
+            {authToken ? (
+              <TouchableOpacity activeOpacity={0.7} style={styles.bellBtn} onPress={() => navigation.navigate('Notifications')}>
+                <Ionicons name="notifications-outline" size={sw(22)} color="#FFFFFF" />
+                {unreadCount > 0 && <View style={styles.unreadDot} />}
               </TouchableOpacity>
-              <View style={styles.connectBadge}>
-                <Text style={styles.connectText}>Connect</Text>
-              </View>
-            </View>
+            ) : null}
+            <TouchableOpacity activeOpacity={0.7} style={styles.bellBtn} onPress={() => Linking.openURL('https://wa.me/919885909192')}>
+              <Ionicons name="logo-whatsapp" size={sw(24)} color="#25D366" />
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -381,15 +436,73 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
         )}
 
         {/* ══════════════════════════════════
+            TRUST STRIP — real counts from cats + city + brand grid
+        ══════════════════════════════════ */}
+        {!searchActive && categories.length > 0 && (
+          <View style={styles.trustStrip}>
+            <View style={styles.trustItem}>
+              <Ionicons name="sparkles" size={sw(14)} color="#C8A84C" />
+              <Text style={styles.trustText}>{categories.length}+ Services</Text>
+            </View>
+            <View style={styles.trustDot} />
+            <View style={styles.trustItem}>
+              <Ionicons name="ribbon" size={sw(14)} color="#C8A84C" />
+              <Text style={styles.trustText}>Top Brands</Text>
+            </View>
+            {selectedCity?.name ? (
+              <>
+                <View style={styles.trustDot} />
+                <View style={styles.trustItem}>
+                  <Ionicons name="location" size={sw(14)} color="#C8A84C" />
+                  <Text style={styles.trustText}>{selectedCity.name}</Text>
+                </View>
+              </>
+            ) : null}
+          </View>
+        )}
+
+        {/* ══════════════════════════════════
+            BOOK AGAIN — returning users see their last 1-3 completed bookings
+            with a one-tap re-book CTA
+        ══════════════════════════════════ */}
+        {!searchActive && bookAgainList.length > 0 && (
+          <View style={styles.bookAgainSection}>
+            <Text style={styles.bookAgainTitle}>Book Again</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.bookAgainScroll}>
+              {bookAgainList.map((booking: any) => {
+                const firstSvc = booking.services[0];
+                const extraCount = booking.services.length - 1;
+                return (
+                  <View key={booking.id ?? booking._id} style={styles.bookAgainCard}>
+                    <Image source={{uri: firstSvc?.image ?? FALLBACK_IMAGE}} style={styles.bookAgainImg} />
+                    <View style={styles.bookAgainBody}>
+                      <Text style={styles.bookAgainName} numberOfLines={1}>{firstSvc?.name ?? 'Booking'}</Text>
+                      {extraCount > 0 ? (
+                        <Text style={styles.bookAgainExtra}>+ {extraCount} more service{extraCount > 1 ? 's' : ''}</Text>
+                      ) : null}
+                      <TouchableOpacity
+                        style={styles.bookAgainBtn}
+                        activeOpacity={0.8}
+                        onPress={() => rebookServices(booking)}>
+                        <Ionicons name="refresh" size={sw(12)} color="#FFFFFF" />
+                        <Text style={styles.bookAgainBtnText}>Book Again</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                );
+              })}
+            </ScrollView>
+          </View>
+        )}
+
+        {/* ══════════════════════════════════
             PACKAGES & COMBOS — pick a flexible build-your-own package, or a
             ready-made combo, same split the website offers ('flexible' vs 'fixed')
         ══════════════════════════════════ */}
         <View style={styles.packagesCtaSection}>
-          {/* <View style={styles.sectionHeaderBlock}>
-            <Text style={styles.sectionTitle}>Packages & Combos</Text>
-            <View style={styles.titleUnderline} />
-          </View> */}
-
           <View style={styles.ctaRow}>
             <TouchableOpacity
               style={styles.ctaCardShadow}
@@ -402,6 +515,12 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
                   resizeMode="cover"
                 />
               </View>
+              {packageStats.flexibleCount > 0 && (
+                <Text style={styles.ctaCaption} numberOfLines={1}>
+                  {packageStats.flexibleCount} {packageStats.flexibleCount === 1 ? 'package' : 'packages'}
+                  {packageStats.flexibleMinPrice != null ? ` · from ₹${packageStats.flexibleMinPrice.toLocaleString('en-IN')}` : ''}
+                </Text>
+              )}
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -415,6 +534,12 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
                   resizeMode="cover"
                 />
               </View>
+              {packageStats.fixedCount > 0 && (
+                <Text style={styles.ctaCaption} numberOfLines={1}>
+                  {packageStats.fixedCount} {packageStats.fixedCount === 1 ? 'combo' : 'combos'}
+                  {packageStats.fixedMinPrice != null ? ` · from ₹${packageStats.fixedMinPrice.toLocaleString('en-IN')}` : ''}
+                </Text>
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -425,11 +550,11 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
         <View style={styles.servicesSection}>
           <View style={styles.sectionHeaderBlock}>
             <Text style={styles.sectionTitle}>Our Services</Text>
-            <View style={styles.titleUnderline} />
           </View>
 
+          <View style={styles.servicesGridWrap}>
           <View style={styles.grid}>
-            {chunkArray(categories, 4).map((row: any[], ri: number) => (
+            {chunkArray(categories.slice(0, 12), 4).map((row: any[], ri: number) => (
               <View key={ri} style={styles.gridRow}>
                 {row.map((item: any) => (
                   <TouchableOpacity
@@ -464,6 +589,17 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
               </View>
             ))}
           </View>
+
+          {categories.length > 12 && (
+            <TouchableOpacity
+              style={styles.viewAllRow}
+              activeOpacity={0.7}
+              onPress={() => navigation.navigate('AllCategories')}>
+              <Text style={styles.viewAllText}>View All Services</Text>
+              <Ionicons name="chevron-forward" size={sw(14)} color="#105641" />
+            </TouchableOpacity>
+          )}
+          </View>
         </View>
 
         {/* ══════════════════════════════════
@@ -484,21 +620,29 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.popularScrollContent}>
-              {popularServices.map((svc: any) => {
+              {popularServices.map((svc: any, idx: number) => {
                 const id = String(svc.id ?? svc._id);
                 const isAdded = addedPopular.has(id);
                 return (
                   <View key={id} style={styles.popularCard}>
-                    <Image
-                      source={{uri: svc.image ?? FALLBACK_IMAGE}}
-                      style={styles.popularImg}
-                      resizeMode="cover"
-                    />
+                    <View style={styles.popularImgWrap}>
+                      <Image
+                        source={{uri: svc.image ?? FALLBACK_IMAGE}}
+                        style={styles.popularImg}
+                        resizeMode="contain"
+                      />
+                      {idx < 2 && (
+                        <View style={styles.trendingBadge}>
+                          <Ionicons name="flame" size={sw(10)} color="#FFFFFF" />
+                          <Text style={styles.trendingText}>{idx === 0 ? 'Trending' : 'Popular'}</Text>
+                        </View>
+                      )}
+                    </View>
                     <View style={styles.popularCardBody}>
                       <Text style={styles.popularName} numberOfLines={2}>{svc.name}</Text>
                       {svc.duration ? (
                         <View style={styles.popularDurationRow}>
-                          <Ionicons name="time-outline" size={sw(11)} color="#6B6B6B" />
+                          <Ionicons name="time-outline" size={sw(11)} color="#C8A84C" />
                           <Text style={styles.popularDuration}>{svc.duration} mins</Text>
                         </View>
                       ) : null}
@@ -527,12 +671,14 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
             WHY BEYOMO?
         ══════════════════════════════════ */}
         <View style={styles.whyBeyomoSection}>
-          <View style={styles.whyBeyomoImgWrap}>
-            <Image
-              source={whyBeyomoBanner?.image ? {uri: whyBeyomoBanner.image} : require('../../assets/why_beyomo.png')}
-              style={styles.whyBeyomoImg}
-              resizeMode="cover"
-            />
+          <View style={styles.whyBeyomoShadowWrap}>
+            <View style={styles.whyBeyomoImgWrap}>
+              <Image
+                source={whyBeyomoBanner?.image ? {uri: whyBeyomoBanner.image} : require('../../assets/why_beyomo.png')}
+                style={styles.whyBeyomoImg}
+                resizeMode="cover"
+              />
+            </View>
           </View>
         </View>
 
@@ -541,11 +687,12 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
         ══════════════════════════════════ */}
         <View style={styles.brandsSection}>
           <View style={styles.brandsTag}>
+            <Ionicons name="shield-checkmark" size={sw(12)} color="#012823" />
             <Text style={styles.brandsTagText}>Top Brands</Text>
           </View>
           <Text style={styles.brandsTitle}>We use best Brands in 1-Time use packs</Text>
           <View style={styles.brandsGrid}>
-            {BRAND_LOGOS.map((img, i) => (
+            {BRAND_LOGOS.slice(0, 6).map((img, i) => (
               <View key={i} style={styles.brandCard}>
                 <Image source={img} style={styles.brandImg} resizeMode="contain" />
               </View>
@@ -553,8 +700,8 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
           </View>
         </View>
 
-        <View style={{height: sw(24)}} />
       </ScrollView>
+      <CartBar navigation={navigation} />
     </View>
   );
 };
@@ -565,7 +712,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FCF8F3',
   },
   scroll: {flex: 1},
-  contentContainer: {paddingBottom: sw(16)},
+  contentContainer: {paddingBottom: sw(32)},
 
   /* ── Header hero banner card — plain poster image ──
      RN clips shadows away on any view that also has overflow:hidden (needed
@@ -576,11 +723,12 @@ const styles = StyleSheet.create({
     height: HEADER_CARD_H,
     marginHorizontal: sw(12),
     borderRadius: sw(16),
+    backgroundColor: '#FCF8F3',
     shadowColor: '#000',
-    shadowOffset: {width: 0, height: 4},
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    elevation: 5,
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 2,
   },
   headerCardImgWrap: {
     width: '100%',
@@ -593,10 +741,157 @@ const styles = StyleSheet.create({
     height: '100%',
   },
 
+  unreadDot: {
+    position: 'absolute',
+    top: sw(4),
+    right: sw(4),
+    width: sw(8),
+    height: sw(8),
+    borderRadius: sw(4),
+    backgroundColor: '#FF3B30',
+    borderWidth: 1,
+    borderColor: '#012823',
+  },
+
+  /* ── Book Again ──────────────────────── */
+  bookAgainSection: {
+    paddingTop: sw(22),
+  },
+  bookAgainTitle: {
+    fontFamily: 'PlayfairDisplay-Bold',
+    fontSize: sw(18),
+    color: '#171816',
+    letterSpacing: 0.3,
+    paddingHorizontal: sw(16),
+    marginBottom: sw(12),
+  },
+  bookAgainScroll: {
+    paddingHorizontal: sw(16),
+    gap: sw(12),
+  },
+  bookAgainCard: {
+    width: sw(240),
+    flexDirection: 'row',
+    backgroundColor: '#FFFFFF',
+    borderRadius: sw(12),
+    overflow: 'hidden',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#EAE4D8',
+  },
+  bookAgainImg: {
+    width: sw(72),
+    height: sw(82),
+    backgroundColor: '#F0F0F0',
+  },
+  bookAgainBody: {
+    flex: 1,
+    paddingHorizontal: sw(10),
+    paddingVertical: sw(8),
+    justifyContent: 'space-between',
+  },
+  bookAgainName: {
+    fontFamily: fonts.title,
+    fontSize: sw(13),
+    color: '#171816',
+  },
+  bookAgainExtra: {
+    fontFamily: fonts.secondry,
+    fontSize: sw(11),
+    color: '#5C5C5C',
+  },
+  bookAgainBtn: {
+    marginTop: sw(4),
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: sw(4),
+    backgroundColor: '#105641',
+    borderRadius: sw(8),
+    paddingVertical: sw(6),
+  },
+  bookAgainBtnText: {
+    fontFamily: fonts.title,
+    fontSize: sw(11),
+    color: '#FFFFFF',
+    letterSpacing: 0.3,
+  },
+
+  /* ── Personalization greeting ──────────────────────── */
+  greetingStrip: {
+    paddingHorizontal: sw(20),
+    paddingTop: sw(22),
+    gap: sw(2),
+  },
+  greetingText: {
+    fontFamily: 'PlayfairDisplay-Bold',
+    fontSize: sw(16),
+    color: '#171816',
+    letterSpacing: 0.3,
+  },
+  greetingSub: {
+    fontFamily: fonts.secondry,
+    fontSize: sw(12),
+    color: '#5C5C5C',
+  },
+  greetingStripHeader: {
+    paddingHorizontal: sw(20),
+    paddingTop: sw(14),
+    gap: sw(2),
+  },
+  greetingTextLight: {
+    fontFamily: 'PlayfairDisplay-Bold',
+    fontSize: sw(16),
+    color: '#FFFFFF',
+    letterSpacing: 0.3,
+  },
+  greetingSubLight: {
+    fontFamily: fonts.secondry,
+    fontSize: sw(12),
+    color: 'rgba(255,255,255,0.72)',
+  },
+
+  /* ── Trust strip ──────────────────────── */
+  trustStrip: {
+    marginTop: sw(14),
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexWrap: 'wrap',
+    gap: sw(8),
+    backgroundColor: '#DCEBE3',
+    paddingHorizontal: sw(14),
+    paddingVertical: sw(9),
+  },
+  trustItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: sw(5),
+  },
+  trustText: {
+    fontFamily: fonts.title,
+    fontSize: sw(11.5),
+    color: '#171816',
+    letterSpacing: 0.2,
+  },
+  trustDot: {
+    width: 3,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: '#C8A84C',
+  },
+
   /* ── Packages & Combos CTA cards ──────────────────────── */
   packagesCtaSection: {
     paddingHorizontal: sw(16),
-    paddingTop: sw(20),
+    paddingTop: sw(22),
+  },
+  ctaCaption: {
+    fontFamily: fonts.secondry,
+    fontSize: sw(11),
+    color: '#5C5C5C',
+    marginTop: sw(6),
+    letterSpacing: 0.2,
+    textAlign: 'center',
   },
   ctaRow: {
     flexDirection: 'row',
@@ -612,10 +907,10 @@ const styles = StyleSheet.create({
     borderRadius: sw(14),
     backgroundColor: '#FFFFFF',
     shadowColor: '#000',
-    shadowOffset: {width: 0, height: 3},
-    shadowOpacity: 0.14,
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.06,
     shadowRadius: 8,
-    elevation: 4,
+    elevation: 2,
   },
   ctaCardImgWrap: {
     width: CTA_CARD_W,
@@ -678,7 +973,7 @@ const styles = StyleSheet.create({
   locationName: {
     fontFamily: fonts.title,
     fontSize: sw(13),
-    color: '#FDD77A',
+    color: '#FFFFFF',
     maxWidth: sw(78),
   },
   iconsGroup: {
@@ -719,10 +1014,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: sw(16),
     paddingVertical: sw(12),
     shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.12,
-    shadowRadius: 6,
-    elevation: 3,
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 1,
   },
   searchBarText: {
     fontFamily: fonts.secondry,
@@ -807,18 +1102,24 @@ const styles = StyleSheet.create({
   },
   /* ── Services section ──────────────────────── */
   servicesSection: {
-    paddingHorizontal: sw(16),
-    paddingTop: sw(14),
+    marginTop: sw(24),
+    paddingBottom: sw(8),
   },
   sectionHeaderBlock: {
-    marginBottom: sw(16),
-    gap: sw(6),
+    backgroundColor: '#EFF6F2',
+    paddingVertical: sw(16),
+    marginBottom: sw(22),
   },
   sectionTitle: {
-    fontFamily: 'serif',
-    fontSize: sw(20),
+    fontFamily: 'PlayfairDisplay-Bold',
+    fontSize: sw(18),
     lineHeight: sw(23),
     color: '#171816',
+    letterSpacing: 0.4,
+    textAlign: 'center',
+  },
+  servicesGridWrap: {
+    paddingHorizontal: sw(16),
   },
   titleUnderline: {
     width: sw(29.43),
@@ -840,21 +1141,19 @@ const styles = StyleSheet.create({
   serviceImgBox: {
     width: GRID_ITEM_W,
     height: GRID_ITEM_W,
-    borderRadius: sw(12.63),
-    elevation: 4,
+    borderRadius: sw(14),
+    elevation: 1,
     shadowColor: '#000',
-    shadowOffset: {width: 0, height: sw(2.1)},
-    shadowOpacity: 0.1,
-    shadowRadius: sw(10.5),
-    backgroundColor: '#F5D4B0',
+    shadowOffset: {width: 0, height: sw(1)},
+    shadowOpacity: 0.05,
+    shadowRadius: sw(6),
+    backgroundColor: '#F4E1CC',
   },
   serviceImgInner: {
     width: '100%',
     height: '100%',
-    borderRadius: sw(12.63),
+    borderRadius: sw(14),
     overflow: 'hidden',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   serviceImg: {
     width: '100%',
@@ -862,46 +1161,71 @@ const styles = StyleSheet.create({
   },
   serviceLabel: {
     fontFamily: fonts.secondry,
-    fontSize: sw(12),
-    color: '#000000',
+    fontSize: sw(12.5),
+    color: '#171816',
     textAlign: 'center',
-    lineHeight: sw(14),
+    lineHeight: sw(15),
+    letterSpacing: 0.2,
+  },
+  viewAllRow: {
+    marginTop: sw(20),
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: sw(4),
+    paddingHorizontal: sw(18),
+    paddingVertical: sw(8),
+    borderRadius: sw(20),
+    backgroundColor: '#EBF5EF',
+  },
+  viewAllText: {
+    fontFamily: fonts.title,
+    fontSize: sw(13),
+    color: '#105641',
+    letterSpacing: 0.3,
   },
 
   /* ── Most Booked Services ──────────────────────── */
   popularSection: {
-    marginTop: sw(24),
-    paddingTop: sw(18),
-    paddingBottom: sw(20),
-    backgroundColor: '#E8F3EF',
+    marginTop: sw(12),
+    paddingTop: sw(22),
+    paddingBottom: sw(26),
+    backgroundColor: '#EFF6F2',
   },
   popularHeader: {
     alignItems: 'center',
-    gap: sw(6),
+    gap: sw(8),
     marginBottom: sw(14),
     paddingHorizontal: sw(16),
   },
   popularTitle: {
-    fontFamily: 'serif',
+    fontFamily: 'PlayfairDisplay-Bold',
     fontSize: sw(20),
     lineHeight: sw(24),
-    color: '#171816',
+    color: '#0F0F0F',
     textAlign: 'center',
+    letterSpacing: 0.4,
+  },
+  popularUnderline: {
+    width: sw(29.43),
+    height: 2,
+    backgroundColor: '#C8A84C',
   },
   popularCityRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: sw(4),
-    backgroundColor: '#D5E8DE',
+    backgroundColor: '#DCEBE3',
     alignSelf: 'stretch',
     marginHorizontal: -sw(16),
-    paddingVertical: sw(6),
+    paddingVertical: sw(7),
+    marginTop: sw(4),
   },
   popularCityText: {
     fontFamily: fonts.secondry,
     fontSize: sw(13),
-    color: '#105641',
+    color: '#0F0F0F',
     fontWeight: '600',
   },
   popularScrollContent: {
@@ -911,20 +1235,46 @@ const styles = StyleSheet.create({
   popularCard: {
     width: POPULAR_CARD_W,
   },
-  popularImg: {
-    width: '100%',
+  popularImgWrap: {
+    position: 'relative',
     height: POPULAR_IMG_H,
     borderRadius: sw(14),
+    backgroundColor: '#DCEBE3',
+    padding: sw(10),
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  popularImg: {
+    width: '100%',
+    height: '100%',
+  },
+  trendingBadge: {
+    position: 'absolute',
+    top: sw(8),
+    left: sw(8),
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: sw(3),
+    backgroundColor: '#F97316',
+    paddingHorizontal: sw(7),
+    paddingVertical: sw(3),
+    borderRadius: sw(10),
+  },
+  trendingText: {
+    fontFamily: fonts.title,
+    fontSize: sw(9),
+    color: '#FFFFFF',
+    letterSpacing: 0.3,
   },
   popularCardBody: {
-    paddingTop: sw(8),
-    paddingHorizontal: sw(2),
-    gap: sw(4),
+    paddingTop: sw(12),
+    paddingHorizontal: sw(4),
+    gap: sw(8),
   },
   popularName: {
     fontFamily: fonts.secondry,
     fontSize: sw(13),
-    fontWeight: '600',
     color: '#171816',
     lineHeight: sw(16),
     minHeight: sw(32),
@@ -937,14 +1287,14 @@ const styles = StyleSheet.create({
   popularDuration: {
     fontFamily: fonts.secondry,
     fontSize: sw(11),
-    color: '#6B6B6B',
+    color: '#5C5C5C',
+    letterSpacing: 0.2,
   },
   popularPrice: {
     fontFamily: fonts.title,
-    fontSize: sw(15),
-    fontWeight: '700',
-    color: '#171816',
-    marginTop: sw(2),
+    fontSize: sw(17),
+    color: '#012823',
+    letterSpacing: 0.2,
   },
   popularAddBtn: {
     marginTop: sw(6),
@@ -954,6 +1304,7 @@ const styles = StyleSheet.create({
     gap: sw(4),
     borderWidth: 1,
     borderColor: '#105641',
+    backgroundColor: '#EBF5EF',
     borderRadius: sw(8),
     paddingVertical: sw(6),
     paddingHorizontal: sw(10),
@@ -974,11 +1325,22 @@ const styles = StyleSheet.create({
   /* ── Why Beyomo? ──────────────────────── */
   whyBeyomoSection: {
     paddingHorizontal: sw(16),
-    paddingTop: sw(24),
+    paddingTop: sw(28),
   },
-  whyBeyomoImgWrap: {
+  whyBeyomoShadowWrap: {
     width: WHY_BEYOMO_W,
     height: WHY_BEYOMO_H,
+    borderRadius: sw(16),
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  whyBeyomoImgWrap: {
+    width: '100%',
+    height: '100%',
     borderRadius: sw(16),
     overflow: 'hidden',
   },
@@ -993,27 +1355,31 @@ const styles = StyleSheet.create({
     paddingHorizontal: sw(16),
     paddingTop: sw(24),
     paddingBottom: sw(24),
-    backgroundColor: '#012823',
+    backgroundColor: '#105641',
   },
   brandsTag: {
     alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: sw(5),
     backgroundColor: '#FFFFFF',
     borderRadius: sw(20),
-    paddingHorizontal: sw(14),
+    paddingHorizontal: sw(12),
     paddingVertical: sw(5),
     marginBottom: sw(10),
   },
   brandsTagText: {
     fontFamily: fonts.title,
     fontSize: sw(12),
-    color: '#012823',
+    color: '#105641',
   },
   brandsTitle: {
-    fontFamily: 'serif',
+    fontFamily: 'PlayfairDisplay-Bold',
     fontSize: sw(18),
     lineHeight: sw(22),
     color: '#FFFFFF',
     marginBottom: sw(16),
+    letterSpacing: 0.4,
   },
   brandsGrid: {
     flexDirection: 'row',
@@ -1022,17 +1388,12 @@ const styles = StyleSheet.create({
   },
   brandCard: {
     width: BRAND_CARD_W,
-    height: BRAND_CARD_W,
+    height: BRAND_CARD_H,
     borderRadius: sw(12),
     backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: sw(12),
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    elevation: 2,
+    padding: sw(4),
   },
   brandImg: {
     width: '100%',

@@ -1,4 +1,4 @@
-import React, {useEffect} from 'react';
+import React, {useEffect, useRef} from 'react';
 import {
   View,
   Image,
@@ -7,6 +7,8 @@ import {
   Dimensions,
   StatusBar,
   Platform,
+  Animated,
+  Easing,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import {useSelector, useDispatch} from 'react-redux';
@@ -47,6 +49,24 @@ const SplashScreen = ({navigation}: any) => {
   const dispatch = useDispatch();
   const token = useSelector((state: RootState) => state.Auth?.token);
   const savedCity = useSelector((state: RootState) => state.City?.selectedCity);
+
+  const logoOpacity = useRef(new Animated.Value(0)).current;
+  const logoScale = useRef(new Animated.Value(0.85)).current;
+  const textOpacity = useRef(new Animated.Value(0)).current;
+  const textTranslateY = useRef(new Animated.Value(12)).current;
+
+  useEffect(() => {
+    Animated.sequence([
+      Animated.parallel([
+        Animated.timing(logoOpacity, {toValue: 1, duration: 700, easing: Easing.out(Easing.cubic), useNativeDriver: true}),
+        Animated.timing(logoScale, {toValue: 1, duration: 900, easing: Easing.out(Easing.back(1.2)), useNativeDriver: true}),
+      ]),
+      Animated.parallel([
+        Animated.timing(textOpacity, {toValue: 1, duration: 600, easing: Easing.out(Easing.cubic), useNativeDriver: true}),
+        Animated.timing(textTranslateY, {toValue: 0, duration: 600, easing: Easing.out(Easing.cubic), useNativeDriver: true}),
+      ]),
+    ]).start();
+  }, [logoOpacity, logoScale, textOpacity, textTranslateY]);
 
   useEffect(() => {
     let done = false;
@@ -135,20 +155,20 @@ const SplashScreen = ({navigation}: any) => {
       />
 
       <View style={styles.logoContainer}>
-        <Image
+        <Animated.Image
           source={require('../../assets/beyomo_logo_icon.png')}
-          style={styles.logo}
+          style={[styles.logo, {opacity: logoOpacity, transform: [{scale: logoScale}]}]}
           resizeMode="contain"
         />
       </View>
 
-      <View style={styles.textContainer}>
+      <Animated.View style={[styles.textContainer, {opacity: textOpacity, transform: [{translateY: textTranslateY}]}]}>
         <Text style={styles.title}>{'Professional Beauty\nServices At Home'}</Text>
         <View style={styles.separator} />
         <Text style={styles.subtitle}>
           {'Experience luxury salon services in the\ncomfort of your own home.'}
         </Text>
-      </View>
+      </Animated.View>
     </LinearGradient>
   );
 };
@@ -193,12 +213,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   title: {
-    fontFamily: fonts.title,
+    fontFamily: 'PlayfairDisplay-Bold',
     fontSize: sw(24),
-    fontWeight: '600',
     lineHeight: sw(30),
     textAlign: 'center',
     color: '#FEFEFE',
+    letterSpacing: 0.4,
   },
   separator: {
     width: sw(38),

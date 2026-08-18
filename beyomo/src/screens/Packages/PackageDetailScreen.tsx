@@ -383,7 +383,7 @@ const styles = StyleSheet.create({
   root: {flex: 1, backgroundColor: '#FCF8F3'},
 
   heroContainer: {
-    height: sw(260),
+    height: sw(180),
     overflow: 'hidden',
     justifyContent: 'flex-end',
   },
@@ -391,12 +391,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#0E5843',
   },
   heroContent: {
-    padding: sw(20),
-    gap: sw(6),
+    paddingHorizontal: sw(20),
+    paddingBottom: sw(18),
+    paddingTop: sw(12),
+    gap: sw(8),
   },
   backBtn: {
     position: 'absolute',
-    top: sw(50),
+    top: sw(38),
     left: sw(16),
     width: sw(38),
     height: sw(38),
@@ -407,7 +409,7 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   savingsBadge: {
-    alignSelf: 'flex-start',
+    alignSelf: 'flex-end',
     backgroundColor: '#FDD77A',
     borderRadius: sw(8),
     paddingHorizontal: sw(10),
