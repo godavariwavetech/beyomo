@@ -19,6 +19,8 @@ import {useDispatch, useSelector} from 'react-redux';
 import {fetchCategories, fetchServices} from '../../redux/reducers/services';
 import {addServicesToCart} from '../../redux/reducers/cart';
 
+const MAX_SERVICE_QTY = 5;
+
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
 
@@ -32,6 +34,7 @@ const normalizeService = (s: any) => ({
   originalPrice: s.originalPrice ?? s.mrp ?? s.price ?? 0,
   discountPct:   s.discountPercent ?? s.discountPct ?? (s.originalPrice && s.price ? Math.round(((s.originalPrice - s.price) / s.originalPrice) * 100) : 0),
   image:         s.image ?? s.photo ?? s.thumbnail ?? '',
+  priceStartsFrom: s.priceStartsFrom ?? false,
 });
 
 interface Props {
@@ -199,7 +202,7 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
   };
 
   const increment = (id: string) => {
-    setQuantities(prev => ({...prev, [id]: (prev[id] ?? 0) + 1}));
+    setQuantities(prev => ({...prev, [id]: Math.min((prev[id] ?? 0) + 1, MAX_SERVICE_QTY)}));
     // Persist the full service object so it survives category switches
     if (!addedServicesMap[id]) {
       const svc = currentServices.find((s: any) => String(s.id) === id);
@@ -494,7 +497,7 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
                 />
                 {/* Price badge over image */}
                 <View style={styles.sheetHeroPriceBadge}>
-                  <Text style={styles.sheetHeroPrice}>Starts at ₹{detailItem.price?.toLocaleString('en-IN')}</Text>
+                  <Text style={styles.sheetHeroPrice}>{detailItem.priceStartsFrom ? 'Starts at ' : ''}₹{detailItem.price?.toLocaleString('en-IN')}</Text>
                   {detailItem.originalPrice > detailItem.price && (
                     <Text style={styles.sheetHeroOriginal}>₹{detailItem.originalPrice?.toLocaleString('en-IN')}</Text>
                   )}
@@ -573,8 +576,8 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
                         <Ionicons name="remove" size={sw(18)} color="#105641" />
                       </TouchableOpacity>
                       <Text style={styles.sheetStepCount}>{quantities[String(detailItem.id)]}</Text>
-                      <TouchableOpacity style={styles.sheetStepBtn} activeOpacity={0.7} onPress={() => increment(String(detailItem.id))}>
-                        <Ionicons name="add" size={sw(18)} color="#105641" />
+                      <TouchableOpacity style={styles.sheetStepBtn} activeOpacity={0.7} onPress={() => increment(String(detailItem.id))} disabled={(quantities[String(detailItem.id)] ?? 0) >= MAX_SERVICE_QTY}>
+                        <Ionicons name="add" size={sw(18)} color={(quantities[String(detailItem.id)] ?? 0) >= MAX_SERVICE_QTY ? '#B7CFC4' : '#105641'} />
                       </TouchableOpacity>
                     </View>
                     <TouchableOpacity style={styles.sheetDoneBtn} activeOpacity={0.85} onPress={() => setDetailItem(null)}>
@@ -634,10 +637,11 @@ const ServiceCard = ({
           {!!item.bookedCount && (
             <Text style={styles.bookedCount}>{item.bookedCount}</Text>
           )}
-          {!!item.bullets && (
-            <Text style={styles.bulletPoints}>{item.bullets}</Text>
-          )}
-          <TouchableOpacity activeOpacity={0.7} onPress={onViewDetails}>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={onViewDetails}
+            hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}
+            style={styles.viewDetailsBtn}>
             <Text style={styles.viewDetails}>View Details</Text>
           </TouchableOpacity>
         </View>
@@ -662,7 +666,7 @@ const ServiceCard = ({
         ) : (
           <>
             <View style={styles.priceBlock}>
-              <Text style={styles.startsAtLabel}>Starts at</Text>
+              {item.priceStartsFrom && <Text style={styles.startsAtLabel}>Starts at</Text>}
               <View style={styles.priceRow}>
                 <Text style={styles.currentPrice}>₹{item.price.toLocaleString('en-IN')}</Text>
                 {item.originalPrice > item.price && (
@@ -687,8 +691,8 @@ const ServiceCard = ({
                   <Ionicons name="remove" size={sw(14)} color="#105641" />
                 </TouchableOpacity>
                 <Text style={styles.stepCount}>{qty}</Text>
-                <TouchableOpacity style={styles.stepBtn} activeOpacity={0.7} onPress={onIncrement}>
-                  <Ionicons name="add" size={sw(14)} color="#105641" />
+                <TouchableOpacity style={styles.stepBtn} activeOpacity={0.7} onPress={onIncrement} disabled={qty >= MAX_SERVICE_QTY}>
+                  <Ionicons name="add" size={sw(14)} color={qty >= MAX_SERVICE_QTY ? '#B7CFC4' : '#105641'} />
                 </TouchableOpacity>
               </View>
             )}
@@ -719,7 +723,7 @@ const styles = StyleSheet.create({
   categoryItem: {alignItems: 'center', width: sw(59)},
   categoryActiveWrapper: {
     width: sw(59),
-    height: sw(77),
+    minHeight: sw(77),
     borderRadius: sw(16),
     borderBottomLeftRadius: sw(8),
     borderBottomRightRadius: sw(8),
@@ -731,9 +735,10 @@ const styles = StyleSheet.create({
   categoryThumbActive: {borderWidth: 1, borderColor: '#105641'},
   categoryText: {
     fontFamily: fonts.textFont,
-    fontSize: sw(10),
-    color: '#A3A3A3',
-    lineHeight: sw(12),
+    fontSize: sw(12),
+    fontWeight: '600',
+    color: '#414141',
+    lineHeight: sw(14),
     textAlign: 'center',
     marginTop: sw(4),
   },
@@ -807,15 +812,17 @@ const styles = StyleSheet.create({
   },
   cardLeft: {flex: 1, gap: sw(12)},
   cardTopInfo: {gap: sw(10)},
-  serviceName: {fontFamily: fonts.textFont, fontSize: sw(16), fontWeight: '700', color: '#000000', lineHeight: sw(20)},
+  serviceName: {fontFamily: fonts.textFont, fontSize: sw(18), fontWeight: '700', color: '#000000', lineHeight: sw(22)},
   durationRow: {flexDirection: 'row', alignItems: 'center', gap: sw(4)},
   durationText: {fontFamily: fonts.textFont, fontSize: sw(14), color: '#656565', lineHeight: sw(18)},
   cardMeta: {gap: sw(6)},
   bookedCount: {fontFamily: fonts.textFont, fontSize: sw(12), fontWeight: '500', color: '#0068F0', lineHeight: sw(12)},
-  bulletPoints: {fontFamily: fonts.textFont, fontSize: sw(10), color: '#4E4E4E', lineHeight: sw(15)},
+  viewDetailsBtn: {
+    paddingVertical: sw(4),
+  },
   viewDetails: {
     fontFamily: fonts.textFont,
-    fontSize: sw(14),
+    fontSize: sw(15),
     fontWeight: '600',
     color: '#105641',
     lineHeight: sw(18),
@@ -824,7 +831,7 @@ const styles = StyleSheet.create({
 
   cardRight: {alignItems: 'flex-end', justifyContent: 'space-between', gap: sw(12)},
   priceBlock: {alignItems: 'flex-end', gap: sw(12)},
-  startsAtLabel: {fontFamily: fonts.textFont, fontSize: sw(11), fontWeight: '500', color: '#A0AEC0'},
+  startsAtLabel: {fontFamily: fonts.textFont, fontSize: sw(13), fontWeight: '500', color: '#A0AEC0'},
   priceRow: {flexDirection: 'row', alignItems: 'center', gap: sw(4)},
   currentPrice: {fontFamily: fonts.textFont, fontSize: sw(16), fontWeight: '700', color: '#000000', lineHeight: sw(20)},
   originalPrice: {fontFamily: fonts.textFont, fontSize: sw(14), fontWeight: '400', color: '#656565', lineHeight: sw(18), textDecorationLine: 'line-through'},
@@ -874,10 +881,10 @@ const styles = StyleSheet.create({
 
   freePriceBlock: {alignItems: 'center', gap: sw(3)},
   freeBadge: {backgroundColor: '#105641', borderRadius: sw(6), paddingHorizontal: sw(8), paddingVertical: sw(3)},
-  freeBadgeText: {fontFamily: fonts.title, fontSize: sw(11), fontWeight: '800', color: '#FDD77A'},
-  freeOriginalPrice: {fontFamily: fonts.textFont, fontSize: sw(10), color: '#A3A3A3', textDecorationLine: 'line-through'},
+  freeBadgeText: {fontFamily: fonts.title, fontSize: sw(13), fontWeight: '800', color: '#FDD77A'},
+  freeOriginalPrice: {fontFamily: fonts.textFont, fontSize: sw(12), color: '#A3A3A3', textDecorationLine: 'line-through'},
   freeLockedBtn: {flexDirection: 'row', alignItems: 'center', gap: sw(4), borderWidth: 1, borderColor: '#105641', borderRadius: sw(6), paddingHorizontal: sw(8), paddingVertical: sw(5), marginTop: sw(6)},
-  freeLockedText: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#105641', fontWeight: '600'},
+  freeLockedText: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#105641', fontWeight: '600'},
 
   offerBanner: {
     flexDirection: 'row', alignItems: 'center', gap: sw(10),
@@ -885,7 +892,7 @@ const styles = StyleSheet.create({
   },
   offerBannerIcon: {fontSize: sw(20)},
   offerBannerTitle: {fontFamily: fonts.title, fontSize: sw(13), fontWeight: '700', color: '#FFFFFF'},
-  offerBannerSub: {fontFamily: fonts.textFont, fontSize: sw(11), color: 'rgba(255,255,255,0.8)', marginTop: sw(2)},
+  offerBannerSub: {fontFamily: fonts.textFont, fontSize: sw(13), color: 'rgba(255,255,255,0.8)', marginTop: sw(2)},
 
   cartBar: {
     position: 'absolute',
@@ -1157,7 +1164,7 @@ const styles = StyleSheet.create({
   },
   optionSectionLabel: {
     fontFamily: fonts.textFont,
-    fontSize: sw(11),
+    fontSize: sw(13),
     fontWeight: '700',
     color: '#A3A3A3',
     letterSpacing: 0.6,

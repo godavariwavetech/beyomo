@@ -21,6 +21,8 @@ import {endpoints} from '../../config/config';
 import {addPackageToCart} from '../../redux/reducers/cart';
 import CartBar from '../../components/CartBar/CartBar';
 
+const MAX_SERVICE_QTY = 5;
+
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
 
@@ -55,6 +57,7 @@ interface PickableService {
   duration?: number;
   image?: string;
   categoryId?: number;
+  priceStartsFrom?: boolean;
 }
 
 const PackageDetailScreen = ({navigation, route}: {navigation: any; route: any}) => {
@@ -189,9 +192,11 @@ const PackageDetailScreen = ({navigation, route}: {navigation: any; route: any})
     <View style={styles.root}>
       <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
 
-      {/* Header image / gradient */}
+      {/* Header image / gradient — combos (fixed) show a solid brand background instead of a photo */}
       <View style={[styles.heroContainer, {paddingTop: insets.top}]}>
-        {fullPkg.image ? (
+        {fullPkg.packageType === 'fixed' ? (
+          <View style={[StyleSheet.absoluteFillObject, styles.comboHeroBg]} />
+        ) : fullPkg.image ? (
           <Image source={{uri: fullPkg.image}} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
         ) : (
           <Image source={{uri: FALLBACK_IMAGE}} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
@@ -286,7 +291,7 @@ const PackageDetailScreen = ({navigation, route}: {navigation: any; route: any})
                     <View style={styles.serviceInfo}>
                       <Text style={styles.serviceName}>{svc.name}</Text>
                       <Text style={styles.serviceMeta}>
-                        {svc.duration ? `${svc.duration} min · ` : ''}Starts at ₹{Math.round(svc.basePrice)}
+                        {svc.duration ? `${svc.duration} min · ` : ''}{svc.priceStartsFrom ? 'Starts at ' : ''}₹{Math.round(svc.basePrice)}
                       </Text>
                     </View>
                     <View style={[styles.checkCircle, selected && styles.checkCircleActive]}>
@@ -345,8 +350,9 @@ const PackageDetailScreen = ({navigation, route}: {navigation: any; route: any})
           <TouchableOpacity
             style={styles.qtyStepBtn}
             activeOpacity={0.7}
-            onPress={() => setPackageQty(q => q + 1)}>
-            <Ionicons name="add" size={sw(16)} color="#105641" />
+            disabled={packageQty >= MAX_SERVICE_QTY}
+            onPress={() => setPackageQty(q => Math.min(q + 1, MAX_SERVICE_QTY))}>
+            <Ionicons name="add" size={sw(16)} color={packageQty >= MAX_SERVICE_QTY ? '#B7CFC4' : '#105641'} />
           </TouchableOpacity>
         </View>
       </View>
@@ -377,17 +383,22 @@ const styles = StyleSheet.create({
   root: {flex: 1, backgroundColor: '#FCF8F3'},
 
   heroContainer: {
-    height: sw(260),
+    height: sw(180),
     overflow: 'hidden',
     justifyContent: 'flex-end',
   },
+  comboHeroBg: {
+    backgroundColor: '#0E5843',
+  },
   heroContent: {
-    padding: sw(20),
-    gap: sw(6),
+    paddingHorizontal: sw(20),
+    paddingBottom: sw(18),
+    paddingTop: sw(12),
+    gap: sw(8),
   },
   backBtn: {
     position: 'absolute',
-    top: sw(50),
+    top: sw(38),
     left: sw(16),
     width: sw(38),
     height: sw(38),
@@ -398,7 +409,7 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   savingsBadge: {
-    alignSelf: 'flex-start',
+    alignSelf: 'flex-end',
     backgroundColor: '#FDD77A',
     borderRadius: sw(8),
     paddingHorizontal: sw(10),
@@ -406,7 +417,7 @@ const styles = StyleSheet.create({
   },
   savingsText: {
     fontFamily: fonts.title,
-    fontSize: sw(11),
+    fontSize: sw(13),
     fontWeight: '700',
     color: '#012823',
   },
@@ -503,7 +514,7 @@ const styles = StyleSheet.create({
   },
   serviceMeta: {
     fontFamily: fonts.textFont,
-    fontSize: sw(11),
+    fontSize: sw(13),
     color: '#888',
   },
   includedBadge: {
@@ -561,7 +572,7 @@ const styles = StyleSheet.create({
   },
   selectedChipText: {
     fontFamily: fonts.textFont,
-    fontSize: sw(11),
+    fontSize: sw(13),
     fontWeight: '600',
     color: '#105641',
     flexShrink: 1,
@@ -621,7 +632,7 @@ const styles = StyleSheet.create({
   footerPriceSummary: {flex: 1},
   footerLabel: {
     fontFamily: fonts.textFont,
-    fontSize: sw(11),
+    fontSize: sw(13),
     color: '#888',
   },
   footerPrice: {

@@ -8,7 +8,7 @@ const parseServices = (s) => {
   return [];
 };
 
-const normalizeBooking = (b) => b ? {...b, services: parseServices(b.services)} : b;
+const normalizeBooking = (b) => b ? {...b, services: parseServices(b.services), packages: parseServices(b.packages)} : b;
 
 export const fetchUserBookings = createAsyncThunk(
   'bookings/fetchUserBookings',
@@ -78,6 +78,30 @@ export const addUserServices = createAsyncThunk(
       return response.data.data;
     } catch (error) {
       return rejectWithValue(error.response?.data?.message ?? 'Failed to add services.');
+    }
+  },
+);
+
+export const addPackage = createAsyncThunk(
+  'bookings/addPackage',
+  async ({bookingId, packageId, services}, {rejectWithValue}) => {
+    try {
+      const response = await api.patch(`${endpoints.BOOKINGS}/${bookingId}/add-package`, {packageId, services});
+      return response.data.data;
+    } catch (error) {
+      return rejectWithValue(error.response?.data?.message ?? 'Failed to add package.');
+    }
+  },
+);
+
+export const removePackage = createAsyncThunk(
+  'bookings/removePackage',
+  async ({bookingId, packageId}, {rejectWithValue}) => {
+    try {
+      const response = await api.patch(`${endpoints.BOOKINGS}/${bookingId}/remove-package`, packageId != null ? {packageId} : {});
+      return response.data.data;
+    } catch (error) {
+      return rejectWithValue(error.response?.data?.message ?? 'Failed to remove package.');
     }
   },
 );
@@ -211,6 +235,38 @@ const bookingsSlice = createSlice({
         }
       })
       .addCase(addUserServices.rejected, (state, action) => {
+        state.actionLoading = false;
+        state.error = action.payload;
+      })
+
+      .addCase(addPackage.pending, state => { state.actionLoading = true; })
+      .addCase(addPackage.fulfilled, (state, action) => {
+        state.actionLoading = false;
+        if (action.payload) {
+          const normalized = normalizeBooking(action.payload);
+          state.selected = normalized;
+          state.list = state.list.map(b =>
+            (b.id ?? b._id) === (action.payload.id ?? action.payload._id) ? normalized : b,
+          );
+        }
+      })
+      .addCase(addPackage.rejected, (state, action) => {
+        state.actionLoading = false;
+        state.error = action.payload;
+      })
+
+      .addCase(removePackage.pending, state => { state.actionLoading = true; })
+      .addCase(removePackage.fulfilled, (state, action) => {
+        state.actionLoading = false;
+        if (action.payload) {
+          const normalized = normalizeBooking(action.payload);
+          state.selected = normalized;
+          state.list = state.list.map(b =>
+            (b.id ?? b._id) === (action.payload.id ?? action.payload._id) ? normalized : b,
+          );
+        }
+      })
+      .addCase(removePackage.rejected, (state, action) => {
         state.actionLoading = false;
         state.error = action.payload;
       });

@@ -12,13 +12,23 @@ import { useAutoRefresh } from '../hooks/useAutoRefresh';
 
 const exportCSV = (data, filename) => {
   const headers = ['Booking ID','Customer','Partner','Service','Amount','Commission','Partner Payout','Payment Method','Date'];
-  const rows = data.map(t => [t._id??t.id, t.userName??t.user?.name??'', t.partnerName??t.partner?.name??'', t.service??t.services?.[0]?.name??'', t.amount??t.totalAmount??0, t.commission??0, (t.amount??t.totalAmount??0)-(t.commission??0), t.paymentMethod??'', t.date??t.createdAt??'']);
+  const rows = data.map(t => [t._id??t.id, t.userName??t.user?.name??'', t.partnerName??t.partner?.name??'', t.service??t.services?.[0]?.name??'', t.amount??t.totalAmount??0, t.commission, t.partnerEarning??t.partnerPayout??0, t.paymentMethod??'', t.date??t.createdAt??'']);
   const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
   const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([csv],{type:'text/csv'})), download: filename });
   a.click(); URL.revokeObjectURL(a.href);
 };
 
 const fmtCurrency = v => `₹${v.toLocaleString('en-IN')}`;
+
+// Admin's actual cut is the taxable (pre-tax) amount minus the partner's payout — GST is
+// a pass-through to the government, not part of the admin/partner split, so it must never
+// be counted as commission.
+const getCommission = (t) => {
+  const amount = parseFloat(t.amount ?? t.totalAmount ?? 0);
+  const tax = parseFloat(t.taxAmount ?? 0);
+  const payout = parseFloat(t.partnerEarning ?? t.partnerPayout ?? 0);
+  return Math.max(0, amount - tax - payout);
+};
 
 const SERVICE_COLORS = ['#064081','#02B0E8','#FF9500','#FDD77A','#22C55E','#8B5CF6','#EF4444','#F59E0B'];
 
@@ -72,7 +82,7 @@ export default function Earnings() {
 
   const totalRevenue    = transactions.reduce((a,t) => a + parseFloat(t.amount ?? t.totalAmount ?? 0), 0);
   const totalPayout     = transactions.reduce((a,t) => a + parseFloat(t.partnerEarning ?? t.partnerPayout ?? 0), 0);
-  const totalCommission = totalRevenue - totalPayout;
+  const totalCommission = transactions.reduce((a,t) => a + getCommission(t), 0);
 
   const CustomTooltip = ({ active, payload, label }) => {
     if (!active || !payload?.length) return null;
@@ -169,7 +179,7 @@ export default function Earnings() {
               <Search size={16} />
               <input className="search-input" placeholder="Search transactions…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
             </div>
-            <button className="btn btn-outline btn-sm" style={{ display:'flex', alignItems:'center', gap:6 }} onClick={() => exportCSV(filtered, 'transactions.csv')}>
+            <button className="btn btn-outline btn-sm" style={{ display:'flex', alignItems:'center', gap:6 }} onClick={() => exportCSV(filtered.map(t => ({ ...t, commission: getCommission(t) })), 'transactions.csv')}>
               <Download size={14}/> Export CSV
             </button>
           </div>
@@ -197,7 +207,7 @@ export default function Earnings() {
                 const tid = t._id ?? t.id;
                 const amount = parseFloat(t.amount ?? t.totalAmount ?? 0);
                 const payout = parseFloat(t.partnerEarning ?? t.partnerPayout ?? 0);
-                const commission = t.commission ?? (amount > 0 && payout > 0 ? amount - payout : 0);
+                const commission = getCommission(t);
                 return (
                   <tr key={tid}>
                     <td><span style={{ fontFamily:'monospace', fontSize:12, background:'var(--c-border-light)', padding:'2px 6px', borderRadius:'var(--r-sm)' }}>{t.bookingCode ?? tid}</span></td>
@@ -206,7 +216,7 @@ export default function Earnings() {
                     <td>{t.service?.name ?? t.service ?? t.services?.[0]?.name ?? '—'}</td>
                     <td><span style={{ fontWeight:700, color:'var(--c-brand-primary)' }}>₹{amount.toLocaleString('en-IN')}</span></td>
                     <td><span style={{ color:'var(--c-success)', fontWeight:600 }}>₹{commission.toLocaleString('en-IN')}</span></td>
-                    <td><span style={{ fontWeight:600 }}>₹{(amount - commission).toLocaleString('en-IN')}</span></td>
+                    <td><span style={{ fontWeight:600 }}>₹{payout.toLocaleString('en-IN')}</span></td>
                     <td>
                       <span style={{ background:'var(--c-border-light)', padding:'2px 8px', borderRadius:'var(--r-full)', fontSize:12, fontWeight:500 }}>{t.paymentMethod ?? t.payment?.method ?? '—'}</span>
                     </td>

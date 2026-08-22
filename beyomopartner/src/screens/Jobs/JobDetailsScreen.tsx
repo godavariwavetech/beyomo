@@ -119,6 +119,28 @@ const JobDetailsScreen = ({navigation, route}: any) => {
         duration: job.service?.duration, price: job.service?.basePrice ?? totalAmount}]
     : [];
 
+  // Group items that were part of a package/combo into a single card instead of
+  // listing each of their services as its own line — matching the customer app/website.
+  const packageItems = servicesList.filter((s: any) => s.addedByPackage);
+  const otherItems = servicesList.filter((s: any) => !s.addedByPackage);
+  const otherItemsTotal = otherItems.reduce((sum: number, s: any) => sum + (s.price ?? 0) * (s.qty || 1), 0);
+  const multiPackages: any[] = parseServices(job?.packages);
+  const packageGroups = multiPackages.length > 0
+    ? multiPackages.map((pkg: any) => ({
+        key: pkg.packageId,
+        title: pkg.title,
+        price: Number(pkg.price || 0) * (pkg.qty || 1),
+        items: packageItems.filter((s: any) => s.packageId === pkg.packageId),
+      }))
+    : packageItems.length > 0
+      ? [{
+          key: job?.packageId,
+          title: job?.package?.title ?? 'Package Deal',
+          price: Math.max(0, (job?.baseAmount ?? totalAmount) - otherItemsTotal),
+          items: packageItems,
+        }]
+      : [];
+
   const handleCall = () => {
     if (!customerPhone) { showAlert('Not Available', 'Customer phone number is not available.'); return; }
     Linking.openURL(`tel:${customerPhone}`);
@@ -210,11 +232,29 @@ const JobDetailsScreen = ({navigation, route}: any) => {
           <Text style={styles.sectionTitle}>
             {servicesList.length > 1 ? `Services (${servicesList.length})` : 'Service'}
           </Text>
-          {servicesList.map((svc: any, idx: number) => {
+          {packageGroups.map((group, gIdx) => (
+            <View key={group.key ?? group.title} style={[styles.svcRow, gIdx > 0 && styles.svcRowBorder, {alignItems: 'flex-start'}]}>
+              <View style={{flex: 1}}>
+                <View style={{flexDirection: 'row', alignItems: 'center', gap: sw(6), flexWrap: 'wrap'}}>
+                  <Text style={styles.svcName}>{group.title}</Text>
+                  <View style={styles.packageBadge}>
+                    <Text style={styles.packageBadgeText}>Package</Text>
+                  </View>
+                </View>
+                <View style={{marginTop: sw(4)}}>
+                  {group.items.map((s: any, i: number) => (
+                    <Text key={s._id ?? s.id ?? i} style={styles.metaChipText}>{i + 1}. {s.name}</Text>
+                  ))}
+                </View>
+              </View>
+              <Text style={styles.svcPrice}>₹{Number(group.price).toLocaleString('en-IN')}</Text>
+            </View>
+          ))}
+          {otherItems.map((svc: any, idx: number) => {
             const imgUri = resolveImageUrl(svc.image ?? job?.service?.image) ?? FALLBACK_IMG;
             const isFree = svc.addedByOffer || svc.price === 0;
             return (
-              <View key={idx} style={[styles.svcRow, idx > 0 && styles.svcRowBorder]}>
+              <View key={idx} style={[styles.svcRow, (idx > 0 || packageGroups.length > 0) && styles.svcRowBorder]}>
                 <Image source={{uri: imgUri}} style={styles.svcImage} resizeMode="cover" />
                 <View style={{flex: 1}}>
                   <Text style={styles.svcName} numberOfLines={1}>{svc.name}</Text>
@@ -448,6 +488,11 @@ const styles = StyleSheet.create({
   },
   metaChipText: {fontFamily: fonts.textFont, fontSize: sw(10), color: '#5C5C5C'},
   svcPrice: {fontFamily: fonts.title, fontSize: sw(14), fontWeight: '700', color: '#105641'},
+  packageBadge: {
+    backgroundColor: '#E4E1D8', borderRadius: sw(4),
+    paddingHorizontal: sw(5), paddingVertical: sw(1),
+  },
+  packageBadgeText: {fontFamily: fonts.textFont, fontSize: sw(11), fontWeight: '700', color: '#292524'},
   freeBadge: {
     backgroundColor: '#EAF5F0', borderRadius: sw(6),
     paddingHorizontal: sw(8), paddingVertical: sw(3),

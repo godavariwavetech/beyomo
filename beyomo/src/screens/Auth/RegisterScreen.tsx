@@ -168,7 +168,7 @@ const styles = StyleSheet.create({
   taglineLine: {height: 1, width: sw(30), backgroundColor: '#C8A84C'},
   tagline: {
     fontFamily: fonts.textFont,
-    fontSize: sw(11),
+    fontSize: sw(13),
     color: '#C8A84C',
     letterSpacing: sw(2),
   },

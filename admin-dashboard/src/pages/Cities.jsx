@@ -7,13 +7,24 @@ import { useCities } from '../hooks/useCities';
 import { useCityFilter } from '../context/CityContext';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
 
-const EMPTY_FORM = { name: '', state: '', lat: '', lng: '', radius: 30, isActive: true };
+const EMPTY_FORM = { name: '', code: '', state: '', lat: '', lng: '', radius: 30, isActive: true };
 
 const CityForm = ({ form, f }) => (
   <div className="form-grid">
     <div className="form-group">
       <label className="form-label">City Name *</label>
       <input className="form-input" value={form.name} onChange={e => f('name', e.target.value)} placeholder="e.g. Hyderabad" />
+    </div>
+    <div className="form-group">
+      <label className="form-label">City Code</label>
+      <input
+        className="form-input"
+        value={form.code}
+        maxLength={5}
+        onChange={e => f('code', e.target.value.toUpperCase().replace(/[^A-Z]/g, ''))}
+        placeholder="e.g. NLR"
+      />
+      <p style={{ fontSize: 11, color: 'var(--c-text-secondary)', marginTop: 4 }}>Used as the prefix for this city's booking IDs (e.g. NLR2600001).</p>
     </div>
     <div className="form-group">
       <label className="form-label">State</label>
@@ -63,6 +74,7 @@ export default function Cities() {
 
   const toGeoPayload = (f) => ({
     name: f.name.trim(),
+    code: f.code.trim() || null,
     state: f.state.trim() || null,
     lat: f.lat !== '' ? parseFloat(f.lat) : null,
     lng: f.lng !== '' ? parseFloat(f.lng) : null,
@@ -120,7 +132,7 @@ export default function Cities() {
 
   const openEdit = (c) => {
     setEditing(c);
-    setForm({ name: c.name || '', state: c.state || '', lat: c.lat ?? '', lng: c.lng ?? '', radius: c.radius ?? 30, isActive: c.isActive ?? true });
+    setForm({ name: c.name || '', code: c.code || '', state: c.state || '', lat: c.lat ?? '', lng: c.lng ?? '', radius: c.radius ?? 30, isActive: c.isActive ?? true });
   };
 
   const active = cities.filter(c => c.isActive).length;
@@ -187,8 +199,13 @@ export default function Cities() {
                     <MapPin size={16} style={{ color: city.isActive ? 'var(--c-primary)' : 'var(--c-text-muted)' }} />
                   </div>
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: 600, fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <div style={{ fontWeight: 600, fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', alignItems: 'center', gap: 6 }}>
                       {city.name}
+                      {city.code && (
+                        <span style={{ fontFamily: 'monospace', fontSize: 10, fontWeight: 700, background: 'var(--c-border-light)', padding: '1px 6px', borderRadius: 4 }}>
+                          {city.code}
+                        </span>
+                      )}
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--c-text-secondary)' }}>
                       {city.state || '—'} &nbsp;

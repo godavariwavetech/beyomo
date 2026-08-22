@@ -486,8 +486,8 @@ export default function Combos() {
           </div>
 
           <div>
-            <label className="form-label">Banner Image</label>
-            <ImageUploader value={form.image} onChange={url => setForm(f => ({ ...f, image: url }))} width={140} height={74} />
+            <label className="form-label">Banner Image <span style={{ fontWeight: 400, color: 'var(--c-text-muted)', fontSize: 11 }}>JPG/PNG/WebP · max 2 MB · 193×193 px</span></label>
+            <ImageUploader value={form.image} onChange={url => setForm(f => ({ ...f, image: url }))} width={140} height={74} exactWidth={193} exactHeight={193} />
           </div>
 
           <CityMultiSelect cities={cities} selected={selectedCityIds} onChange={setSelectedCityIds} />

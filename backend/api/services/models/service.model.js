@@ -10,6 +10,11 @@ const Service = sequelize.define("Service", {
   duration: { type: DataTypes.INTEGER, defaultValue: 60 },
   tags: { type: DataTypes.JSON, defaultValue: [] },
   image: { type: DataTypes.TEXT, allowNull: true, defaultValue: null },
+  priceStartsFrom: { type: DataTypes.BOOLEAN, defaultValue: false },
+  // Admin-curated flag — powers the app's "Most Booked Services" home section.
+  isPopular: { type: DataTypes.BOOLEAN, defaultValue: false },
+  // Admin-curated flag — powers the website's "Special Offers" home section.
+  showOnHome: { type: DataTypes.BOOLEAN, defaultValue: false },
   isActive: { type: DataTypes.BOOLEAN, defaultValue: true },
   sortOrder: { type: DataTypes.INTEGER, defaultValue: 0 },
 }, {

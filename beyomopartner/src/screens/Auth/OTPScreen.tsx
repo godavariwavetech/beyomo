@@ -2,6 +2,7 @@ import React, {useState, useRef, useEffect} from 'react';
 import {
   View,
   Text,
+  Image,
   TextInput,
   TouchableOpacity,
   StyleSheet,
@@ -109,7 +110,11 @@ const OTPScreen = ({navigation, route}: any) => {
         </TouchableOpacity>
 
         <View style={styles.content}>
-          <Text style={styles.appName}>BEYOMO</Text>
+          <Image
+            source={require('../../assets/beyomo_logo_icon.png')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
           <View style={styles.taglineRow}>
             <View style={styles.taglineLine} />
             <Text style={styles.tagline}>SALON COMES HOME</Text>
@@ -201,6 +206,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 
+  logo: {
+    width: sw(160),
+    height: sw(160),
+    marginBottom: sw(8),
+  },
   appName: {
     fontFamily: fonts.title,
     fontSize: sw(36),

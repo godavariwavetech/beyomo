@@ -140,6 +140,9 @@ const serviceSchema = Joi.object({
   duration: Joi.number().integer().positive().default(60),
   tags: Joi.array().items(Joi.string()),
   image: Joi.string().allow(null, ""),
+  priceStartsFrom: Joi.boolean().default(false),
+  isPopular: Joi.boolean().default(false),
+  showOnHome: Joi.boolean().default(false),
   isActive: Joi.boolean().default(true),
   cityIds: Joi.array().items(Joi.number().integer()).default([]),
   cityMappings: Joi.array().items(cityMappingItem).default([]),
@@ -162,6 +165,9 @@ const serviceUpdateSchema = Joi.object({
   duration: Joi.number().integer().positive(),
   tags: Joi.array().items(Joi.string()),
   image: Joi.string().allow(null, ""),
+  priceStartsFrom: Joi.boolean(),
+  isPopular: Joi.boolean(),
+  showOnHome: Joi.boolean(),
   isActive: Joi.boolean(),
   cityIds: Joi.array().items(Joi.number().integer()),
   cityMappings: Joi.array().items(cityMappingItem),
@@ -468,6 +474,11 @@ const cancelBooking = catchAsync(async (req, res, next) => {
   res.status(200).json({ status: true, message: "Booking cancelled", data: booking });
 });
 
+const acceptBooking = catchAsync(async (req, res, next) => {
+  const booking = await adminService.acceptBooking(req.params.id);
+  res.status(200).json({ status: true, message: "Booking accepted", data: booking });
+});
+
 const rescheduleBookingSchema = Joi.object({
   scheduledAt: Joi.date().required(),
   reason: Joi.string().trim().max(500).allow("", null),
@@ -521,6 +532,27 @@ const editBookingServices = catchAsync(async (req, res, next) => {
     return next(new AppError("Provide services to add, indices to remove, or quantities to update", 400));
   const booking = await adminService.editBookingServices(req.params.id, value.services, value.removeIndices, value.updateQty);
   res.status(200).json({ status: true, message: "Booking services updated", data: booking });
+});
+
+const removeBookingPackage = catchAsync(async (req, res, next) => {
+  const booking = await adminService.removeBookingPackage(req.params.id, req.body?.packageId);
+  res.status(200).json({ status: true, message: "Package removed from booking", data: booking });
+});
+
+const addBookingPackageSchema = Joi.object({
+  packageId: Joi.number().integer().positive().required(),
+  qty: Joi.number().integer().min(1).max(5).default(1),
+  services: Joi.array().items(Joi.object({
+    id: Joi.alternatives().try(Joi.number(), Joi.string()).required(),
+    qty: Joi.number().integer().min(1).max(5).default(1),
+  })).min(1).required(),
+});
+
+const addBookingPackage = catchAsync(async (req, res, next) => {
+  const { error, value } = addBookingPackageSchema.validate(req.body);
+  if (error) return next(new AppError(error.details[0].message, 400));
+  const booking = await adminService.addBookingPackage(req.params.id, value.packageId, value.qty, value.services);
+  res.status(200).json({ status: true, message: "Package added to booking", data: booking });
 });
 
 // ==================== SETTLEMENTS ====================
@@ -738,11 +770,13 @@ const updateFeedbackStatus = catchAsync(async (req, res, next) => {
 // two CTA cards on the app + website). Everything below image/isActive is legacy from
 // an earlier design and stays optional so old rows still validate.
 const bannerSchema = Joi.object({
-  type:          Joi.string().valid("hero", "custom_package", "combo").required(),
+  type:          Joi.string().valid("hero", "custom_package", "combo", "why_beyomo", "book_steps").required(),
   title:         Joi.string().trim().allow("", null),
   subtitle:      Joi.string().trim().allow("", null),
   description:   Joi.string().trim().allow("", null),
   image:         Joi.string().allow("", null),
+  image2:        Joi.string().allow("", null),
+  image3:        Joi.string().allow("", null),
   gradientStart: Joi.string().allow("", null),
   gradientEnd:   Joi.string().allow("", null),
   buttonText:    Joi.string().allow("", null),
@@ -815,6 +849,7 @@ const deleteZone = catchAsync(async (req, res) => {
 
 const citySchema = Joi.object({
   name:     Joi.string().trim().required(),
+  code:     Joi.string().trim().uppercase().min(2).max(5).allow("", null),
   state:    Joi.string().trim().allow("", null),
   lat:      Joi.number().min(-90).max(90).allow(null),
   lng:      Joi.number().min(-180).max(180).allow(null),
@@ -992,7 +1027,7 @@ module.exports = {
   listCategories, createCategory, updateCategory, deleteCategory, reorderCategories,
   listServices, createService, updateService, deleteService, patchService, patchServiceCity, reorderServices,
   createBookingForCustomer,
-  listBookings, getBookingDetail, assignPartner, cancelBooking, rescheduleBooking, editBookingServices,
+  listBookings, getBookingDetail, assignPartner, acceptBooking, cancelBooking, rescheduleBooking, editBookingServices, removeBookingPackage, addBookingPackage,
   listPartnerBalances, getPartnerLedger, recordSettlement, voidLedgerEntry,
   listCoupons, createCoupon, updateCoupon, deleteCoupon, getReferral, updateReferral,
   listReviews, updateReviewStatus,

@@ -168,16 +168,21 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
           style={[styles.header, {paddingTop: insets.top + sw(16)}]}>
           <View style={styles.profileRow}>
             <View style={styles.avatarWrap}>
-              <Image
-                source={{
-                  uri: resolveImageUrl(partner?.profilePicture) || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&q=90&fit=crop'
-                }}
-                style={styles.avatar}
-              />
+              {resolveImageUrl(partner?.profilePicture) ? (
+                <Image
+                  source={{uri: resolveImageUrl(partner?.profilePicture) as string}}
+                  style={styles.avatar}
+                />
+              ) : (
+                <View style={[styles.avatar, styles.avatarPlaceholder]}>
+                  <Ionicons name="person" size={sw(26)} color="rgba(255,255,255,0.85)" />
+                </View>
+              )}
             </View>
             <View style={styles.nameBlock}>
-              <Text style={styles.helloText}>Hello, {partner?.name || 'Partner'}</Text>
-              <Text style={styles.greetingText}>Good Morning!</Text>
+              <Text style={styles.helloText} numberOfLines={1} ellipsizeMode="tail">
+                Hello, {partner?.name || 'Partner'}
+              </Text>
               <View style={styles.ratingPill}>
                 <Ionicons name="star" size={sw(12)} color="#F5A623" />
                 <Text style={styles.ratingText}>{dashboardData?.ratings?.average || 0} Rating</Text>
@@ -319,6 +324,11 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   avatar: {width: '100%', height: '100%'},
+  avatarPlaceholder: {
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   nameBlock: {flex: 1, gap: sw(3)},
   helloText: {
     fontFamily: fonts.title,
@@ -326,11 +336,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF',
     lineHeight: sw(24),
-  },
-  greetingText: {
-    fontFamily: fonts.textFont,
-    fontSize: sw(12),
-    color: 'rgba(255,255,255,0.75)',
   },
   ratingPill: {
     flexDirection: 'row',

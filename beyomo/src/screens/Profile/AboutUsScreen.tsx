@@ -112,7 +112,7 @@ const styles = StyleSheet.create({
   },
   heroContent: {alignItems: 'center', gap: sw(6)},
   brandName: {fontFamily: fonts.title, fontSize: sw(32), fontWeight: '700', color: '#FFFFFF', letterSpacing: sw(4)},
-  tagline: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#C8A84C', letterSpacing: sw(2)},
+  tagline: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#C8A84C', letterSpacing: sw(2)},
   heroSub: {
     fontFamily: fonts.textFont,
     fontSize: sw(13),
@@ -139,7 +139,7 @@ const styles = StyleSheet.create({
   },
   statBox: {alignItems: 'center', flex: 1},
   statValue: {fontFamily: fonts.title, fontSize: sw(18), fontWeight: '700', color: '#105641'},
-  statLabel: {fontFamily: fonts.textFont, fontSize: sw(10), color: '#656565', textAlign: 'center', marginTop: sw(2)},
+  statLabel: {fontFamily: fonts.textFont, fontSize: sw(12), color: '#656565', textAlign: 'center', marginTop: sw(2)},
 
   section: {
     backgroundColor: '#FFFFFF',
@@ -181,11 +181,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   valueTitle: {fontFamily: fonts.textFont, fontSize: sw(13), fontWeight: '700', color: '#171816'},
-  valueDesc: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#656565', lineHeight: sw(17)},
+  valueDesc: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#656565', lineHeight: sw(19)},
 
   versionCard: {alignItems: 'center', gap: sw(4), paddingTop: sw(8)},
   versionText: {fontFamily: fonts.textFont, fontSize: sw(12), color: '#A3A3A3'},
-  versionSub: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#BBBBBB'},
+  versionSub: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#BBBBBB'},
 });
 
 export default AboutUsScreen;

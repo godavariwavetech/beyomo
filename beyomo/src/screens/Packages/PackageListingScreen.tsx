@@ -94,9 +94,6 @@ const PackageListingScreen = ({navigation, route}: Props) => {
                       {(combo.title ?? '').toUpperCase()}
                     </Text>
                   </View>
-                  {combo.image ? (
-                    <Image source={{uri: combo.image}} style={styles.comboImage} resizeMode="cover" />
-                  ) : null}
                   <View style={styles.comboPriceBand}>
                     <Text style={styles.comboPriceText}>₹{Math.round(combo.price)}</Text>
                   </View>
@@ -210,10 +207,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     letterSpacing: 0.2,
   },
-  comboImage: {
-    width: '100%',
-    height: sw(70),
-  },
   comboPriceBand: {
     backgroundColor: '#137A54',
     paddingVertical: sw(8),
@@ -303,7 +296,7 @@ const styles = StyleSheet.create({
   },
   savingsText: {
     fontFamily: fonts.title,
-    fontSize: sw(11),
+    fontSize: sw(13),
     fontWeight: '700',
     color: '#012823',
   },

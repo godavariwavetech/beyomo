@@ -1,5 +1,7 @@
 import {createSlice} from '@reduxjs/toolkit';
 
+const MAX_SERVICE_QTY = 5;
+
 const sameSelection = (a = [], b = []) =>
   a.length === b.length && [...a].sort().join(',') === [...b].sort().join(',');
 
@@ -24,18 +26,18 @@ const cartSlice = createSlice({
         item => item.packageId === incoming.packageId && sameSelection(item.services.map(s => s.id), incomingIds),
       );
       if (existing) {
-        existing.qty += incoming.qty || 1;
+        existing.qty = Math.min(existing.qty + (incoming.qty || 1), MAX_SERVICE_QTY);
       } else {
         state.items.push({
           key: `${incoming.packageId}-${Date.now()}`,
-          qty: 1,
           ...incoming,
+          qty: Math.min(incoming.qty || 1, MAX_SERVICE_QTY),
         });
       }
     },
     incrementItemQty: (state, action) => {
       const item = state.items.find(i => i.key === action.payload);
-      if (item) item.qty += 1;
+      if (item) item.qty = Math.min(item.qty + 1, MAX_SERVICE_QTY);
     },
     decrementItemQty: (state, action) => {
       const item = state.items.find(i => i.key === action.payload);
@@ -54,15 +56,15 @@ const cartSlice = createSlice({
         const key = String(svc.id);
         const existing = state.services.find(s => String(s.id) === key && !s.isFree === !svc.isFree);
         if (existing) {
-          existing.qty += svc.qty || 1;
+          existing.qty = Math.min(existing.qty + (svc.qty || 1), MAX_SERVICE_QTY);
         } else {
-          state.services.push({...svc, qty: svc.qty || 1});
+          state.services.push({...svc, qty: Math.min(svc.qty || 1, MAX_SERVICE_QTY)});
         }
       }
     },
     incrementServiceQty: (state, action) => {
       const svc = state.services.find(s => String(s.id) === String(action.payload));
-      if (svc && !svc.isFree) svc.qty += 1;
+      if (svc && !svc.isFree) svc.qty = Math.min(svc.qty + 1, MAX_SERVICE_QTY);
     },
     decrementServiceQty: (state, action) => {
       const svc = state.services.find(s => String(s.id) === String(action.payload));

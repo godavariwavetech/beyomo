@@ -31,6 +31,8 @@ const getServices = async (query, page = 1, limit = 20) => {
   const offset = (page - 1) * limit;
   const where = { isActive: true };
   if (query.categoryId) where.categoryId = query.categoryId;
+  if (query.isPopular) where.isPopular = true;
+  if (query.showOnHome) where.showOnHome = true;
   if (query.search) {
     where[Op.or] = [
       { name: { [Op.like]: `%${query.search}%` } },

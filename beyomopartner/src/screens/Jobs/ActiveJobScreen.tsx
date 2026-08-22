@@ -89,6 +89,28 @@ const ActiveJobScreen = ({navigation, route}: any) => {
     [myServices],
   );
 
+  // Group items that were part of a package/combo into a single card instead of
+  // listing each of their services as its own line — matching the customer app/website.
+  const packageItems = myServices.filter((s: any) => s.addedByPackage);
+  const otherMyServices = myServices.filter((s: any) => !s.addedByPackage);
+  const otherMyServicesTotal = otherMyServices.reduce((sum, s: any) => sum + (s.price ?? 0) * (s.qty || 1), 0);
+  const multiPackages: any[] = parseServices(job?.packages);
+  const packageGroups = multiPackages.length > 0
+    ? multiPackages.map((pkg: any) => ({
+        key: pkg.packageId,
+        title: pkg.title,
+        price: Number(pkg.price || 0) * (pkg.qty || 1),
+        items: packageItems.filter((s: any) => s.packageId === pkg.packageId),
+      }))
+    : packageItems.length > 0
+      ? [{
+          key: job?.packageId,
+          title: job?.package?.title ?? 'Package Deal',
+          price: Math.max(0, (job?.baseAmount ?? totalAmount) - otherMyServicesTotal),
+          items: packageItems,
+        }]
+      : [];
+
   // Add-service modal state
   const [showAddModal, setShowAddModal] = useState(false);
   const [availableServices, setAvailableServices] = useState<AvailableSvc[]>([]);
@@ -304,8 +326,28 @@ const ActiveJobScreen = ({navigation, route}: any) => {
             )}
           </View>
 
+          {packageGroups.map((group) => (
+            <View key={group.key ?? group.title} style={[styles.serviceRow, {alignItems: 'flex-start'}]}>
+              <View style={{flex: 1}}>
+                <View style={{flexDirection: 'row', alignItems: 'center', gap: sw(6), flexWrap: 'wrap'}}>
+                  <Text style={styles.serviceName}>{group.title}</Text>
+                  <View style={styles.packageBadge}>
+                    <Text style={styles.packageBadgeText}>Package</Text>
+                  </View>
+                </View>
+                <View style={{marginTop: sw(4)}}>
+                  {group.items.map((s: any, i: number) => (
+                    <Text key={s._id ?? s.id ?? i} style={styles.metaChipText}>{i + 1}. {s.name}</Text>
+                  ))}
+                </View>
+              </View>
+              <Text style={styles.servicePrice}>₹{Number(group.price).toLocaleString('en-IN')}</Text>
+            </View>
+          ))}
+
           {myServices.length > 0 ? (
             myServices.map((svc, idx) => {
+              if ((svc as any).addedByPackage) return null;
               const imgUri = resolveImageUrl((svc as any).image ?? job?.service?.image) ?? 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=800&q=90&fit=crop';
               const isFree = (svc as any).addedByOffer || svc.price === 0;
               const isRemoved = !!(svc as any).removed;
@@ -669,6 +711,11 @@ const styles = StyleSheet.create({
   },
   metaChipText: {fontFamily: fonts.textFont, fontSize: sw(10), color: '#5C5C5C'},
   servicePrice: {fontFamily: fonts.title, fontSize: sw(13), fontWeight: '700', color: '#105641'},
+  packageBadge: {
+    backgroundColor: '#E4E1D8', borderRadius: sw(4),
+    paddingHorizontal: sw(5), paddingVertical: sw(1),
+  },
+  packageBadgeText: {fontFamily: fonts.textFont, fontSize: sw(11), fontWeight: '700', color: '#292524'},
   serviceNameRow: {flexDirection: 'row', alignItems: 'center', gap: sw(6)},
   serviceName: {
     fontFamily: fonts.textFont,

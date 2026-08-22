@@ -1,10 +1,12 @@
 import {Platform} from 'react-native';
+import DeviceInfo from 'react-native-device-info';
 import {BASE_URL, endpoints} from '../config/config';
 
-// Bump this at every release to match android/app/build.gradle's versionName
-// (and the matching iOS build version) — this is what gets compared against the
-// admin-configured minimum version at splash.
-export const CURRENT_APP_VERSION = '1.0';
+// Read straight from the native build (android/app/build.gradle's versionName, or the
+// iOS marketing version) instead of a hand-maintained constant — a hardcoded string here
+// silently goes stale the moment someone bumps the native version and forgets to update it,
+// which is exactly what caused force-update to fire on an already-current install.
+export const CURRENT_APP_VERSION = DeviceInfo.getVersion();
 
 // Simple dot-separated numeric version compare (e.g. "1.0" vs "1.1") — good
 // enough for our versioning scheme, no need for a semver dependency.

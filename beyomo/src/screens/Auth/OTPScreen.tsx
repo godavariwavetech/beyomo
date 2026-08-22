@@ -10,6 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -90,12 +91,14 @@ const OTPScreen = ({navigation, route}: any) => {
         return;
       }
 
-      // No city saved yet — try to auto-detect via GPS
+      // No city saved yet — try to auto-detect via GPS, falling back to
+      // Nellore (the only serviceable city) instead of a manual picker.
       setDetecting(true);
+      let cities: any[] = [];
       try {
         const resp = await fetch(`${BASE_URL}${endpoints.CITIES}`);
         const data = await resp.json();
-        const cities = Array.isArray(data.data) ? data.data : [];
+        cities = Array.isArray(data.data) ? data.data : [];
 
         if (cities.length > 0) {
           const permission =
@@ -122,8 +125,10 @@ const OTPScreen = ({navigation, route}: any) => {
         }
       } catch { /* network error */ }
 
-      // GPS failed or outside service area — let user pick manually
-      navigation.replace('CitySelector', {nextRoute});
+      // GPS failed, denied, or outside service area — default to Nellore
+      const fallbackCity = cities.find((c: any) => c.name === 'Nellore') ?? cities[0] ?? null;
+      if (fallbackCity) dispatch(setSelectedCity(fallbackCity));
+      navigation.replace(nextRoute);
     }
   };
 
@@ -158,12 +163,11 @@ const OTPScreen = ({navigation, route}: any) => {
         </TouchableOpacity>
 
         <View style={styles.content}>
-          <Text style={styles.appName}>BEYOMO</Text>
-          <View style={styles.taglineRow}>
-            <View style={styles.taglineLine} />
-            <Text style={styles.tagline}>SALON COMES HOME</Text>
-            <View style={styles.taglineLine} />
-          </View>
+          <Image
+            source={require('../../assets/beyomo_logo.png')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
 
           <View style={styles.card}>
             <View style={styles.iconCircle}>
@@ -255,27 +259,7 @@ const styles = StyleSheet.create({
     paddingVertical: sw(60),
     alignItems: 'center',
   },
-  appName: {
-    fontFamily: fonts.title,
-    fontSize: sw(36),
-    fontWeight: '700',
-    color: '#FEFEFE',
-    letterSpacing: sw(4),
-  },
-  taglineRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: sw(8),
-    marginTop: sw(4),
-    marginBottom: sw(36),
-  },
-  taglineLine: {height: 1, width: sw(24), backgroundColor: '#C8A84C'},
-  tagline: {
-    fontFamily: fonts.textFont,
-    fontSize: sw(10),
-    color: '#C8A84C',
-    letterSpacing: sw(2),
-  },
+  logo: {width: sw(190), height: sw(70), marginBottom: sw(32)},
   card: {
     width: '100%',
     backgroundColor: 'rgba(255,255,255,0.07)',
@@ -365,7 +349,7 @@ const styles = StyleSheet.create({
   resendDisabled: {color: 'rgba(200,168,76,0.45)'},
   detectingText: {
     fontFamily: fonts.textFont,
-    fontSize: sw(11),
+    fontSize: sw(13),
     color: 'rgba(255,255,255,0.5)',
     textAlign: 'center',
     marginTop: -sw(4),

@@ -68,11 +68,13 @@ const SplashScreen = ({navigation}: any) => {
     const minWait = new Promise<void>(r => setTimeout(r, 2500));
     const versionCheck = checkForceUpdate('partner');
 
-    // Silently detect city in background — never blocks navigation
+
+    // Silently detect city in background — never blocks navigation. Falls back
+    // to Nellore (the only serviceable city) if GPS fails or is denied.
     (async () => {
+      const cities = await fetchActiveCities();
+      if (cities.length === 0) return;
       try {
-        const cities = await fetchActiveCities();
-        if (cities.length === 0) return;
         const permission =
           Platform.OS === 'ios'
             ? PERMISSIONS.IOS.LOCATION_WHEN_IN_USE
@@ -84,9 +86,14 @@ const SplashScreen = ({navigation}: any) => {
         if (status === RESULTS.GRANTED) {
           const pos = await getPosition();
           const matched = findCityForLocation(pos.lat, pos.lng, cities);
-          if (matched) dispatch(setSelectedCity(matched));
+          if (matched) {
+            dispatch(setSelectedCity(matched));
+            return;
+          }
         }
       } catch {}
+      const fallbackCity = cities.find((c: any) => c.name === 'Nellore') ?? cities[0] ?? null;
+      if (fallbackCity) dispatch(setSelectedCity(fallbackCity));
     })();
 
     Promise.all([minWait, versionCheck]).then(([, version]) => {
@@ -170,8 +177,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   logo: {
-    width: sw(160),
-    height: sw(160),
+    width: sw(240),
+    height: sw(240),
   },
   textContainer: {
     position: 'absolute',

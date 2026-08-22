@@ -75,11 +75,18 @@ export default function Bookings() {
   const [addingSvc, setAddingSvc]           = useState(false);
   const [updatingQtyIdx, setUpdatingQtyIdx] = useState(null);
   const [qtyDrafts, setQtyDrafts]           = useState({}); // {[serviceIndex]: pendingQty}
-  const [addMode, setAddMode]               = useState('catalog'); // 'catalog' | 'addon'
+  const [addMode, setAddMode]               = useState('catalog'); // 'catalog' | 'addon' | 'package'
   const [addonName, setAddonName]           = useState('');
   const [addonPrice, setAddonPrice]         = useState('');
   const [addonQty, setAddonQty]             = useState(1);
   const [addingAddon, setAddingAddon]       = useState(false);
+  const [removingPackageId, setRemovingPackageId] = useState(null);
+  const [showAddPackageModal, setShowAddPackageModal] = useState(false);
+  const [availablePackages, setAvailablePackages] = useState([]);
+  const [loadingPackages, setLoadingPackages] = useState(false);
+  const [pickingPackage, setPickingPackage] = useState(null); // flexible package awaiting service picks
+  const [flexiblePicks, setFlexiblePicks]   = useState([]); // [serviceId, ...]
+  const [addingPackage, setAddingPackage]   = useState(false);
 
   const loadBookings = () => {
     const params = cityParam ? { cityIds: cityParam, limit: 1000 } : { limit: 1000 };
@@ -89,6 +96,7 @@ export default function Bookings() {
         const normalized = raw.map(b => ({
           ...b,
           services:    parseServices(b.services),
+          packages:    parseServices(b.packages),
           id:          String(b._id ?? b.id ?? ''),
           userName:    b.userName ?? b.user?.name ?? b.customerName ?? '',
           userPhone:   b.user?.phone ?? '',
@@ -167,6 +175,7 @@ export default function Bookings() {
           ...prev,
           ...fresh,
           services:    parseServices(fresh.services ?? prev.services),
+          packages:    parseServices(fresh.packages ?? prev.packages),
           id: String(fresh._id ?? fresh.id ?? b.id),
           userName:    fresh.user?.name ?? prev.userName,
           userPhone:   fresh.user?.phone ?? prev.userPhone,
@@ -202,6 +211,17 @@ export default function Bookings() {
     setBookings(prev => prev.map(b => b.id === id ? { ...b, status:'cancelled', commission:0 } : b));
     showToast('Booking cancelled successfully.', 'danger');
     if (selected?.id === id) setSelected(prev => ({ ...prev, status:'cancelled', commission:0 }));
+  };
+
+  const acceptBooking = async (id) => {
+    const res = await action('patch', `/api/v1/admin/bookings/${id}/accept`);
+    if (res.ok) {
+      setBookings(prev => prev.map(b => b.id === id ? { ...b, status:'confirmed' } : b));
+      showToast('Booking accepted.', 'success');
+      if (selected?.id === id) setSelected(prev => ({ ...prev, status:'confirmed' }));
+    } else {
+      showToast(res.error ?? 'Failed to accept booking.', 'danger');
+    }
   };
 
   const handleAddServices = async (bookingId) => {
@@ -255,6 +275,63 @@ export default function Bookings() {
     setAddingAddon(false);
   };
 
+  const fetchAvailablePackages = () => {
+    if (availablePackages.length > 0) return;
+    setLoadingPackages(true);
+    api.get('/api/v1/admin/packages', { params: { limit: 200 } })
+      .then(res => setAvailablePackages(res.data?.data?.data ?? res.data?.data ?? []))
+      .catch(() => {})
+      .finally(() => setLoadingPackages(false));
+  };
+
+  const handleAddPackage = async (bookingId, packageId, services) => {
+    setAddingPackage(true);
+    try {
+      const res = await api.patch(`/api/v1/admin/bookings/${bookingId}/add-package`, { packageId, services });
+      const updated = res.data?.data;
+      if (updated) {
+        const parsedSvcs = parseServices(updated.services ?? selected?.services);
+        const parsedPkgs = parseServices(updated.packages ?? selected?.packages);
+        const newTotal = parseFloat(updated.totalAmount ?? selected?.amount ?? 0);
+        setSelected(prev => ({ ...prev, services: parsedSvcs, packages: parsedPkgs, amount: newTotal, totalAmount: newTotal }));
+        setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, amount: newTotal } : b));
+      }
+      setPickingPackage(null);
+      setFlexiblePicks([]);
+      setShowAddPackageModal(false);
+      showToast('Package added to booking.', 'success');
+    } catch (err) {
+      const msg = err.response?.data?.message ?? 'Failed to add package.';
+      console.error('[addPackage]', err.response?.data ?? err.message);
+      showToast(msg, 'danger');
+      // Most likely cause is the package having just been added (stale list) — drop back to
+      // the picker list, which will exclude it once `selected` is refreshed below.
+      setPickingPackage(null);
+      setFlexiblePicks([]);
+      try {
+        const fresh = await api.get(`/api/v1/admin/bookings/${bookingId}`);
+        const freshData = fresh.data?.data;
+        if (freshData) {
+          setSelected(prev => ({ ...prev, services: parseServices(freshData.services ?? prev?.services), packages: parseServices(freshData.packages ?? prev?.packages), packageId: freshData.packageId ?? prev?.packageId }));
+        }
+      } catch {}
+    }
+    setAddingPackage(false);
+  };
+
+  const handleAddFixedPackage = (bookingId, pkg) => {
+    const services = (pkg.services || []).map(s => ({ id: s.serviceId ?? s.id, qty: 1 }));
+    handleAddPackage(bookingId, pkg.id, services);
+  };
+
+  const toggleFlexiblePick = (serviceId) => {
+    setFlexiblePicks(prev => {
+      if (prev.includes(serviceId)) return prev.filter(id => id !== serviceId);
+      if (prev.length >= (pickingPackage?.serviceCount ?? 0)) return prev;
+      return [...prev, serviceId];
+    });
+  };
+
   // Adjusts the local draft qty for a row — does NOT call the API. Saved via handleSaveQty.
   const adjustQtyDraft = (index, baseQty, delta) => {
     setQtyDrafts(prev => {
@@ -302,6 +379,28 @@ export default function Bookings() {
       console.error('[removeService]', err.response?.data ?? err.message);
       showToast(msg, 'danger');
     }
+  };
+
+  const handleRemovePackage = async (bookingId, packageId, title) => {
+    if (!window.confirm(`Remove "${title}" from this booking? Its services will be dropped and any remaining services will be billed at their normal price.`)) return;
+    setRemovingPackageId(packageId ?? 'legacy');
+    try {
+      const res = await api.patch(`/api/v1/admin/bookings/${bookingId}/remove-package`, packageId != null ? { packageId } : {});
+      const updated = res.data?.data;
+      if (updated) {
+        const parsedSvcs = parseServices(updated.services ?? selected?.services);
+        const parsedPkgs = parseServices(updated.packages ?? selected?.packages);
+        const newTotal = parseFloat(updated.totalAmount ?? selected?.amount ?? 0);
+        setSelected(prev => ({ ...prev, services: parsedSvcs, packages: parsedPkgs, packageId: updated.packageId ?? null, amount: newTotal, totalAmount: newTotal }));
+        setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, amount: newTotal } : b));
+      }
+      showToast('Package removed from booking.', 'success');
+    } catch (err) {
+      const msg = err.response?.data?.message ?? 'Failed to remove package.';
+      console.error('[removePackage]', err.response?.data ?? err.message);
+      showToast(msg, 'danger');
+    }
+    setRemovingPackageId(null);
   };
 
   const handleReassign = async (bookingId) => {
@@ -367,6 +466,14 @@ export default function Bookings() {
         }]
       : [];
 
+  // A package already on the booking can't be added again (the backend rejects it) —
+  // filter it out of the "Add Package" picker up front instead of letting the user hit that error.
+  const existingPackageIds = new Set([
+    ...(selected?.packageId != null ? [selected.packageId] : []),
+    ...parseServices(selected?.packages).map(p => p.packageId),
+  ]);
+  const addablePackages = availablePackages.filter(p => !existingPackageIds.has(p.id));
+
   const baseAmount      = parseFloat(selected?.baseAmount ?? selected?.amount ?? 0);
   const couponDiscount  = parseFloat(selected?.couponDiscountAmount ?? 0);
   const tax             = parseFloat(selected?.taxAmount ?? 0);
@@ -392,6 +499,12 @@ export default function Bookings() {
     }
 
     const svcs = Array.isArray(selected?.services) ? selected.services : [];
+    // Services' listed `price` is the raw undiscounted per-item price — bookings with
+    // packages/combos earn less than the sum of those prices, so scale each partner's
+    // raw-price share by the booking's real (already-discounted) partnerEarning instead
+    // of summing raw prices directly (that overstated payouts for combo bookings).
+    const rawTotal = svcs.reduce((sum, s) => sum + (s.price ?? 0) * (s.qty || 1), 0);
+    const bookingEarning = parseFloat(selected?.partnerEarning ?? (totalAmt - commission));
     const byPartner = {};
     svcs.forEach(s => {
       if (!s.assignedPartnerId) return;
@@ -399,7 +512,12 @@ export default function Bookings() {
       if (!byPartner[key]) byPartner[key] = { name: s.assignedPartnerName || 'Partner', amount: 0 };
       byPartner[key].amount += s.price * (s.qty || 1);
     });
-    if (Object.keys(byPartner).length > 0) return Object.values(byPartner);
+    if (Object.keys(byPartner).length > 0) {
+      if (rawTotal > 0 && bookingEarning) {
+        Object.values(byPartner).forEach(p => { p.amount = p.amount * (bookingEarning / rawTotal); });
+      }
+      return Object.values(byPartner);
+    }
     // Fallback: partner assigned at booking level (e.g. via "Assign / Change Partner")
     // but no service has been individually claimed/stamped with assignedPartnerId yet.
     if (selected?.partnerId) {
@@ -523,6 +641,9 @@ export default function Bookings() {
                   <td>
                     <div style={{ display:'flex', gap:4 }}>
                       <button className="btn btn-ghost btn-icon" title="View Details" onClick={() => openDetail(b)}><Eye size={15}/></button>
+                      {b.status === 'pending' && (
+                        <button className="btn btn-ghost btn-icon" title="Accept Booking" onClick={() => acceptBooking(b.id)} style={{ color:'#22C55E' }}><CheckCircle2 size={15}/></button>
+                      )}
                       {!['completed','cancelled'].includes(b.status) && (
                         <button className="btn btn-ghost btn-icon" title="Cancel Booking" onClick={() => cancelBooking(b.id)} style={{ color:'var(--c-danger)' }}><XCircle size={15}/></button>
                       )}
@@ -558,6 +679,11 @@ export default function Bookings() {
         footer={
           <>
             <button className="btn btn-outline" onClick={() => { setSelected(null); setReassignId(''); }}>Close</button>
+            {selected && selected.status === 'pending' && (
+              <button className="btn btn-primary" onClick={() => acceptBooking(selected.id)} style={{ display:'flex', alignItems:'center', gap:6, background:'#22C55E', borderColor:'#22C55E' }}>
+                <CheckCircle2 size={15}/> Accept Booking
+              </button>
+            )}
             {selected && !['completed','cancelled'].includes(selected.status) && (
               <button className="btn btn-danger" onClick={() => cancelBooking(selected.id)} style={{ display:'flex', alignItems:'center', gap:6 }}>
                 <XCircle size={15}/> Cancel Booking
@@ -622,6 +748,7 @@ export default function Bookings() {
             {(() => {
               const partnerSet = new Set((servicesList || []).map(s => s.assignedPartnerName).filter(Boolean));
               const isMultiPartner = partnerSet.size > 1;
+              const unassignedCount = (servicesList || []).filter(s => !s.removed && !s.assignedPartnerName && s.serviceStatus === 'unassigned').length;
               return (
                 <InfoBlock label={`Services (${servicesList.length})${isMultiPartner ? ' — Multi-partner' : ''}`}>
                   {isMultiPartner && (
@@ -632,19 +759,73 @@ export default function Bookings() {
                       </span>
                     </div>
                   )}
+                  {unassignedCount > 0 && (
+                    <div style={{ marginBottom:8, fontSize:12, color:'#f59e0b', fontWeight:600 }}>
+                      ⚠ {unassignedCount} service{unassignedCount !== 1 ? 's' : ''} awaiting partner
+                    </div>
+                  )}
                   {(() => {
                     const svcTag = (svc) => {
-                      if (svc.removed)       return { label:'Removed',   text:'#b91c1c', bg:'#fee2e2' };
+                      if (svc.removed)        return { label:'Removed',   text:'#b91c1c', bg:'#fee2e2' };
                       if (svc.addedByAdmin)   return { label:'Admin +',   text:'#7c3aed', bg:'#ede9fe' };
                       if (svc.addedByPartner) return { label:'Partner +', text:'#0369a1', bg:'#e0f2fe' };
                       if (svc.addedByUser)    return { label:'User +',    text:'#d97706', bg:'#fef3c7' };
                       return                          { label:'Original', text:'#166534', bg:'#dcfce7' };
                     };
+                    // Package-tagged items keep the package's own fixed price — their individual
+                    // catalog prices (shown per-row below, informationally) sum to more than what
+                    // was actually charged, so surface the real package price up front too. A
+                    // booking can contain more than one package/combo booked together — each keeps
+                    // its own title and price, so they must be grouped separately, not merged.
+                    const packageItems = servicesList.filter(s => s.addedByPackage);
+                    const nonPackageTotal = servicesList
+                      .filter(s => !s.addedByPackage && !s.removed)
+                      .reduce((sum, s) => sum + (parseFloat(s.price) || 0) * (s.qty || 1), 0);
+                    const multiPackages = parseServices(selected.packages);
+                    const packageGroups = multiPackages.length > 0
+                      ? multiPackages.map(pkg => ({
+                          key: pkg.packageId,
+                          title: pkg.title,
+                          price: (parseFloat(pkg.price) || 0) * (pkg.qty || 1),
+                          items: packageItems.filter(s => s.packageId === pkg.packageId),
+                        }))
+                      : packageItems.length > 0
+                        ? [{
+                            key: selected.packageId,
+                            title: selected.package?.title ?? 'Package Deal',
+                            price: Math.max(0, parseFloat(selected.baseAmount ?? selected.amount ?? 0) - nonPackageTotal),
+                            items: packageItems,
+                          }]
+                        : [];
                     return (
                   <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                    {packageGroups.map(group => (
+                      <div key={group.key ?? group.title} style={{ padding:'8px 10px', background:'#eff6ff', borderRadius:6 }}>
+                        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:8 }}>
+                          <span style={{ fontSize:13, fontWeight:700, color:'#1d4ed8' }}>
+                            {group.title}
+                          </span>
+                          <span style={{ fontSize:13, fontWeight:700, color:'#1d4ed8' }}>₹{fmt(group.price)}</span>
+                        </div>
+                        <div style={{ marginTop:6, fontSize:12, color:'#1e40af', lineHeight:1.6 }}>
+                          {group.items.map((s, i) => (
+                            <div key={i}>{i + 1}. {s.name}</div>
+                          ))}
+                        </div>
+                        {!['completed','cancelled'].includes(selected.status) && (
+                          <button
+                            disabled={removingPackageId === (group.key ?? 'legacy')}
+                            onClick={() => handleRemovePackage(selected.id, group.key, group.title)}
+                            style={{ marginTop:8, fontSize:11, fontWeight:700, letterSpacing:'0.03em', textTransform:'uppercase', color:'#b91c1c', background:'#fff', border:'1px solid #fca5a5', borderRadius:20, padding:'5px 12px', cursor: removingPackageId === (group.key ?? 'legacy') ? 'not-allowed' : 'pointer' }}>
+                            {removingPackageId === (group.key ?? 'legacy') ? 'Removing…' : 'Remove Package'}
+                          </button>
+                        )}
+                      </div>
+                    ))}
                     {servicesList.length === 0 ? (
                       <span style={{ fontSize:13, color:'var(--c-text-muted)' }}>No service details available</span>
                     ) : servicesList.map((svc, idx) => {
+                      if (svc.addedByPackage) return null; // already summarized compactly above — avoid showing twice
                       const statusColor = {
                         unassigned: { bg:'#f3f4f6', text:'#6b7280' },
                         claimed:    { bg:'#dbeafe', text:'#1d4ed8' },
@@ -680,9 +861,6 @@ export default function Bookings() {
                                   <div style={{ fontSize:11, color:'var(--c-text-secondary)', marginTop:3, display:'flex', alignItems:'center', gap:4 }}>
                                     <UserCheck size={11} /> {svc.assignedPartnerName}
                                   </div>
-                                )}
-                                {!svc.assignedPartnerName && svc.serviceStatus === 'unassigned' && (
-                                  <div style={{ fontSize:11, color:'#f59e0b', marginTop:3 }}>⚠ Awaiting partner</div>
                                 )}
                               </div>
                             </div>
@@ -819,8 +997,16 @@ export default function Bookings() {
             {/* ── Add Services (multi-select) ── */}
             {!['completed','cancelled'].includes(selected.status) && (
               <div style={{ background:'var(--c-border-light)', borderRadius:'var(--r-md)', padding:16 }}>
-                <div style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.5px', color:'var(--c-text-secondary)', marginBottom:10, display:'flex', alignItems:'center', gap:6 }}>
-                  <PlusCircle size={14} /> Add Services to Booking
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
+                  <div style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.5px', color:'var(--c-text-secondary)', display:'flex', alignItems:'center', gap:6 }}>
+                    <PlusCircle size={14} /> Add Services to Booking
+                  </div>
+                  <button
+                    className="btn btn-outline btn-sm"
+                    onClick={() => { setShowAddPackageModal(true); setPickingPackage(null); setFlexiblePicks([]); fetchAvailablePackages(); }}
+                    style={{ display:'flex', alignItems:'center', gap:6 }}>
+                    <Package size={13}/> Add Package
+                  </button>
                 </div>
 
                 {/* Catalog vs. custom add-on toggle */}
@@ -1029,6 +1215,113 @@ export default function Bookings() {
               </div>
             )}
           </div>
+        )}
+      </Modal>
+
+      <Modal
+        isOpen={showAddPackageModal}
+        onClose={() => { setShowAddPackageModal(false); setPickingPackage(null); setFlexiblePicks([]); }}
+        title={pickingPackage ? pickingPackage.title : 'Add Package to Booking'}
+        size="md"
+        footer={pickingPackage ? (
+          <>
+            <button className="btn btn-outline" onClick={() => setPickingPackage(null)}>← Back to packages</button>
+            <button
+              className="btn btn-primary"
+              disabled={addingPackage || flexiblePicks.length !== pickingPackage.serviceCount}
+              onClick={() => selected && handleAddPackage(selected.id, pickingPackage.id, flexiblePicks.map(id => ({ id, qty: 1 })))}
+              style={{ display:'flex', alignItems:'center', gap:6 }}>
+              {addingPackage ? 'Adding…' : <><PlusCircle size={15}/> Add Package — ₹{parseFloat(pickingPackage.price).toLocaleString('en-IN')}</>}
+            </button>
+          </>
+        ) : null}
+      >
+        {!pickingPackage ? (
+          loadingPackages ? (
+            <div style={{ padding:'40px 0', fontSize:14, color:'var(--c-text-muted)', textAlign:'center' }}>Loading packages…</div>
+          ) : (
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(2, 1fr)', gap:14 }}>
+              {addablePackages.map(pkg => (
+                <div key={pkg.id} style={{ border:'1px solid var(--c-border)', borderRadius:'var(--r-md)', padding:16, display:'flex', flexDirection:'column', gap:10 }}>
+                  <div>
+                    <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:4 }}>
+                      <span style={{ fontSize:15, fontWeight:700, flex:1 }}>{pkg.title}</span>
+                      <span style={{
+                        fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.4px',
+                        padding:'2px 8px', borderRadius:20,
+                        background: pkg.packageType === 'fixed' ? '#dcfce7' : '#dbeafe',
+                        color: pkg.packageType === 'fixed' ? '#166534' : '#1d4ed8',
+                      }}>
+                        {pkg.packageType === 'fixed' ? 'Fixed' : 'Flexible'}
+                      </span>
+                    </div>
+                    <div style={{ fontSize:20, fontWeight:800, color:'var(--c-brand-primary)' }}>
+                      ₹{parseFloat(pkg.price).toLocaleString('en-IN')}
+                    </div>
+                  </div>
+
+                  <div style={{ fontSize:12, color:'var(--c-text-muted)', flex:1, lineHeight:1.6 }}>
+                    {pkg.packageType === 'fixed'
+                      ? (pkg.services || []).slice(0, 5).map((s, i) => (
+                          <div key={i}>• {s.name}</div>
+                        ))
+                      : <div>Customer picks any {pkg.serviceCount} service{pkg.serviceCount !== 1 ? 's' : ''}{pkg.categoryId ? ' from this category' : ''}.</div>
+                    }
+                  </div>
+
+                  <button
+                    className="btn btn-primary btn-sm"
+                    disabled={addingPackage}
+                    onClick={() => pkg.packageType === 'fixed' ? handleAddFixedPackage(selected.id, pkg) : setPickingPackage(pkg)}
+                    style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
+                    {pkg.packageType === 'fixed'
+                      ? (addingPackage ? 'Adding…' : <><PlusCircle size={13}/> Add to Booking</>)
+                      : 'Choose Services →'}
+                  </button>
+                </div>
+              ))}
+              {addablePackages.length === 0 && (
+                <div style={{ gridColumn:'1 / -1', padding:'40px 0', fontSize:14, color:'var(--c-text-muted)', textAlign:'center' }}>
+                  {availablePackages.length === 0 ? 'No packages available.' : 'All available packages are already on this booking.'}
+                </div>
+              )}
+            </div>
+          )
+        ) : (
+          <>
+            <div style={{ marginBottom:12, fontSize:13, color:'var(--c-text-secondary)' }}>
+              Pick exactly <strong>{pickingPackage.serviceCount}</strong> service{pickingPackage.serviceCount !== 1 ? 's' : ''} for this package
+              <span style={{ float:'right', fontWeight:700, color: flexiblePicks.length === pickingPackage.serviceCount ? 'var(--c-success)' : 'var(--c-text-secondary)' }}>
+                {flexiblePicks.length} / {pickingPackage.serviceCount} selected
+              </span>
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:6, maxHeight:420, overflowY:'auto' }}>
+              {allServices
+                .filter(s => !pickingPackage.categoryId || s.categoryId === pickingPackage.categoryId)
+                .map(s => {
+                  const svcId = s.id ?? s._id;
+                  const picked = flexiblePicks.includes(svcId);
+                  const disabled = !picked && flexiblePicks.length >= pickingPackage.serviceCount;
+                  return (
+                    <div
+                      key={svcId}
+                      onClick={() => !disabled && toggleFlexiblePick(svcId)}
+                      style={{
+                        display:'flex', alignItems:'center', gap:12, padding:'10px 14px',
+                        border: `1.5px solid ${picked ? 'var(--c-brand-primary)' : 'var(--c-border)'}`,
+                        borderRadius:'var(--r-sm)', background: picked ? 'rgba(6,64,129,0.05)' : 'var(--c-bg-card)',
+                        cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1,
+                      }}>
+                      <input type="checkbox" checked={picked} disabled={disabled} readOnly style={{ width:16, height:16, flexShrink:0, cursor:'inherit' }} />
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontSize:14, fontWeight: picked ? 700 : 500 }}>{s.name}</div>
+                        <div style={{ fontSize:12, color:'var(--c-text-muted)' }}>₹{parseFloat(s.basePrice || 0).toLocaleString('en-IN')} · {s.duration} min</div>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          </>
         )}
       </Modal>
 

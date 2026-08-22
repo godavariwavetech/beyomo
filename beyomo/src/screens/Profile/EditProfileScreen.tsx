@@ -258,7 +258,7 @@ const styles = StyleSheet.create({
   },
   hint: {
     fontFamily: fonts.textFont,
-    fontSize: sw(11),
+    fontSize: sw(13),
     color: '#AAAAAA',
     marginTop: sw(2),
   },

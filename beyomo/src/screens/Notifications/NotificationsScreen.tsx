@@ -140,7 +140,7 @@ const styles = StyleSheet.create({
   titleBlock: {alignItems: 'center', gap: sw(6)},
   headerTitle: {fontFamily: fonts.primary, fontSize: sw(20), fontWeight: '400', color: '#012823'},
   titleUnderline: {width: sw(38), height: 1.5, backgroundColor: '#C49738'},
-  markAllText: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#105641', fontWeight: '600', width: sw(70), textAlign: 'right'},
+  markAllText: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#105641', fontWeight: '600', width: sw(70), textAlign: 'right'},
   scroll: {paddingHorizontal: sw(16), paddingTop: sw(8), gap: sw(8)},
   sectionLabel: {fontFamily: fonts.textFont, fontSize: sw(12), fontWeight: '600', color: '#5C5C5C', marginBottom: sw(4)},
   notifCard: {
@@ -155,7 +155,7 @@ const styles = StyleSheet.create({
   notifTitle: {fontFamily: fonts.textFont, fontSize: sw(13), fontWeight: '700', color: '#171816', flex: 1},
   unreadDot: {width: sw(8), height: sw(8), borderRadius: sw(4), backgroundColor: '#105641', marginLeft: sw(8)},
   notifText: {fontFamily: fonts.textFont, fontSize: sw(12), color: '#5C5C5C', lineHeight: sw(18)},
-  notifTime: {fontFamily: fonts.textFont, fontSize: sw(10), color: '#A3A3A3', marginTop: sw(2)},
+  notifTime: {fontFamily: fonts.textFont, fontSize: sw(12), color: '#A3A3A3', marginTop: sw(2)},
   emptyState: {alignItems: 'center', justifyContent: 'center', paddingTop: sw(80), gap: sw(12)},
   emptyText: {fontFamily: fonts.textFont, fontSize: sw(14), color: '#A3A3A3'},
 });

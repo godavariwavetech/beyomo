@@ -50,6 +50,7 @@ Booking.belongsTo(Partner, { foreignKey: "partnerId", as: "partner" });
 Booking.belongsTo(Service, { foreignKey: "serviceId", as: "service" });
 Booking.belongsTo(Coupon, { foreignKey: "couponId", as: "coupon" });
 Booking.belongsTo(Offer, { foreignKey: "offerId", as: "offer" });
+Booking.belongsTo(ServicePackage, { foreignKey: "packageId", as: "package" });
 User.hasMany(Booking, { foreignKey: "userId", as: "bookings" });
 Partner.hasMany(Booking, { foreignKey: "partnerId", as: "bookings" });
 

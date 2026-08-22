@@ -446,7 +446,7 @@ const styles = StyleSheet.create({
   },
   createdAt: {
     fontFamily: fonts.textFont,
-    fontSize: sw(10),
+    fontSize: sw(12),
     fontWeight: '500',
     color: '#5C5C5C',
     lineHeight: sw(12),
@@ -488,7 +488,7 @@ const styles = StyleSheet.create({
   },
   statusText: {
     fontFamily: fonts.textFont,
-    fontSize: sw(10),
+    fontSize: sw(12),
     color: '#FFFFFF',
     lineHeight: sw(12),
   },
@@ -505,7 +505,7 @@ const styles = StyleSheet.create({
   },
   youRatedLabel: {
     fontFamily: fonts.textFont,
-    fontSize: sw(11),
+    fontSize: sw(13),
     color: '#5C5C5C',
   },
   starsRow: {
@@ -514,7 +514,7 @@ const styles = StyleSheet.create({
   },
   editReview: {
     fontFamily: fonts.textFont,
-    fontSize: sw(11),
+    fontSize: sw(13),
     color: '#105641',
     textDecorationLine: 'underline',
     marginLeft: sw(4),
@@ -568,7 +568,7 @@ const styles = StyleSheet.create({
   },
   viewDetailsText: {
     fontFamily: fonts.textFont,
-    fontSize: sw(10),
+    fontSize: sw(12),
     color: '#012823',
     lineHeight: sw(12),
   },
@@ -600,28 +600,28 @@ const styles = StyleSheet.create({
   },
   actionTextGreen: {
     fontFamily: fonts.textFont,
-    fontSize: sw(10),
+    fontSize: sw(12),
     fontWeight: '500',
     color: '#105641',
     lineHeight: sw(15),
   },
   actionTextRed: {
     fontFamily: fonts.textFont,
-    fontSize: sw(10),
+    fontSize: sw(12),
     fontWeight: '500',
     color: '#FB1616',
     lineHeight: sw(15),
   },
   actionTextBlue: {
     fontFamily: fonts.textFont,
-    fontSize: sw(10),
+    fontSize: sw(12),
     fontWeight: '500',
     color: '#1C46CF',
     lineHeight: sw(15),
   },
   actionTextGray: {
     fontFamily: fonts.textFont,
-    fontSize: sw(10),
+    fontSize: sw(12),
     fontWeight: '500',
     color: '#5C5C5C',
     lineHeight: sw(15),

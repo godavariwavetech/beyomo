@@ -1,4 +1,4 @@
-import React, {useEffect} from 'react';
+import React, {useEffect, useRef} from 'react';
 import {
   View,
   Image,
@@ -7,6 +7,8 @@ import {
   Dimensions,
   StatusBar,
   Platform,
+  Animated,
+  Easing,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import {useSelector, useDispatch} from 'react-redux';
@@ -48,6 +50,24 @@ const SplashScreen = ({navigation}: any) => {
   const token = useSelector((state: RootState) => state.Auth?.token);
   const savedCity = useSelector((state: RootState) => state.City?.selectedCity);
 
+  const logoOpacity = useRef(new Animated.Value(0)).current;
+  const logoScale = useRef(new Animated.Value(0.85)).current;
+  const textOpacity = useRef(new Animated.Value(0)).current;
+  const textTranslateY = useRef(new Animated.Value(12)).current;
+
+  useEffect(() => {
+    Animated.sequence([
+      Animated.parallel([
+        Animated.timing(logoOpacity, {toValue: 1, duration: 700, easing: Easing.out(Easing.cubic), useNativeDriver: true}),
+        Animated.timing(logoScale, {toValue: 1, duration: 900, easing: Easing.out(Easing.back(1.2)), useNativeDriver: true}),
+      ]),
+      Animated.parallel([
+        Animated.timing(textOpacity, {toValue: 1, duration: 600, easing: Easing.out(Easing.cubic), useNativeDriver: true}),
+        Animated.timing(textTranslateY, {toValue: 0, duration: 600, easing: Easing.out(Easing.cubic), useNativeDriver: true}),
+      ]),
+    ]).start();
+  }, [logoOpacity, logoScale, textOpacity, textTranslateY]);
+
   useEffect(() => {
     let done = false;
     const go = (dest: string, params?: any) => {
@@ -71,34 +91,37 @@ const SplashScreen = ({navigation}: any) => {
       // City already persisted — skip all checks, go straight to the app
       if (savedCity) return {dest: mainDest};
 
-      // First launch or city was cleared — detect via GPS or ask manually
+      // First launch or city was cleared — detect via GPS, falling back to
+      // Nellore (the only serviceable city) if detection fails or the device
+      // is outside it, rather than blocking on a manual picker.
+      const cities = await fetchActiveCities();
+      const fallbackCity = cities.find((c: any) => c.name === 'Nellore') ?? cities[0] ?? null;
+
       try {
-        const cities = await fetchActiveCities();
-        if (cities.length === 0) return {dest: mainDest};
+        if (cities.length > 0) {
+          const permission =
+            Platform.OS === 'ios'
+              ? PERMISSIONS.IOS.LOCATION_WHEN_IN_USE
+              : PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION;
 
-        const permission =
-          Platform.OS === 'ios'
-            ? PERMISSIONS.IOS.LOCATION_WHEN_IN_USE
-            : PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION;
+          let status = await check(permission);
+          if (status === RESULTS.NOT_DETERMINED || status === RESULTS.DENIED) {
+            status = await request(permission);
+          }
 
-        let status = await check(permission);
-        if (status === RESULTS.NOT_DETERMINED || status === RESULTS.DENIED) {
-          status = await request(permission);
-        }
-
-        if (status === RESULTS.GRANTED) {
-          try {
+          if (status === RESULTS.GRANTED) {
             const pos = await getPosition();
             const matched = findCityForLocation(pos.lat, pos.lng, cities);
             if (matched) {
               dispatch(setSelectedCity(matched));
+              return {dest: mainDest};
             }
-          } catch { /* GPS timeout */ }
+          }
         }
-        return {dest: mainDest};
-      } catch {
-        return {dest: 'CitySelector'};
-      }
+      } catch { /* permission denied or GPS timeout */ }
+
+      if (fallbackCity) dispatch(setSelectedCity(fallbackCity));
+      return {dest: mainDest};
     })();
 
     Promise.all([minWait, run]).then(([, result]) => go(result.dest, result.params));
@@ -132,20 +155,20 @@ const SplashScreen = ({navigation}: any) => {
       />
 
       <View style={styles.logoContainer}>
-        <Image
+        <Animated.Image
           source={require('../../assets/beyomo_logo_icon.png')}
-          style={styles.logo}
+          style={[styles.logo, {opacity: logoOpacity, transform: [{scale: logoScale}]}]}
           resizeMode="contain"
         />
       </View>
 
-      <View style={styles.textContainer}>
+      <Animated.View style={[styles.textContainer, {opacity: textOpacity, transform: [{translateY: textTranslateY}]}]}>
         <Text style={styles.title}>{'Professional Beauty\nServices At Home'}</Text>
         <View style={styles.separator} />
         <Text style={styles.subtitle}>
           {'Experience luxury salon services in the\ncomfort of your own home.'}
         </Text>
-      </View>
+      </Animated.View>
     </LinearGradient>
   );
 };
@@ -179,8 +202,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   logo: {
-    width: sw(160),
-    height: sw(160),
+    width: sw(240),
+    height: sw(240),
   },
   textContainer: {
     position: 'absolute',
@@ -190,12 +213,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   title: {
-    fontFamily: fonts.title,
+    fontFamily: 'PlayfairDisplay-Bold',
     fontSize: sw(24),
-    fontWeight: '600',
     lineHeight: sw(30),
     textAlign: 'center',
     color: '#FEFEFE',
+    letterSpacing: 0.4,
   },
   separator: {
     width: sw(38),

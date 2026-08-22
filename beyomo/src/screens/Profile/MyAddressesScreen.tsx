@@ -14,7 +14,7 @@ import {
   Platform,
 } from 'react-native';
 import WebView from 'react-native-webview';
-import Geolocation from '@react-native-community/geolocation';
+import Geolocation from 'react-native-geolocation-service';
 import {check, request, PERMISSIONS, RESULTS} from 'react-native-permissions';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
@@ -26,8 +26,51 @@ const {width, height} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
 const MAP_HEIGHT = height * 0.40;
 
-const DEFAULT_LAT = 17.385;
-const DEFAULT_LNG = 78.4867;
+const DEFAULT_LAT = 14.4494;
+const DEFAULT_LNG = 79.9874; // Nellore, Andhra Pradesh — primary service area
+
+// Photon (komoot.io) — same purpose-built autocomplete geocoder used on the website's
+// address picker: fast prefix matching, no 1-req/sec limit (unlike Nominatim).
+const PHOTON_BASE = 'https://photon.komoot.io';
+const INDIA_BBOX = '68.0,6.0,98.3,37.6'; // lon_min,lat_min,lon_max,lat_max
+
+function photonToFields(props: any = {}) {
+  return {
+    line1: [props.housenumber, props.street].filter(Boolean).join(' ') || props.name || '',
+    line2: props.district || props.suburb || props.locality || '',
+    city: props.city || props.town || props.village || props.county || '',
+    state: props.state || '',
+    pincode: props.postcode || '',
+  };
+}
+
+function photonLabel(props: any = {}) {
+  return [props.name, props.street, props.city || props.town || props.village, props.state]
+    .filter((v, i, arr) => v && arr.indexOf(v) === i)
+    .join(', ');
+}
+
+async function photonReverseGeocode(lat: number, lng: number, signal?: AbortSignal) {
+  const res = await fetch(`${PHOTON_BASE}/reverse?lat=${lat}&lon=${lng}&lang=en`, {signal});
+  if (!res.ok) throw new Error('Reverse geocoding failed');
+  const data = await res.json();
+  return data.features?.[0]?.properties || {};
+}
+
+async function photonSearch(query: string, biasLat?: number, biasLng?: number, signal?: AbortSignal) {
+  // Build the full params object up front — React Native's URLSearchParams
+  // polyfill (Hermes) only implements the constructor, not .set()/.append().
+  const paramsObj: Record<string, string> = {q: query, limit: '6', lang: 'en', bbox: INDIA_BBOX};
+  if (biasLat != null && biasLng != null) {
+    paramsObj.lat = String(biasLat);
+    paramsObj.lon = String(biasLng);
+  }
+  const params = new URLSearchParams(paramsObj);
+  const res = await fetch(`${PHOTON_BASE}/api/?${params.toString()}`, {signal});
+  if (!res.ok) throw new Error('Location search failed');
+  const data = await res.json();
+  return data.features || [];
+}
 
 type FormState = {
   tag: string;
@@ -73,7 +116,17 @@ const MyAddressesScreen = ({navigation}: any) => {
   const insets = useSafeAreaInsets();
   const dispatch = useDispatch<any>();
   const {profile, loading, actionLoading} = useSelector((s: any) => s.User);
+  const selectedCity = useSelector((s: any) => s.City?.selectedCity);
   const addresses: any[] = profile?.addresses ?? [];
+
+  // Same rule as the website: without a serviceable city chosen, we can't validate
+  // against a single city, so nothing is blocked; once one's picked, addresses
+  // must fall within it.
+  const isLocationAvailable = (city: string | null | undefined) => {
+    if (!selectedCity) return true;
+    if (!city) return false;
+    return city.toLowerCase().includes(selectedCity.name.toLowerCase());
+  };
 
   const [showModal, setShowModal]   = useState(false);
   const [editAddr, setEditAddr]     = useState<any>(null);
@@ -82,39 +135,41 @@ const MyAddressesScreen = ({navigation}: any) => {
   const [geocoding, setGeocoding]   = useState(false);
   const [locating, setLocating]     = useState(false);
   const [showErrors, setShowErrors] = useState(false);
+  const [searchQuery, setSearchQuery]           = useState('');
+  const [searchResults, setSearchResults]       = useState<any[]>([]);
+  const [searching, setSearching]               = useState(false);
+  const [showSearchResults, setShowSearchResults] = useState(false);
 
   const mapRef      = useRef<WebView>(null);
   const geocodeTimer = useRef<any>(null);
+  const geocodeAbortRef = useRef<AbortController | null>(null);
+  const searchDebounceRef = useRef<any>(null);
+  const searchAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (!profile) dispatch(fetchProfile());
+    return () => {
+      if (geocodeTimer.current) clearTimeout(geocodeTimer.current);
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+      if (geocodeAbortRef.current) geocodeAbortRef.current.abort();
+      if (searchAbortRef.current) searchAbortRef.current.abort();
+    };
   }, []);
 
   const reverseGeocode = async (lat: number, lng: number) => {
+    if (geocodeAbortRef.current) geocodeAbortRef.current.abort();
+    const controller = new AbortController();
+    geocodeAbortRef.current = controller;
+
     setGeocoding(true);
     try {
-      const resp = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
-        {headers: {'User-Agent': 'BeyomoApp/1.0'}},
-      );
-      const data = await resp.json();
-      const a = data.address || {};
-      const newLine1 = [a.road, a.suburb, a.neighbourhood].filter(Boolean).join(', ');
-      const newLine2 = a.city_district || a.county || '';
-      setForm(prev => ({
-        ...prev,
-        lat,
-        lng,
-        line1: newLine1 || prev.line1,
-        line2: newLine2 || prev.line2,
-        city:  a.city || a.town || a.village || a.county || prev.city,
-        state: a.state || prev.state,
-        pincode: a.postcode || prev.pincode,
-      }));
-    } catch {
-      setForm(prev => ({...prev, lat, lng}));
+      const props = await photonReverseGeocode(lat, lng, controller.signal);
+      const fields = photonToFields(props);
+      setForm(prev => ({...prev, lat, lng, ...fields}));
+    } catch (err: any) {
+      if (err.name !== 'AbortError') setForm(prev => ({...prev, lat, lng}));
     } finally {
-      setGeocoding(false);
+      if (!controller.signal.aborted) setGeocoding(false);
     }
   };
 
@@ -124,41 +179,131 @@ const MyAddressesScreen = ({navigation}: any) => {
     geocodeTimer.current = setTimeout(() => reverseGeocode(lat, lng), 800);
   };
 
-  const locateMe = async () => {
+  const recenterMap = (lat: number, lng: number) => {
+    mapRef.current?.injectJavaScript(
+      `handleMsg(JSON.stringify({type:'setCenter',lat:${lat},lng:${lng},zoom:16})); true;`
+    );
+  };
+
+  const handleSearchChange = (value: string) => {
+    setSearchQuery(value);
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    if (!value || value.trim().length < 2) {
+      if (searchAbortRef.current) searchAbortRef.current.abort();
+      setSearchResults([]);
+      setShowSearchResults(false);
+      setSearching(false);
+      return;
+    }
+    searchDebounceRef.current = setTimeout(async () => {
+      if (searchAbortRef.current) searchAbortRef.current.abort();
+      const controller = new AbortController();
+      searchAbortRef.current = controller;
+
+      setSearching(true);
+      try {
+        console.log('[MyAddresses] searching for:', value);
+        const results = await photonSearch(value, form.lat ?? DEFAULT_LAT, form.lng ?? DEFAULT_LNG, controller.signal);
+        console.log('[MyAddresses] search results:', results.length);
+        setSearchResults(results);
+        setShowSearchResults(true);
+      } catch (err: any) {
+        console.log('[MyAddresses] search error:', err?.message ?? err);
+        if (err.name !== 'AbortError') {
+          setSearchResults([]);
+          setShowSearchResults(true);
+        }
+      }
+      if (!controller.signal.aborted) setSearching(false);
+    }, 250);
+  };
+
+  const handleSelectSearchResult = (result: any) => {
+    const [lng, lat] = result.geometry.coordinates;
+    setShowSearchResults(false);
+    setSearchQuery(photonLabel(result.properties));
+    setForm(prev => ({...prev, lat, lng, ...photonToFields(result.properties)}));
+    recenterMap(lat, lng);
+  };
+
+  // One getCurrentPosition call, wrapped as a promise.
+  const requestPosition = (options: any): Promise<{lat: number; lng: number} | null> =>
+    new Promise(resolve => {
+      Geolocation.getCurrentPosition(
+        pos => {
+          console.log('[MyAddresses] device location:', pos.coords.latitude, pos.coords.longitude, 'via', options);
+          resolve({lat: pos.coords.latitude, lng: pos.coords.longitude});
+        },
+        err => {
+          console.log('[MyAddresses] geolocation error:', err, 'via', options);
+          resolve(null);
+        },
+        options,
+      );
+    });
+
+  // Resolves the device's current coordinates (permission check + request included),
+  // or null if permission is denied / location can't be determined at all.
+  // Tries a fast high-accuracy (GPS) fix first; a lot of devices/emulators can't
+  // get a GPS lock quickly (or at all) indoors, so on timeout/failure this falls
+  // back to a low-accuracy (network/WiFi) fix, which resolves faster and more
+  // reliably even if it's less precise.
+  const getDeviceLocation = async (): Promise<{lat: number; lng: number} | null> => {
     try {
-      setLocating(true);
       const permission = Platform.OS === 'ios'
         ? PERMISSIONS.IOS.LOCATION_WHEN_IN_USE
         : PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION;
       let status = await check(permission);
       if (status !== RESULTS.GRANTED) status = await request(permission);
-      if (status !== RESULTS.GRANTED) { setLocating(false); return; }
-      Geolocation.getCurrentPosition(
-        pos => {
-          const {latitude, longitude} = pos.coords;
-          mapRef.current?.injectJavaScript(
-            `handleMsg(JSON.stringify({type:'setCenter',lat:${latitude},lng:${longitude},zoom:16})); true;`
-          );
-          setLocating(false);
-        },
-        () => setLocating(false),
-        {enableHighAccuracy: true, timeout: 8000, maximumAge: 60000},
-      );
-    } catch {
-      setLocating(false);
+      if (status !== RESULTS.GRANTED) {
+        console.log('[MyAddresses] location permission not granted:', status);
+        return null;
+      }
+
+      const highAccuracyPos = await requestPosition({enableHighAccuracy: true, timeout: 8000, maximumAge: 60000});
+      if (highAccuracyPos) return highAccuracyPos;
+
+      console.log('[MyAddresses] retrying with low accuracy…');
+      return await requestPosition({enableHighAccuracy: false, timeout: 15000, maximumAge: 60000});
+    } catch (err) {
+      console.log('[MyAddresses] getDeviceLocation exception:', err);
+      return null;
     }
   };
 
-  const openAdd = () => {
+  const locateMe = async () => {
+    setLocating(true);
+    const pos = await getDeviceLocation();
+    if (pos) recenterMap(pos.lat, pos.lng);
+    setLocating(false);
+  };
+
+  const resetSearch = () => {
+    setSearchQuery('');
+    setSearchResults([]);
+    setShowSearchResults(false);
+    setSearching(false);
+  };
+
+  const openAdd = async () => {
     setEditAddr(null);
     setForm(EMPTY_FORM);
     setShowErrors(false);
-    setMapHtml(buildMapHtml(DEFAULT_LAT, DEFAULT_LNG));
+    resetSearch();
+    // Wait for the device's real location before rendering the map at all, so it
+    // opens centred there directly instead of flashing the hardcoded default first.
+    setMapHtml('');
     setShowModal(true);
+    setLocating(true);
+    const pos = await getDeviceLocation();
+    console.log('[MyAddresses] openAdd centering map on:', pos ?? {lat: DEFAULT_LAT, lng: DEFAULT_LNG, fallback: true});
+    setMapHtml(buildMapHtml(pos?.lat ?? DEFAULT_LAT, pos?.lng ?? DEFAULT_LNG));
+    setLocating(false);
   };
 
   const openEdit = (addr: any) => {
     setEditAddr(addr);
+    resetSearch();
     setForm({
       tag:       addr.label ?? addr.tag ?? 'Home',
       line1:     addr.line1 ?? addr.address ?? '',
@@ -179,6 +324,14 @@ const MyAddressesScreen = ({navigation}: any) => {
     if (!form.line1.trim()) {
       setShowErrors(true);
       Alert.alert('Required', 'Street address is required. Pan the map — it auto-fills.');
+      return;
+    }
+    if (!isLocationAvailable(form.city)) {
+      setShowErrors(true);
+      Alert.alert(
+        'Outside serviceable area',
+        `We currently don't provide services in ${form.city || 'this location'}. Please pin or search a location in ${selectedCity.name}.`,
+      );
       return;
     }
     const payload: any = {
@@ -311,6 +464,12 @@ const MyAddressesScreen = ({navigation}: any) => {
 
           {/* Map */}
           <View style={{height: MAP_HEIGHT, width}}>
+            {!mapHtml && (
+              <View style={[StyleSheet.absoluteFillObject, styles.mapLoading]}>
+                <ActivityIndicator size="large" color="#105641" />
+                <Text style={styles.mapLoadingText}>Finding your location…</Text>
+              </View>
+            )}
             {!!mapHtml && (
               <WebView
                 ref={mapRef}
@@ -367,6 +526,45 @@ const MyAddressesScreen = ({navigation}: any) => {
             </View>
           </View>
 
+          {/* Search — deliberately a sibling of the map View (not nested inside it),
+              so it never ends up under the WebView's own native compositing layer,
+              which on Android can render above sibling RN views regardless of zIndex. */}
+          <View style={[styles.mapSearchWrap, {top: insets.top + sw(12)}]}>
+            <View style={styles.mapSearchBox}>
+              <Ionicons name="search-outline" size={sw(16)} color="#888" />
+              <TextInput
+                style={styles.mapSearchInput}
+                placeholder="Search for a location…"
+                placeholderTextColor="#AAA"
+                value={searchQuery}
+                onChangeText={handleSearchChange}
+                onFocus={() => searchResults.length > 0 && setShowSearchResults(true)}
+              />
+              {searching && <ActivityIndicator size="small" color="#105641" />}
+            </View>
+            {showSearchResults && !searching && (
+              <View style={styles.mapSearchResults}>
+                {searchResults.length === 0 ? (
+                  <Text style={styles.mapSearchResultEmpty}>No results found</Text>
+                ) : (
+                  <ScrollView keyboardShouldPersistTaps="handled" style={{maxHeight: sw(200)}}>
+                    {searchResults.map((result: any, idx: number) => (
+                      <TouchableOpacity
+                        key={`${result.properties.osm_type}-${result.properties.osm_id}-${idx}`}
+                        style={styles.mapSearchResultItem}
+                        activeOpacity={0.7}
+                        onPress={() => handleSelectSearchResult(result)}>
+                        <Text style={styles.mapSearchResultText} numberOfLines={2}>
+                          {photonLabel(result.properties)}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                )}
+              </View>
+            )}
+          </View>
+
           {/* Form */}
           <ScrollView
             style={styles.formScroll}
@@ -378,7 +576,12 @@ const MyAddressesScreen = ({navigation}: any) => {
               <Text style={styles.formTitle}>
                 {editAddr ? 'Edit Address' : 'New Address'}
               </Text>
-              {form.lat != null ? (
+              {form.lat != null && !isLocationAvailable(form.city) ? (
+                <View style={styles.pinOutsideBadge}>
+                  <Ionicons name="warning-outline" size={sw(13)} color="#FB1616" />
+                  <Text style={styles.pinOutsideText}>Outside {selectedCity.name}</Text>
+                </View>
+              ) : form.lat != null ? (
                 <View style={styles.pinOkBadge}>
                   <Ionicons name="checkmark-circle" size={sw(13)} color="#22C55E" />
                   <Text style={styles.pinOkText}>Location set</Text>
@@ -513,15 +716,15 @@ const styles = StyleSheet.create({
     borderColor: '#105641',
   },
   tagPillDefault: {backgroundColor: '#105641', borderColor: '#105641'},
-  tagText: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#105641', fontWeight: '600'},
+  tagText: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#105641', fontWeight: '600'},
   tagTextDefault: {color: '#FFFFFF'},
   defaultBadge: {backgroundColor: '#EAF5F0', borderRadius: sw(4), paddingHorizontal: sw(8), paddingVertical: sw(2)},
-  defaultBadgeText: {fontFamily: fonts.textFont, fontSize: sw(10), color: '#105641'},
+  defaultBadgeText: {fontFamily: fonts.textFont, fontSize: sw(12), color: '#105641'},
   addressTextWrap: {gap: sw(3)},
   addressLine1: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#171816', fontWeight: '500'},
   addressLine2: {fontFamily: fonts.textFont, fontSize: sw(12), color: '#656565'},
   coordRow: {flexDirection: 'row', alignItems: 'center', gap: sw(3), marginTop: sw(2)},
-  coordText: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#105641'},
+  coordText: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#105641'},
   cardActions: {
     flexDirection: 'row',
     borderTopWidth: 1,
@@ -558,6 +761,14 @@ const styles = StyleSheet.create({
   /* ── Full-screen form modal ── */
   formRoot: {flex: 1, backgroundColor: '#F5F5F5'},
 
+  mapLoading: {
+    backgroundColor: '#e8e0d8',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: sw(10),
+  },
+  mapLoadingText: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#5C5C5C'},
+
   /* Map overlay elements */
   mapBackBtn: {
     position: 'absolute',
@@ -570,6 +781,60 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     zIndex: 10,
     elevation: 4,
+  },
+  mapSearchWrap: {
+    position: 'absolute',
+    left: sw(62),
+    right: sw(16),
+    zIndex: 10,
+    elevation: 10,
+  },
+  mapSearchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: sw(8),
+    height: sw(38),
+    borderRadius: sw(19),
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    paddingHorizontal: sw(14),
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+  },
+  mapSearchInput: {
+    flex: 1,
+    fontFamily: fonts.textFont,
+    fontSize: sw(13),
+    color: '#171816',
+    padding: 0,
+  },
+  mapSearchResults: {
+    marginTop: sw(6),
+    backgroundColor: '#FFFFFF',
+    borderRadius: sw(12),
+    overflow: 'hidden',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+  },
+  mapSearchResultItem: {
+    paddingHorizontal: sw(14),
+    paddingVertical: sw(10),
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  mapSearchResultText: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#333333'},
+  mapSearchResultEmpty: {
+    paddingHorizontal: sw(14),
+    paddingVertical: sw(14),
+    fontFamily: fonts.textFont,
+    fontSize: sw(13),
+    color: '#A3A3A3',
+    textAlign: 'center',
   },
   pinContainer: {
     position: 'absolute',
@@ -612,7 +877,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: sw(10),
     borderRadius: sw(20),
   },
-  geocodingText: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#FFFFFF'},
+  geocodingText: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#FFFFFF'},
   dragHint: {
     position: 'absolute',
     bottom: sw(62),
@@ -622,7 +887,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: sw(12),
     borderRadius: sw(20),
   },
-  dragHintText: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#FFFFFF'},
+  dragHintText: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#FFFFFF'},
 
   /* Form */
   formScroll: {flex: 1, backgroundColor: '#F5F5F5'},
@@ -643,7 +908,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: sw(8),
     borderRadius: sw(12),
   },
-  pinOkText: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#22C55E', fontWeight: '600'},
+  pinOkText: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#22C55E', fontWeight: '600'},
   pinPendingBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -653,7 +918,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: sw(8),
     borderRadius: sw(12),
   },
-  pinPendingText: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#FF9500', fontWeight: '600'},
+  pinPendingText: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#FF9500', fontWeight: '600'},
+  pinOutsideBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: sw(4),
+    backgroundColor: '#FEE2E2',
+    paddingVertical: sw(4),
+    paddingHorizontal: sw(8),
+    borderRadius: sw(12),
+  },
+  pinOutsideText: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#FB1616', fontWeight: '600'},
 
   tagSelector: {flexDirection: 'row', gap: sw(8)},
   tagOption: {

@@ -125,6 +125,13 @@ const styles = StyleSheet.create({
   container: {
     backgroundColor: TAB_BG,
     paddingHorizontal: sw(16),
+    borderTopLeftRadius: sw(20),
+    borderTopRightRadius: sw(20),
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: -3},
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 8,
   },
   tabRow: {
     flexDirection: 'row',
@@ -133,11 +140,11 @@ const styles = StyleSheet.create({
     height: sw(62),
   },
 
-  // Active tab: semi-transparent bg, rounded bottom corners
+  // Active tab: soft gold-tinted bg, rounded bottom corners
   tabActive: {
     width: sw(66),
     height: sw(62),
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: 'rgba(253, 215, 122, 0.10)',
     borderBottomLeftRadius: 16,
     borderBottomRightRadius: 16,
     alignItems: 'center',
@@ -159,12 +166,12 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 16,
   },
   labelActive: {
-    fontFamily: fonts.textFont,
-    fontSize: sw(12),
-    fontWeight: '700',
-    lineHeight: sw(18),
+    fontFamily: fonts.title,
+    fontSize: sw(11),
+    lineHeight: sw(15),
     color: ACTIVE_COLOR,
     textAlign: 'center',
+    letterSpacing: 0.3,
   },
 
   // Inactive tab: centered, slight top offset
@@ -177,12 +184,12 @@ const styles = StyleSheet.create({
     gap: sw(4),
   },
   labelInactive: {
-    fontFamily: fonts.textFont,
-    fontSize: sw(10),
-    fontWeight: '400',
+    fontFamily: fonts.secondry,
+    fontSize: sw(11),
     lineHeight: sw(15),
-    color: INACTIVE_COLOR,
+    color: 'rgba(255, 255, 255, 0.75)',
     textAlign: 'center',
+    letterSpacing: 0.2,
   },
 
   cartIconWrapper: {position: 'relative'},
@@ -202,7 +209,7 @@ const styles = StyleSheet.create({
   },
   cartCountText: {
     color: '#FFFFFF',
-    fontSize: sw(9),
+    fontSize: sw(11),
     fontWeight: '800',
     fontFamily: fonts.title,
   },

@@ -59,8 +59,6 @@ type SavedAddress = {
   lng?: number | null;
 };
 
-const PLATFORM_FEE = 30;
-
 // Service hours are 8 AM - 8 PM, matching the website's checkout.
 const BOOKING_WINDOW_START_HOUR = 8;
 const BOOKING_WINDOW_END_HOUR = 20;
@@ -79,6 +77,8 @@ const getDefaultDate = () => {
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
 const ONE_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
+const MIN_BOOKING_AMOUNT = 500;
+const MAX_SERVICE_QTY = 5;
 const formatDate = (d: Date) =>
   d.toLocaleDateString('en-IN', {month: 'short', day: 'numeric', year: 'numeric'});
 const formatTime = (d: Date) =>
@@ -96,7 +96,20 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
   const insets = useSafeAreaInsets();
   const dispatch = useDispatch<any>();
   const {profile, error: profileError} = useSelector((state: RootState) => state.User as any);
+  const selectedCity = useSelector((state: RootState) => (state as any).City?.selectedCity);
   const addresses: SavedAddress[] = profile?.addresses ?? [];
+
+  // Same rule as the website's Checkout and MyAddressesScreen: without a serviceable
+  // city chosen there's nothing to validate against, so nothing is blocked; once one's
+  // picked, only addresses within it can be booked against.
+  const isLocationAvailable = (city?: string | null) => {
+    if (!selectedCity) return true;
+    if (!city) return false;
+    return city.toLowerCase().includes(selectedCity.name.toLowerCase());
+  };
+  const selectableAddresses = selectedCity
+    ? addresses.filter(a => isLocationAvailable(a.city))
+    : addresses;
 
   const [selectedAddr, setSelectedAddr] = useState<SavedAddress | null>(null);
   const [showAddrModal, setShowAddrModal] = useState(false);
@@ -202,13 +215,23 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
     setAddSvcCart([]);
   }, [route?.params?.services]);
 
-  // Auto-select default address once profile loads
+  // Auto-select default address once profile loads — only from addresses within the
+  // selected city, so an out-of-city default never gets silently picked.
   useEffect(() => {
-    if (addresses.length > 0 && !selectedAddr) {
-      const def = addresses.find(a => a.isDefault) ?? addresses[0];
+    if (selectableAddresses.length > 0 && !selectedAddr) {
+      const def = selectableAddresses.find(a => a.isDefault) ?? selectableAddresses[0];
       setSelectedAddr(def);
     }
-  }, [addresses]);
+  }, [addresses, selectedCity]);
+
+  // If the app-wide selected city changes to somewhere the current address doesn't
+  // belong, drop it rather than silently letting an out-of-city booking through.
+  useEffect(() => {
+    if (selectedAddr && !isLocationAvailable(selectedAddr.city)) {
+      setSelectedAddr(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCity]);
 
   // Package-tagged items keep the package's own fixed price; anything else (a regular
   // booking's items, or extra services added on top of a package) bills at its own price.
@@ -250,11 +273,11 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
   const couponDiscount = appliedCoupon?.discountAmount ?? 0;
   const taxableAmount = Math.max(0, subtotal - couponDiscount);
   const tax = Math.round(taxableAmount * 0.05); // GST — backend recomputes the authoritative weighted rate on submit
-  const total = taxableAmount + tax + PLATFORM_FEE;
+  const total = taxableAmount + tax;
 
   const increment = (id: string | number) => {
     if (isCartMode) dispatch(incrementServiceQty(String(id)));
-    else setServices(prev => prev.map(s => s.id === id ? {...s, qty: s.qty + 1} : s));
+    else setServices(prev => prev.map(s => s.id === id ? {...s, qty: Math.min(s.qty + 1, MAX_SERVICE_QTY)} : s));
   };
 
   const decrement = (id: string | number) => {
@@ -265,7 +288,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
   };
 
   const incrementPackageQty = () =>
-    setServices(prev => prev.map(s => (s as any).isPackageItem ? {...s, qty: s.qty + 1} : s));
+    setServices(prev => prev.map(s => (s as any).isPackageItem ? {...s, qty: Math.min(s.qty + 1, MAX_SERVICE_QTY)} : s));
 
   const decrementPackageQty = () =>
     setServices(prev => prev.map(s => (s as any).isPackageItem && s.qty > 1 ? {...s, qty: s.qty - 1} : s));
@@ -404,8 +427,22 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
       Alert.alert('No services', 'Please add at least one service.');
       return;
     }
+    if (subtotal < MIN_BOOKING_AMOUNT) {
+      Alert.alert(
+        'Minimum Booking Amount',
+        `Please add services worth at least ₹${MIN_BOOKING_AMOUNT} to continue. You're ₹${MIN_BOOKING_AMOUNT - subtotal} away.`,
+      );
+      return;
+    }
     if (!selectedAddr) {
       Alert.alert('Address Required', 'Please select a delivery address.');
+      return;
+    }
+    if (!isLocationAvailable(selectedAddr.city)) {
+      Alert.alert(
+        'Outside serviceable area',
+        `This address is outside ${selectedCity?.name ?? 'your serviceable area'}. Please choose or add an address in that location.`,
+      );
       return;
     }
     const err = validateDate(selectedDate);
@@ -465,10 +502,19 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
 
       const result = await api.post(endpoints.BOOKINGS, isCartMode
         ? {
-            packages: cartPackagesPayload,
-            extraServices: servicesToSubmit.length
-              ? servicesToSubmit.map(s => ({id: String(s.id), qty: s.qty}))
-              : undefined,
+            // Backend requires `services` (not `extraServices`) whenever there's no
+            // package in the booking — only send `packages`/`extraServices` when the
+            // cart actually has a package, same as the website's Checkout.
+            ...(cartPackagesPayload.length > 0
+              ? {
+                  packages: cartPackagesPayload,
+                  extraServices: servicesToSubmit.length
+                    ? servicesToSubmit.map(s => ({id: String(s.id), qty: s.qty}))
+                    : undefined,
+                }
+              : {
+                  services: servicesToSubmit.map(s => ({id: String(s.id), qty: s.qty})),
+                }),
             address: {
               label: addrLabel(selectedAddr),
               line1: addrLine(selectedAddr),
@@ -508,11 +554,12 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
             packageQty: routePackageId ? currentPackageQty : undefined,
             paymentMode,
           });
-      if (isCartMode) dispatch(clearCart());
       const bk = result.data?.data;
-      let paymentPending = false;
 
-      if (paymentMode === 'online') {
+      // Retries payment for the booking that's already been created (never creates a
+      // second one) — resolves true only once Razorpay + the backend's signature check
+      // both confirm the payment actually went through.
+      const attemptOnlinePayment = async (): Promise<boolean> => {
         const payResult = await payWithRazorpay({
           bookingId: bk?.id,
           bookingCode: bk?.bookingCode,
@@ -520,28 +567,50 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
           name: profile?.name,
           email: profile?.email,
         });
-        if (!payResult.success) {
-          paymentPending = true;
+        if (payResult.success) return true;
+        return new Promise<boolean>(resolve => {
           Alert.alert(
-            'Payment Pending',
-            `Your booking ${bk?.bookingCode} is saved, but payment wasn't completed. You can finish payment anytime from My Bookings.`,
+            'Payment Not Completed',
+            `${payResult.message} Your booking ${bk?.bookingCode} is saved as pending — you can retry now or pay later from My Bookings.`,
+            [
+              {text: 'Pay Later', style: 'cancel', onPress: () => resolve(false)},
+              {text: 'Retry Payment', onPress: () => attemptOnlinePayment().then(resolve)},
+            ],
           );
-        }
-      }
+        });
+      };
+
+      // Only the OrderPlaced/success flow means payment is actually confirmed — a
+      // pending online payment sends the user to the booking's own detail screen (where
+      // "Pay Now" already lives) instead of a success screen that hasn't been earned yet.
+      const paid = paymentMode === 'online' ? await attemptOnlinePayment() : true;
+
+      // Only clear the cart once the booking is actually done (paid online, or COD which
+      // has no payment step) — clearing it right after creation emptied this screen's
+      // bill/service list on screen before Razorpay even opened, looking like an already
+      // -placed order.
+      if (isCartMode && paid) dispatch(clearCart());
 
       // Reset (not navigate/push) so the cart/service-selection/checkout screens are
-      // dropped from history entirely — otherwise the back button from OrderPlaced (or
-      // from BookingDetail, which it auto-redirects to) would land back on stale checkout.
-      navigation?.reset({
-        index: 1,
-        routes: [
-          {name: 'Main'},
-          {
-            name: 'OrderPlaced',
-            params: {bookingCode: bk?.bookingCode, bookingId: bk?.id, paymentPending},
-          },
-        ],
-      });
+      // dropped from history entirely — otherwise the back button would land back on
+      // stale checkout.
+      navigation?.reset(
+        paid
+          ? {
+              index: 1,
+              routes: [
+                {name: 'Main'},
+                {name: 'OrderPlaced', params: {bookingCode: bk?.bookingCode, bookingId: bk?.id}},
+              ],
+            }
+          : {
+              index: 1,
+              routes: [
+                {name: 'Main'},
+                {name: 'BookingDetail', params: {bookingId: bk?.id}},
+              ],
+            },
+      );
     } catch (err: any) {
       Alert.alert(
         'Booking failed',
@@ -638,6 +707,16 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
               onPress={() => navigation?.navigate('MyAddresses')}>
               <Ionicons name="add-circle-outline" size={sw(20)} color="#105641" />
               <Text style={styles.addAddrText}>Add a saved address to continue</Text>
+            </TouchableOpacity>
+          ) : selectableAddresses.length === 0 ? (
+            <TouchableOpacity
+              style={styles.addAddrBtn}
+              activeOpacity={0.8}
+              onPress={() => navigation?.navigate('MyAddresses')}>
+              <Ionicons name="warning-outline" size={sw(20)} color="#FB1616" />
+              <Text style={styles.addAddrText}>
+                No saved addresses in {selectedCity?.name}. Add one to continue.
+              </Text>
             </TouchableOpacity>
           ) : selectedAddr ? (
             <View style={styles.addrBlock}>
@@ -1054,10 +1133,6 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
                 </View>
               )}
               <View style={styles.billRow}>
-                <Text style={styles.billLabel}>Platform Fee</Text>
-                <Text style={styles.billValue}>₹{PLATFORM_FEE}</Text>
-              </View>
-              <View style={styles.billRow}>
                 <Text style={styles.billLabel}>Taxes & GST (5%)</Text>
                 <Text style={styles.billValue}>₹{tax}</Text>
               </View>
@@ -1125,9 +1200,17 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
         <View style={[styles.modalSheet, {paddingBottom: insets.bottom + sw(16)}]}>
           <View style={styles.modalHandle} />
           <Text style={styles.modalTitle}>Select Address</Text>
+          {selectedCity && (
+            <Text style={styles.modalSubtitle}>Showing addresses in {selectedCity.name}</Text>
+          )}
 
           <ScrollView showsVerticalScrollIndicator={false}>
-            {addresses.map(addr => {
+            {selectedCity && selectableAddresses.length === 0 && (
+              <Text style={styles.modalEmptyText}>
+                No saved addresses in {selectedCity.name} yet. Add one below.
+              </Text>
+            )}
+            {selectableAddresses.map(addr => {
               const addrId = addr._id ?? addr.id;
               const selId  = selectedAddr?._id ?? selectedAddr?.id;
               const active = addrId === selId;
@@ -1219,6 +1302,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
               data={filteredAddSvcs}
               keyExtractor={item => String(item.id)}
               style={{flex: 1}}
+              keyboardShouldPersistTaps="handled"
               contentContainerStyle={styles.addSvcListContent}
               renderItem={({item}) => {
                 const cartItem = addSvcCart.find(c => c.svc.id === item.id);
@@ -1243,7 +1327,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
                           <Ionicons name="remove-circle" size={sw(22)} color="#105641" />
                         </TouchableOpacity>
                         <Text style={styles.addSvcInlineQtyNum}>{cartItem.qty}</Text>
-                        <TouchableOpacity onPress={() => setAddSvcCart(prev => prev.map(c => c.svc.id === item.id ? {...c, qty: c.qty + 1} : c))}>
+                        <TouchableOpacity onPress={() => setAddSvcCart(prev => prev.map(c => c.svc.id === item.id ? {...c, qty: Math.min(c.qty + 1, MAX_SERVICE_QTY)} : c))}>
                           <Ionicons name="add-circle" size={sw(22)} color="#105641" />
                         </TouchableOpacity>
                       </View>
@@ -1274,6 +1358,14 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
       </Modal>
 
       {/* Bottom bar */}
+      {subtotal > 0 && subtotal < MIN_BOOKING_AMOUNT && (
+        <View style={styles.minAmountBanner}>
+          <Ionicons name="information-circle" size={sw(14)} color="#B45309" />
+          <Text style={styles.minAmountText}>
+            Add ₹{MIN_BOOKING_AMOUNT - subtotal} more to reach the ₹{MIN_BOOKING_AMOUNT} minimum booking amount
+          </Text>
+        </View>
+      )}
       <View style={[styles.bottomBar, {paddingBottom: insets.bottom + sw(8)}]}>
         <View>
           <Text style={styles.bottomPrice}>₹{total}</Text>
@@ -1283,9 +1375,9 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
           </View>
         </View>
         <TouchableOpacity
-          style={[styles.continueBtn, (booking || !selectedAddr) && {opacity: 0.6}]}
+          style={[styles.continueBtn, (booking || !selectedAddr || subtotal < MIN_BOOKING_AMOUNT) && {opacity: 0.6}]}
           activeOpacity={0.85}
-          disabled={booking || !selectedAddr}
+          disabled={booking || !selectedAddr || subtotal < MIN_BOOKING_AMOUNT}
           onPress={handleBooking}>
           {booking ? (
             <ActivityIndicator color="#FFFFFF" />
@@ -1423,9 +1515,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: sw(6),
     paddingVertical: sw(1),
   },
-  defaultChipText: {fontFamily: fonts.textFont, fontSize: sw(10), color: '#105641'},
+  defaultChipText: {fontFamily: fonts.textFont, fontSize: sw(12), color: '#105641'},
   addrLine1: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#171816', fontWeight: '500'},
-  addrLine2: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#777'},
+  addrLine2: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#777'},
   changeBtn: {
     borderWidth: 1,
     borderColor: '#105641',
@@ -1441,7 +1533,7 @@ const styles = StyleSheet.create({
     gap: sw(8),
     paddingVertical: sw(10),
   },
-  addAddrText: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#105641', fontWeight: '500'},
+  addAddrText: {flex: 1, flexShrink: 1, fontFamily: fonts.textFont, fontSize: sw(13), color: '#105641', fontWeight: '500'},
 
   /* ── Service card ── */
   serviceCard: {
@@ -1494,7 +1586,7 @@ const styles = StyleSheet.create({
   },
   includedTagText: {
     fontFamily: fonts.textFont,
-    fontSize: sw(11),
+    fontSize: sw(13),
     fontWeight: '600',
     color: '#105641',
   },
@@ -1520,7 +1612,7 @@ const styles = StyleSheet.create({
   },
   packageBadgeText: {
     fontFamily: fonts.title,
-    fontSize: sw(10),
+    fontSize: sw(12),
     fontWeight: '800',
     color: '#012823',
     letterSpacing: 0.5,
@@ -1558,14 +1650,14 @@ const styles = StyleSheet.create({
   },
   packageSavingChipText: {
     fontFamily: fonts.title,
-    fontSize: sw(11),
+    fontSize: sw(13),
     fontWeight: '700',
     color: '#FDD77A',
   },
   packageBannerSub: {
     flex: 1,
     fontFamily: fonts.textFont,
-    fontSize: sw(11),
+    fontSize: sw(13),
     color: 'rgba(255,255,255,0.55)',
   },
   packageQtyRow: {
@@ -1651,7 +1743,7 @@ const styles = StyleSheet.create({
     borderColor: '#FEFEFE',
   },
   dateCardError: {borderWidth: 1, borderColor: '#FF2F2F'},
-  dateErrorText: {fontFamily: fonts.textFont, fontSize: sw(10), color: '#FF2F2F', marginTop: sw(2)},
+  dateErrorText: {fontFamily: fonts.textFont, fontSize: sw(12), color: '#FF2F2F', marginTop: sw(2)},
   dateLabel: {fontFamily: fonts.textFont, fontSize: sw(12), color: '#012823'},
   dateValue: {fontFamily: fonts.textFont, fontSize: sw(14), fontWeight: '500', color: '#171816'},
 
@@ -1669,7 +1761,7 @@ const styles = StyleSheet.create({
   offerBannerLeft: {flexDirection: 'row', alignItems: 'center', gap: sw(8), flex: 1},
   offerBannerGift: {fontSize: sw(24)},
   offerBannerTitle: {fontFamily: fonts.title, fontSize: sw(12), fontWeight: '700', color: '#105641'},
-  offerBannerSub: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#444', marginTop: sw(2)},
+  offerBannerSub: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#444', marginTop: sw(2)},
   offerAddBtn: {
     backgroundColor: '#105641',
     borderRadius: sw(8),
@@ -1700,7 +1792,7 @@ const styles = StyleSheet.create({
   paymentModeOptionDisabled: {opacity: 0.45},
   paymentModeLabel: {fontFamily: fonts.textFont, fontSize: sw(13), fontWeight: '600', color: '#171816'},
   paymentModeLabelActive: {color: '#105641'},
-  paymentModeSub: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#888', marginTop: sw(2)},
+  paymentModeSub: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#888', marginTop: sw(2)},
 
   /* ── Coupon ── */
   couponCard: {
@@ -1721,8 +1813,8 @@ const styles = StyleSheet.create({
   },
   couponAppliedLeft: {flexDirection: 'row', alignItems: 'center', gap: sw(8), flex: 1},
   couponAppliedCode: {fontFamily: fonts.title, fontSize: sw(13), fontWeight: '700', color: '#105641'},
-  couponAppliedDesc: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#555', marginTop: sw(2)},
-  couponErrorText: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#FF2F2F'},
+  couponAppliedDesc: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#555', marginTop: sw(2)},
+  couponErrorText: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#FF2F2F'},
   browseCouponsBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1761,7 +1853,7 @@ const styles = StyleSheet.create({
   toPayRow: {flexDirection: 'row', alignItems: 'center', gap: sw(8)},
   toPayTextBlock: {flex: 1},
   toPayLabel: {fontFamily: fonts.textFont, fontSize: sw(14), fontWeight: '700', color: '#303030'},
-  toPaySub: {fontFamily: fonts.textFont, fontSize: sw(10), color: '#575757'},
+  toPaySub: {fontFamily: fonts.textFont, fontSize: sw(12), color: '#575757'},
   toPayAmount: {fontFamily: fonts.textFont, fontSize: sw(14), fontWeight: '700', color: '#303030'},
 
   /* ── Address picker modal ── */
@@ -1790,7 +1882,20 @@ const styles = StyleSheet.create({
     fontSize: sw(16),
     fontWeight: '700',
     color: '#171816',
-    marginBottom: sw(14),
+    marginBottom: sw(4),
+  },
+  modalSubtitle: {
+    fontFamily: fonts.textFont,
+    fontSize: sw(12),
+    color: '#888',
+    marginBottom: sw(10),
+  },
+  modalEmptyText: {
+    fontFamily: fonts.textFont,
+    fontSize: sw(13),
+    color: '#A3A3A3',
+    textAlign: 'center',
+    paddingVertical: sw(20),
   },
   modalAddrCard: {
     flexDirection: 'row',
@@ -1887,7 +1992,7 @@ const styles = StyleSheet.create({
   addSvcItemSelected: {borderColor: '#105641', backgroundColor: 'rgba(16,86,65,0.05)'},
   addSvcItemName: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#171816', fontWeight: '500', marginBottom: sw(2)},
   addSvcItemNameSelected: {color: '#105641', fontWeight: '700'},
-  addSvcItemMeta: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#5C5C5C'},
+  addSvcItemMeta: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#5C5C5C'},
   addSvcInlineQty: {flexDirection: 'row', alignItems: 'center', gap: sw(6)},
   addSvcInlineQtyNum: {fontFamily: fonts.title, fontSize: sw(14), fontWeight: '700', color: '#105641', minWidth: sw(20), textAlign: 'center'},
   addSvcEmptyText: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#888', textAlign: 'center', paddingVertical: sw(32)},
@@ -1904,6 +2009,23 @@ const styles = StyleSheet.create({
   addSvcConfirmBtn: {flex: 2, height: sw(46), borderRadius: sw(10), backgroundColor: '#105641', alignItems: 'center', justifyContent: 'center'},
   addSvcConfirmBtnDisabled: {backgroundColor: '#AAAAAA'},
   addSvcConfirmText: {fontFamily: fonts.title, fontSize: sw(14), fontWeight: '700', color: '#FFFFFF'},
+
+  /* ── Minimum booking amount banner ── */
+  minAmountBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: sw(6),
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: sw(16),
+    paddingVertical: sw(8),
+  },
+  minAmountText: {
+    flex: 1,
+    fontFamily: fonts.textFont,
+    fontSize: sw(12),
+    color: '#B45309',
+    fontWeight: '600',
+  },
 
   /* ── Bottom bar ── */
   bottomBar: {

@@ -51,6 +51,16 @@ const JobChecklistScreen = ({navigation, route}: any) => {
   const [addonPrice, setAddonPrice] = useState('');
   const {alertConfig, showAlert, hideAlert} = useAppAlert();
 
+  // Add Package modal — fixed packages apply their fixed service list immediately;
+  // flexible packages need the partner to pick `serviceCount` services first.
+  const [showAddPackageModal, setShowAddPackageModal] = useState(false);
+  const [availablePackages, setAvailablePackages] = useState<any[]>([]);
+  const [loadingPkgs, setLoadingPkgs] = useState(false);
+  const [pickingPackage, setPickingPackage] = useState<any>(null);
+  const [flexiblePicks, setFlexiblePicks] = useState<number[]>([]);
+  const [addingPkg, setAddingPkg] = useState(false);
+  const [removingPkgId, setRemovingPkgId] = useState<number | null>(null);
+
   const fetchAllServices = useCallback(async () => {
     setLoadingSvcs(true);
     const svcPath = endpoints.SERVICES.replace(/^\//, '');
@@ -144,6 +154,35 @@ const JobChecklistScreen = ({navigation, route}: any) => {
   const visibleServices = services.filter(s => !s._removed);
   const displayTotal = recalcTotal(services);
 
+  // Group items that were part of a package/combo into a single card instead of
+  // listing each of their services as its own line — matching the customer app/website.
+  const packageItems = visibleServices.filter(s => s.addedByPackage);
+  const otherVisibleServices = visibleServices.filter(s => !s.addedByPackage);
+  const otherVisibleTotal = otherVisibleServices.reduce((sum, s) => sum + (s.price ?? 0) * (s.qty || 1), 0);
+  const multiPackages: any[] = parseServices(job?.packages);
+  const packageGroups = multiPackages.length > 0
+    ? multiPackages.map((pkg: any) => ({
+        key: pkg.packageId,
+        title: pkg.title,
+        price: Number(pkg.price || 0) * (pkg.qty || 1),
+        items: packageItems.filter((s: any) => s.packageId === pkg.packageId),
+      }))
+    : packageItems.length > 0
+      ? [{
+          key: job?.packageId,
+          title: job?.package?.title ?? 'Package Deal',
+          price: Math.max(0, (job?.baseAmount ?? totalAmount) - otherVisibleTotal),
+          items: packageItems,
+        }]
+      : [];
+  // A package already on the booking can't be added again (the backend rejects it) —
+  // filter it out of the picker up front instead of letting the partner hit that error.
+  const existingPackageIds = new Set<number>([
+    ...(job?.packageId != null ? [job.packageId] : []),
+    ...multiPackages.map((p: any) => p.packageId),
+  ]);
+  const addablePackages = availablePackages.filter((p: any) => !existingPackageIds.has(p.id));
+
   // Diff against the last-saved baseline to build the API payload
   const pendingAdds = services.filter(s => s._origIndex == null && !s._removed);
   const pendingRemoveIndices = services.filter(s => s._origIndex != null && s._removed).map(s => s._origIndex);
@@ -180,6 +219,90 @@ const JobChecklistScreen = ({navigation, route}: any) => {
       showAlert('Error', e.response?.data?.message ?? 'Failed to save changes.');
     }
     setSaving(false);
+  };
+
+  // Pulls a fresh booking (post add/remove-package) back into local state — same
+  // shape handleSaveChanges applies after its own save.
+  const syncFromBooking = (updated: any) => {
+    setServices(tagWithOrigIndex(parseServices(updated.services)));
+    setTotalAmount(parseFloat(updated.totalAmount ?? 0));
+    setJob((prev: any) => ({...prev, services: updated.services, packages: updated.packages, packageId: updated.packageId, totalAmount: updated.totalAmount, partnerEarning: updated.partnerEarning, taxAmount: updated.taxAmount}));
+  };
+
+  const fetchPackages = useCallback(async () => {
+    if (availablePackages.length > 0) return;
+    setLoadingPkgs(true);
+    try {
+      const result = await networkCall('api/v1/packages', 'GET');
+      const raw = result.response?.data?.data ?? result.response?.data ?? [];
+      setAvailablePackages(Array.isArray(raw) ? raw : []);
+    } catch {}
+    setLoadingPkgs(false);
+  }, [availablePackages.length]);
+
+  const openAddPackageModal = () => {
+    setPickingPackage(null);
+    setFlexiblePicks([]);
+    fetchPackages();
+    setShowAddPackageModal(true);
+  };
+
+  const submitAddPackage = async (packageId: number, items: {id: number; qty: number}[]) => {
+    if (!job?.id) return;
+    setAddingPkg(true);
+    try {
+      const res = await api.patch(endpoints.PARTNER_ADD_PACKAGE(String(job.id)), {packageId, services: items});
+      if (res.data?.status) {
+        syncFromBooking(res.data.data);
+        setShowAddPackageModal(false);
+        setPickingPackage(null);
+        setFlexiblePicks([]);
+      }
+    } catch (e: any) {
+      showAlert('Error', e.response?.data?.message ?? 'Failed to add package. Please try again.');
+    }
+    setAddingPkg(false);
+  };
+
+  const handleAddFixedPackage = (pkg: any) => {
+    const items = (pkg.services || []).map((s: any) => ({id: s.serviceId ?? s.id, qty: 1}));
+    submitAddPackage(pkg.id, items);
+  };
+
+  const handlePickFlexible = (pkg: any) => {
+    setPickingPackage(pkg);
+    setFlexiblePicks([]);
+    if (allServices.length === 0) fetchAllServices();
+  };
+
+  const toggleFlexiblePick = (serviceId: number) => {
+    setFlexiblePicks(prev => {
+      if (prev.includes(serviceId)) return prev.filter(id => id !== serviceId);
+      if (prev.length >= (pickingPackage?.serviceCount ?? 0)) return prev;
+      return [...prev, serviceId];
+    });
+  };
+
+  const handleConfirmFlexiblePackage = () => {
+    if (!pickingPackage || flexiblePicks.length !== pickingPackage.serviceCount) return;
+    submitAddPackage(pickingPackage.id, flexiblePicks.map(id => ({id, qty: 1})));
+  };
+
+  const handleRemovePackage = (packageId: number | null, title: string) => {
+    if (!job?.id) return;
+    showAlert('Remove Package', `Remove "${title}" from this booking? Its services will be dropped and any remaining services will be billed at their normal price.`, [
+      {text: 'Cancel', style: 'cancel'},
+      {text: 'Remove', style: 'destructive', onPress: async () => {
+        setRemovingPkgId(packageId ?? -1);
+        try {
+          const res = await api.patch(endpoints.PARTNER_REMOVE_PACKAGE(String(job.id)), {packageId});
+          if (res.data?.status) syncFromBooking(res.data.data);
+        } catch (e: any) {
+          showAlert('Error', e.response?.data?.message ?? 'Failed to remove package. Please try again.');
+        }
+        setRemovingPkgId(null);
+      }},
+    ]);
   };
 
   // The booking only actually moves to "in_progress" here — once the partner has
@@ -286,18 +409,51 @@ const JobChecklistScreen = ({navigation, route}: any) => {
             <Text style={styles.sectionTitle}>
               Services ({visibleServices.length})
             </Text>
-            <TouchableOpacity style={styles.addInlineBtn} onPress={openModal} activeOpacity={0.85}>
-              <Ionicons name="add-circle-outline" size={sw(14)} color="#105641" />
-              <Text style={styles.addInlineText}>Add</Text>
-            </TouchableOpacity>
+            <View style={{flexDirection: 'row', gap: sw(8)}}>
+              <TouchableOpacity style={styles.addInlineBtn} onPress={openAddPackageModal} activeOpacity={0.85}>
+                <Ionicons name="gift-outline" size={sw(14)} color="#105641" />
+                <Text style={styles.addInlineText}>Add Package</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.addInlineBtn} onPress={openModal} activeOpacity={0.85}>
+                <Ionicons name="add-circle-outline" size={sw(14)} color="#105641" />
+                <Text style={styles.addInlineText}>Add</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
           {visibleServices.length === 0 && (
             <Text style={styles.emptyServices}>No services. Tap Add to include services.</Text>
           )}
 
+          {packageGroups.map((group) => (
+            <View key={group.key ?? group.title} style={[styles.svcRow, {alignItems: 'flex-start'}]}>
+              <View style={{flex: 1}}>
+                <View style={{flexDirection: 'row', alignItems: 'center', gap: sw(6), flexWrap: 'wrap'}}>
+                  <Text style={styles.svcName}>{group.title}</Text>
+                  <View style={styles.packageBadge}>
+                    <Text style={styles.packageBadgeText}>Package</Text>
+                  </View>
+                </View>
+                <View style={{marginTop: sw(4)}}>
+                  {group.items.map((s: any, i: number) => (
+                    <Text key={s._id ?? s.id ?? i} style={styles.metaChipText}>{i + 1}. {s.name}</Text>
+                  ))}
+                </View>
+                <TouchableOpacity
+                  onPress={() => handleRemovePackage(group.key, group.title)}
+                  disabled={removingPkgId != null}
+                  style={styles.removePkgBtn}>
+                  <Text style={styles.removePkgBtnText}>
+                    {removingPkgId === (group.key ?? -1) ? 'Removing…' : 'Remove Package'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.svcPrice}>₹{Number(group.price).toLocaleString('en-IN')}</Text>
+            </View>
+          ))}
+
           {services.map((svc: any, idx: number) => {
-            if (svc._removed) return null;
+            if (svc._removed || svc.addedByPackage) return null;
             const imgUri = resolveImageUrl(svc.image) ?? FALLBACK_IMG;
             const isFree = svc.addedByOffer || svc.price === 0;
             const commission = commissionLine(svc);
@@ -564,6 +720,114 @@ const JobChecklistScreen = ({navigation, route}: any) => {
         </View>
       </Modal>
 
+      {/* Add Package Modal */}
+      <Modal visible={showAddPackageModal} animationType="slide" transparent onRequestClose={() => setShowAddPackageModal(false)}>
+        <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={() => setShowAddPackageModal(false)} />
+        <View style={[styles.sheet, {paddingBottom: insets.bottom + sw(16)}]}>
+          <View style={styles.handle} />
+          <Text style={styles.sheetTitle}>{pickingPackage ? pickingPackage.title : 'Add a Package'}</Text>
+
+          {!pickingPackage ? (
+            loadingPkgs ? (
+              <ActivityIndicator color="#105641" style={{marginVertical: sw(24)}} />
+            ) : (
+              <FlatList
+                data={addablePackages}
+                keyExtractor={item => String(item.id)}
+                style={{maxHeight: sw(360)}}
+                showsVerticalScrollIndicator={false}
+                renderItem={({item}) => (
+                  <View style={styles.pkgPickCard}>
+                    <View style={{flex: 1}}>
+                      <View style={{flexDirection: 'row', alignItems: 'center', gap: sw(6)}}>
+                        <Text style={styles.pickName}>{item.title}</Text>
+                        <View style={[styles.pkgTypeBadge, item.packageType === 'fixed' ? styles.pkgTypeBadgeFixed : styles.pkgTypeBadgeFlex]}>
+                          <Text style={[styles.pkgTypeBadgeText, {color: item.packageType === 'fixed' ? '#105641' : '#1D4ED8'}]}>
+                            {item.packageType === 'fixed' ? 'FIXED' : 'FLEXIBLE'}
+                          </Text>
+                        </View>
+                      </View>
+                      <Text style={styles.pickMeta}>
+                        {item.packageType === 'fixed'
+                          ? `${(item.services || []).length} services`
+                          : `Pick any ${item.serviceCount} services`}
+                        {'  ·  '}₹{Number(item.price).toLocaleString('en-IN')}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.pkgAddBtn}
+                      disabled={addingPkg}
+                      onPress={() => item.packageType === 'fixed' ? handleAddFixedPackage(item) : handlePickFlexible(item)}
+                      activeOpacity={0.85}>
+                      <Text style={styles.pkgAddBtnText}>
+                        {item.packageType === 'fixed' ? (addingPkg ? 'Adding…' : 'Add') : 'Choose →'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+                ListEmptyComponent={
+                  <Text style={styles.emptyPick}>
+                    {availablePackages.length === 0 ? 'No packages available' : 'All available packages are already on this booking'}
+                  </Text>
+                }
+              />
+            )
+          ) : (
+            <>
+              <View style={styles.pkgProgressRow}>
+                <Text style={styles.qtyLabel}>Pick {pickingPackage.serviceCount} service{pickingPackage.serviceCount !== 1 ? 's' : ''}</Text>
+                <Text style={[styles.qtyLabel, {fontWeight: '700', color: flexiblePicks.length === pickingPackage.serviceCount ? '#105641' : '#171816'}]}>
+                  {flexiblePicks.length} / {pickingPackage.serviceCount}
+                </Text>
+              </View>
+              {loadingSvcs ? (
+                <ActivityIndicator color="#105641" style={{marginVertical: sw(24)}} />
+              ) : (
+                <FlatList
+                  data={allServices.filter((s: any) => !pickingPackage.categoryId || s.categoryId === pickingPackage.categoryId)}
+                  keyExtractor={item => String(item.id)}
+                  style={{maxHeight: sw(260)}}
+                  showsVerticalScrollIndicator={false}
+                  renderItem={({item}) => {
+                    const picked = flexiblePicks.includes(item.id);
+                    const disabled = !picked && flexiblePicks.length >= pickingPackage.serviceCount;
+                    return (
+                      <TouchableOpacity
+                        style={[styles.svcPickRow, picked && styles.svcPickRowSel, disabled && {opacity: 0.4}]}
+                        disabled={disabled}
+                        onPress={() => toggleFlexiblePick(item.id)} activeOpacity={0.8}>
+                        <Image source={{uri: resolveImageUrl(item.image) ?? FALLBACK_IMG}} style={styles.pickImg} resizeMode="cover" />
+                        <View style={{flex: 1}}>
+                          <Text style={styles.pickName}>{item.name}</Text>
+                          <Text style={styles.pickMeta}>
+                            {item.duration ? `${item.duration} min  ·  ` : ''}₹{Number(item.basePrice).toLocaleString('en-IN')}
+                          </Text>
+                        </View>
+                        {picked && <Ionicons name="checkmark-circle" size={sw(22)} color="#105641" />}
+                      </TouchableOpacity>
+                    );
+                  }}
+                  ListEmptyComponent={<Text style={styles.emptyPick}>No services found</Text>}
+                />
+              )}
+              <View style={{flexDirection: 'row', gap: sw(10), marginTop: sw(14)}}>
+                <TouchableOpacity style={styles.pkgBackBtn} onPress={() => setPickingPackage(null)} activeOpacity={0.85}>
+                  <Text style={styles.pkgBackBtnText}>← Back</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.confirmBtn, {flex: 1, marginTop: 0}, (flexiblePicks.length !== pickingPackage.serviceCount || addingPkg) && {opacity: 0.5}]}
+                  disabled={flexiblePicks.length !== pickingPackage.serviceCount || addingPkg}
+                  onPress={handleConfirmFlexiblePackage} activeOpacity={0.88}>
+                  {addingPkg ? <ActivityIndicator color="#FFFFFF" size="small" /> : (
+                    <Text style={styles.confirmBtnText}>Add Package (₹{Number(pickingPackage.price).toLocaleString('en-IN')})</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
+        </View>
+      </Modal>
+
       <AppAlertModal config={alertConfig} onRequestClose={hideAlert} />
     </View>
   );
@@ -611,6 +875,18 @@ const styles = StyleSheet.create({
   qtyBtn: {width: sw(28), height: sw(28), alignItems: 'center', justifyContent: 'center'},
   qtyVal: {fontFamily: fonts.title, fontSize: sw(13), fontWeight: '700', color: '#105641', minWidth: sw(24), textAlign: 'center'},
   svcPrice: {fontFamily: fonts.title, fontSize: sw(14), fontWeight: '700', color: '#105641'},
+  packageBadge: {
+    backgroundColor: '#E4E1D8', borderRadius: sw(4),
+    paddingHorizontal: sw(5), paddingVertical: sw(1),
+  },
+  packageBadgeText: {fontFamily: fonts.textFont, fontSize: sw(11), fontWeight: '700', color: '#292524'},
+  metaChipText: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#5C5C5C', marginTop: sw(2)},
+  removePkgBtn: {
+    alignSelf: 'flex-start', marginTop: sw(8),
+    borderWidth: 1, borderColor: '#FCA5A5', borderRadius: sw(20),
+    paddingHorizontal: sw(12), paddingVertical: sw(5),
+  },
+  removePkgBtnText: {fontFamily: fonts.textFont, fontSize: sw(10), fontWeight: '700', color: '#B91C1C', letterSpacing: 0.3},
   totalRow: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1.5, borderTopColor: '#F0F0F0', paddingTop: sw(10), marginTop: sw(2)},
   totalLabel: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#5C5C5C', fontWeight: '600'},
   totalValue: {fontFamily: fonts.title, fontSize: sw(16), fontWeight: '800', color: '#012823'},
@@ -659,6 +935,23 @@ const styles = StyleSheet.create({
   addonFieldWrap: {marginBottom: sw(12)},
   addonFieldLabel: {fontFamily: fonts.textFont, fontSize: sw(12), color: '#5C5C5C', marginBottom: sw(6), fontWeight: '600'},
   addonInput: {backgroundColor: '#F5F5F5', borderRadius: sw(10), paddingHorizontal: sw(12), height: sw(44), fontFamily: fonts.textFont, fontSize: sw(14), color: '#171816'},
+
+  pkgPickCard: {
+    flexDirection: 'row', alignItems: 'center', gap: sw(10),
+    paddingVertical: sw(12), borderBottomWidth: 1, borderBottomColor: '#F5F5F5',
+  },
+  pkgTypeBadge: {borderRadius: sw(4), paddingHorizontal: sw(6), paddingVertical: sw(2)},
+  pkgTypeBadgeFixed: {backgroundColor: '#EAF5F0'},
+  pkgTypeBadgeFlex: {backgroundColor: '#EEF0FF'},
+  pkgTypeBadgeText: {fontFamily: fonts.textFont, fontSize: sw(9), fontWeight: '700'},
+  pkgAddBtn: {backgroundColor: '#105641', borderRadius: sw(20), paddingHorizontal: sw(14), paddingVertical: sw(8)},
+  pkgAddBtnText: {fontFamily: fonts.textFont, fontSize: sw(12), fontWeight: '700', color: '#FFFFFF'},
+  pkgProgressRow: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: sw(10)},
+  pkgBackBtn: {
+    borderWidth: 1.5, borderColor: '#E5E5E5', borderRadius: sw(12),
+    paddingHorizontal: sw(16), alignItems: 'center', justifyContent: 'center',
+  },
+  pkgBackBtnText: {fontFamily: fonts.textFont, fontSize: sw(13), fontWeight: '600', color: '#5C5C5C'},
 });
 
 export default JobChecklistScreen;

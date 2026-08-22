@@ -43,6 +43,8 @@ const getServices = catchAsync(async (req, res, next) => {
     categoryId: req.query.categoryId,
     search: req.query.search,
     cityId: req.query.cityId ? parseInt(req.query.cityId) : null,
+    isPopular: req.query.isPopular === "true",
+    showOnHome: req.query.showOnHome === "true",
   };
 
   const result = await servicesService.getServices(query, page, limit);

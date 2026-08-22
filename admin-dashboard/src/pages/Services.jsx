@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import { Plus, Edit2, Power, Search, Users, ShoppingBag, DollarSign, Trash2, FolderOpen, Upload, RefreshCw, MapPin, CheckCircle, XCircle, GripVertical, ListOrdered } from 'lucide-react';
+import { Plus, Edit2, Power, Search, Users, ShoppingBag, DollarSign, Trash2, FolderOpen, Upload, RefreshCw, MapPin, CheckCircle, XCircle, GripVertical, ListOrdered, Flame } from 'lucide-react';
 import { Badge, StarRating } from '../components/common/Badge';
 import Modal from '../components/common/Modal';
 import RevenueSplitFields from '../components/common/RevenueSplitFields';
@@ -17,12 +17,46 @@ const DEFAULT_CATEGORIES = [
   'Manicure', 'Mehndi', 'Nail Art', 'Bridal Services',
 ];
 
-const ImagePicker = ({ value, onChange, label = 'Image' }) => {
+const ImagePicker = ({ value, onChange, label = 'Image', hint = 'JPEG, PNG or WebP · Max 2 MB', exactWidth, exactHeight }) => {
   const [uploading, setUploading] = useState(false);
+
+  const checkDimensions = (file) =>
+    new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new window.Image();
+      img.onload = () => { URL.revokeObjectURL(url); resolve({ w: img.naturalWidth, h: img.naturalHeight }); };
+      img.onerror = () => { URL.revokeObjectURL(url); reject('Could not read image.'); };
+      img.src = url;
+    });
+
+  const [dimError, setDimError] = useState('');
 
   const handleFile = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    setDimError('');
+
+    if (file.size > 2 * 1024 * 1024) {
+      setDimError('File too large — max 2 MB.');
+      e.target.value = '';
+      return;
+    }
+
+    if (exactWidth && exactHeight) {
+      try {
+        const { w, h } = await checkDimensions(file);
+        if (w !== exactWidth || h !== exactHeight) {
+          setDimError(`Wrong size: image is ${w}×${h} px. Required: ${exactWidth}×${exactHeight} px.`);
+          e.target.value = '';
+          return;
+        }
+      } catch (err) {
+        setDimError(err);
+        e.target.value = '';
+        return;
+      }
+    }
+
     setUploading(true);
     try {
       const fd = new FormData();
@@ -64,7 +98,8 @@ const ImagePicker = ({ value, onChange, label = 'Image' }) => {
               Remove
             </button>
           )}
-          <div className="form-hint" style={{ marginTop: 4 }}>JPEG, PNG or WebP · Max 5 MB</div>
+          <div className="form-hint" style={{ marginTop: 4 }}>{hint}</div>
+          {dimError && <div style={{ marginTop: 4, fontSize: 12, color: 'var(--c-danger)' }}>{dimError}</div>}
         </div>
       </div>
     </div>
@@ -243,6 +278,9 @@ export default function Services() {
         color: s.color ?? 'var(--c-border-light)',
         image: s.image ?? null,
         description: s.description ?? '',
+        priceStartsFrom: s.priceStartsFrom ?? false,
+        isPopular: s.isPopular ?? false,
+        showOnHome: s.showOnHome ?? false,
         cityIds: Array.isArray(s.cityIds) ? s.cityIds : [],
       })));
     });
@@ -400,6 +438,9 @@ export default function Services() {
       basePrice: svc.basePrice,
       description: svc.description ?? '',
       image: svc.image ?? '',
+      priceStartsFrom: svc.priceStartsFrom ?? false,
+      isPopular: svc.isPopular ?? false,
+      showOnHome: svc.showOnHome ?? false,
     });
   };
 
@@ -432,6 +473,9 @@ export default function Services() {
       categoryId: form.categoryId || String(editing.categoryId ?? ''),
       basePrice: +form.basePrice,
       description: form.description ?? '',
+      priceStartsFrom: !!form.priceStartsFrom,
+      isPopular: !!form.isPopular,
+      showOnHome: !!form.showOnHome,
       cityMappings: editMappings,
       ...(form.image ? { image: form.image } : {}),
     };
@@ -461,6 +505,9 @@ export default function Services() {
       categoryId: String(form.categoryId),
       basePrice: +form.basePrice,
       description: form.description ?? '',
+      priceStartsFrom: !!form.priceStartsFrom,
+      isPopular: !!form.isPopular,
+      showOnHome: !!form.showOnHome,
       isActive: true,
       cityIds: form.cityIds ?? [],
       ...(form.image ? { image: form.image } : {}),
@@ -480,6 +527,9 @@ export default function Services() {
         color: 'var(--c-border-light)',
         image: form.image ?? null,
         description: form.description ?? '',
+        priceStartsFrom: payload.priceStartsFrom,
+        isPopular: payload.isPopular,
+        showOnHome: payload.showOnHome,
         cityIds: payload.cityIds,
       }]);
       showToast('Service added successfully!', 'success');
@@ -582,7 +632,9 @@ export default function Services() {
                               <span style={{ fontSize: 20, flexShrink: 0 }}>{svc.icon}</span>
                             )}
                             <div style={{ flex: 1, minWidth: 0, fontWeight: 600, fontSize: 13 }}>{svc.name}</div>
-                            <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--c-text-secondary)' }}>₹{svc.basePrice.toLocaleString()}</div>
+                            <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--c-text-secondary)' }}>
+                              {svc.priceStartsFrom && <span style={{ fontWeight: 400 }}>Starts from </span>}₹{svc.basePrice.toLocaleString()}
+                            </div>
                           </div>
                         )}
                       </Draggable>
@@ -614,7 +666,19 @@ export default function Services() {
                       <div style={{ fontWeight: 700, fontSize: 15 }}>{svc.name}</div>
                       <div style={{ fontSize: 12, opacity: 0.8 }}>{svc.category}</div>
                     </div>
-                    <div style={{ position: 'absolute', top: 8, right: 8 }}><Badge status={svc.status} /></div>
+                    <div style={{ position: 'absolute', top: 8, right: 8, display: 'flex', gap: 4 }}>
+                      {svc.showOnHome && (
+                        <div title="Featured in Special Offers" style={{ background: 'var(--c-brand-primary)', color: 'white', fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 'var(--r-full)' }}>
+                          HOME
+                        </div>
+                      )}
+                      {svc.isPopular && (
+                        <div style={{ background: '#F97316', color: 'white', fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 'var(--r-full)', display: 'flex', alignItems: 'center', gap: 3 }}>
+                          <Flame size={10}/> Popular
+                        </div>
+                      )}
+                      <Badge status={svc.status} />
+                    </div>
                     {svc.cityIds?.length > 0 && (
                       <div style={{ position: 'absolute', top: 8, left: 8, background: 'rgba(6,64,129,0.85)', color: 'white', fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 'var(--r-full)', display: 'flex', alignItems: 'center', gap: 4 }}>
                         <MapPin size={10}/> {getCityNames(svc.cityIds)}
@@ -633,7 +697,19 @@ export default function Services() {
                         </div>
                       )}
                     </div>
-                    <Badge status={svc.status} />
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                      {svc.showOnHome && (
+                        <div title="Featured in Special Offers" style={{ background: 'var(--c-brand-primary)', color: 'white', fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 'var(--r-full)' }}>
+                          HOME
+                        </div>
+                      )}
+                      {svc.isPopular && (
+                        <div style={{ background: '#F97316', color: 'white', fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 'var(--r-full)', display: 'flex', alignItems: 'center', gap: 3 }}>
+                          <Flame size={10}/> Popular
+                        </div>
+                      )}
+                      <Badge status={svc.status} />
+                    </div>
                   </>
                 )}
               </div>
@@ -642,7 +718,10 @@ export default function Services() {
               <div className="form-grid form-grid-2" style={{ padding: '14px 20px', gap: 12 }}>
                 <div>
                   <div style={{ fontSize: 11, color: 'var(--c-text-secondary)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Price</div>
-                  <div style={{ fontWeight: 700, fontSize: 14 }}>₹{svc.basePrice.toLocaleString()}</div>
+                  <div style={{ fontWeight: 700, fontSize: 14 }}>
+                    {svc.priceStartsFrom && <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--c-text-muted)', display: 'block' }}>Starts from</span>}
+                    ₹{svc.basePrice.toLocaleString()}
+                  </div>
                 </div>
                 <div>
                   <div style={{ fontSize: 11, color: 'var(--c-text-secondary)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Rating</div>
@@ -692,7 +771,7 @@ export default function Services() {
       >
         {editing && (
           <div className="form-grid">
-            <ImagePicker label="Service Image" value={form.image || ''} onChange={url => setForm(f => ({ ...f, image: url }))} />
+            <ImagePicker label="Service Image" value={form.image || ''} onChange={url => setForm(f => ({ ...f, image: url }))} hint="JPG/PNG/WebP · max 2 MB · 128×128 px" exactWidth={128} exactHeight={128} />
             <div className="form-group">
               <label className="form-label">Service Name</label>
               <input className="form-input" value={form.name || ''} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
@@ -715,6 +794,45 @@ export default function Services() {
               <label className="form-label">Base Price (₹)</label>
               <input className="form-input" type="number" value={form.basePrice || ''} onChange={e => setForm(f => ({ ...f, basePrice: e.target.value }))} />
             </div>
+            <label style={{
+              display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+              background: form.priceStartsFrom ? 'rgba(6,64,129,0.06)' : 'var(--c-border-light)',
+              border: `1px solid ${form.priceStartsFrom ? 'var(--c-brand-primary)' : 'var(--c-border)'}`,
+              borderRadius: 8, padding: '10px 12px',
+            }}>
+              <input type="checkbox" checked={form.priceStartsFrom ?? false}
+                onChange={e => setForm(f => ({ ...f, priceStartsFrom: e.target.checked }))} />
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>Show as "Starts from" price</div>
+                <div style={{ fontSize: 11, color: 'var(--c-text-muted)' }}>Rate-card services whose actual price can vary (hair length, add-ons, etc.) — shows "Starts from ₹{form.basePrice || 'X'}" instead of a flat price on the app and website.</div>
+              </div>
+            </label>
+            <label style={{
+              display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+              background: form.isPopular ? 'rgba(249,115,22,0.06)' : 'var(--c-border-light)',
+              border: `1px solid ${form.isPopular ? '#F97316' : 'var(--c-border)'}`,
+              borderRadius: 8, padding: '10px 12px',
+            }}>
+              <input type="checkbox" checked={form.isPopular ?? false}
+                onChange={e => setForm(f => ({ ...f, isPopular: e.target.checked }))} />
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>Show in "Most Booked Services"</div>
+                <div style={{ fontSize: 11, color: 'var(--c-text-muted)' }}>Featured in the app's home screen "Most Booked Services" section.</div>
+              </div>
+            </label>
+            <label style={{
+              display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+              background: form.showOnHome ? 'rgba(6,64,129,0.06)' : 'var(--c-border-light)',
+              border: `1px solid ${form.showOnHome ? 'var(--c-brand-primary)' : 'var(--c-border)'}`,
+              borderRadius: 8, padding: '10px 12px',
+            }}>
+              <input type="checkbox" checked={form.showOnHome ?? false}
+                onChange={e => setForm(f => ({ ...f, showOnHome: e.target.checked }))} />
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>Feature in Special Offers</div>
+                <div style={{ fontSize: 11, color: 'var(--c-text-muted)' }}>Shows this service in the website's home screen "Special Offers" section.</div>
+              </div>
+            </label>
             <div className="form-group">
               <label className="form-label">Description</label>
               <textarea className="form-input" rows={3} placeholder="Describe what this service includes…" value={form.description || ''} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} style={{ resize: 'vertical' }} />
@@ -733,7 +851,7 @@ export default function Services() {
         }
       >
         <div className="form-grid">
-          <ImagePicker label="Service Image" value={form.image || ''} onChange={url => setForm(f => ({ ...f, image: url }))} />
+            <ImagePicker label="Service Image" value={form.image || ''} onChange={url => setForm(f => ({ ...f, image: url }))} hint="JPG/PNG/WebP · max 2 MB · 128×128 px" exactWidth={128} exactHeight={128} />
           <div className="form-group">
             <label className="form-label">Service Name *</label>
             <input className="form-input" placeholder="e.g. Deep Tissue Massage" value={form.name || ''} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
@@ -755,6 +873,45 @@ export default function Services() {
             <label className="form-label">Base Price (₹) *</label>
             <input className="form-input" type="number" placeholder="500" value={form.basePrice || ''} onChange={e => setForm(f => ({ ...f, basePrice: e.target.value }))} />
           </div>
+          <label style={{
+            display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+            background: form.priceStartsFrom ? 'rgba(6,64,129,0.06)' : 'var(--c-border-light)',
+            border: `1px solid ${form.priceStartsFrom ? 'var(--c-brand-primary)' : 'var(--c-border)'}`,
+            borderRadius: 8, padding: '10px 12px',
+          }}>
+            <input type="checkbox" checked={form.priceStartsFrom ?? false}
+              onChange={e => setForm(f => ({ ...f, priceStartsFrom: e.target.checked }))} />
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>Show as "Starts from" price</div>
+              <div style={{ fontSize: 11, color: 'var(--c-text-muted)' }}>Rate-card services whose actual price can vary (hair length, add-ons, etc.) — shows "Starts from ₹{form.basePrice || 'X'}" instead of a flat price on the app and website.</div>
+            </div>
+          </label>
+          <label style={{
+            display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+            background: form.isPopular ? 'rgba(249,115,22,0.06)' : 'var(--c-border-light)',
+            border: `1px solid ${form.isPopular ? '#F97316' : 'var(--c-border)'}`,
+            borderRadius: 8, padding: '10px 12px',
+          }}>
+            <input type="checkbox" checked={form.isPopular ?? false}
+              onChange={e => setForm(f => ({ ...f, isPopular: e.target.checked }))} />
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>Show in "Most Booked Services"</div>
+              <div style={{ fontSize: 11, color: 'var(--c-text-muted)' }}>Featured in the app's home screen "Most Booked Services" section.</div>
+            </div>
+          </label>
+          <label style={{
+            display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+            background: form.showOnHome ? 'rgba(6,64,129,0.06)' : 'var(--c-border-light)',
+            border: `1px solid ${form.showOnHome ? 'var(--c-brand-primary)' : 'var(--c-border)'}`,
+            borderRadius: 8, padding: '10px 12px',
+          }}>
+            <input type="checkbox" checked={form.showOnHome ?? false}
+              onChange={e => setForm(f => ({ ...f, showOnHome: e.target.checked }))} />
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>Feature in Special Offers</div>
+              <div style={{ fontSize: 11, color: 'var(--c-text-muted)' }}>Shows this service in the website's home screen "Special Offers" section.</div>
+            </div>
+          </label>
           <div className="form-group">
             <label className="form-label">Description</label>
             <textarea className="form-input" rows={3} placeholder="Describe what this service includes…" value={form.description || ''} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} style={{ resize: 'vertical' }} />
@@ -781,6 +938,9 @@ export default function Services() {
               label="Category Image"
               value={catForm.image || ''}
               onChange={url => setCatForm(f => ({ ...f, image: url }))}
+              hint="JPG/PNG/WebP · max 2 MB · 193×193 px"
+              exactWidth={193}
+              exactHeight={193}
             />
             <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
               <input className="form-input" placeholder="Category name *" value={catForm.name || ''} onChange={e => setCatForm(f => ({ ...f, name: e.target.value }))} style={{ flex: 2, minWidth: 120 }} />
