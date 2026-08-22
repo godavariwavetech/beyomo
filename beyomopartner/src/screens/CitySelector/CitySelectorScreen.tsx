@@ -95,10 +95,14 @@ const CitySelectorScreen = ({navigation, route}: Props) => {
   };
 
   return (
-    <View style={[styles.root, {paddingTop: insets.top}]}>
+    <View style={styles.root}>
       <StatusBar barStyle="light-content" backgroundColor="#0E5843" />
 
-      <LinearGradient colors={['#0E5843', '#022723']} style={styles.header}>
+      {/* The safe-area inset belongs to the gradient, not the root: padding the root left
+          the notch filled with the near-white page background on iOS. */}
+      <LinearGradient
+        colors={['#0E5843', '#022723']}
+        style={[styles.header, {paddingTop: insets.top + sw(24)}]}>
         <Ionicons name="location" size={sw(32)} color="#C8A84C" />
         <Text style={styles.title}>Select Your City</Text>
         <Text style={styles.subtitle}>
@@ -184,7 +188,6 @@ const CitySelectorScreen = ({navigation, route}: Props) => {
 const styles = StyleSheet.create({
   root: {flex: 1, backgroundColor: '#F5F5F5'},
   header: {
-    paddingTop: sw(24),
     paddingBottom: sw(28),
     paddingHorizontal: sw(24),
     alignItems: 'center',
