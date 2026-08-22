@@ -67,6 +67,20 @@ export const logoutPartner = createAsyncThunk(
   },
 );
 
+export const deleteAccount = createAsyncThunk(
+  'auth/deleteAccount',
+  async (_, {rejectWithValue}) => {
+    try {
+      const response = await api.delete(endpoints.PARTNER_DELETE_ACCOUNT);
+      return response.data;
+    } catch (error) {
+      return rejectWithValue(
+        error.response?.data?.message ?? 'Failed to delete account. Please try again.',
+      );
+    }
+  },
+);
+
 export const AuthSlice = createSlice({
   name: 'auth',
   initialState,
@@ -115,6 +129,13 @@ export const AuthSlice = createSlice({
       })
 
       .addCase(logoutPartner.fulfilled, state => {
+        state.token = null;
+        state.partnerId = null;
+        state.partner = null;
+        state.isNew = false;
+      })
+
+      .addCase(deleteAccount.fulfilled, state => {
         state.token = null;
         state.partnerId = null;
         state.partner = null;

@@ -13,6 +13,7 @@ export const endpoints = {
 
   // Partner profile & operations
   PARTNER_PROFILE: '/api/v1/partners/profile',
+  PARTNER_DELETE_ACCOUNT: '/api/v1/partners/profile',
   PARTNER_DOCUMENTS: '/api/v1/partners/documents',
   PARTNER_DASHBOARD: '/api/v1/partners/dashboard',
   PARTNER_EARNINGS: '/api/v1/partners/earnings',

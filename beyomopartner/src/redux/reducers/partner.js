@@ -134,6 +134,11 @@ const partnerSlice = createSlice({
     profile: null,
     dashboard: null,
     earnings: null,
+    // Earnings are cached per period ('week' | 'month' | 'all'). Keying by period means a
+    // slow response for the tab you just left can no longer overwrite the tab you are on,
+    // and switching tabs shows the last known figures instead of blanking to placeholders.
+    earningsByPeriod: {},
+    earningsLoading: false,
     wallet: null,
     bookings: [],
     availableBookings: [],
@@ -236,15 +241,17 @@ const partnerSlice = createSlice({
       })
 
       .addCase(fetchPartnerEarnings.pending, state => {
-        state.loading = true;
+        state.earningsLoading = true;
         state.error = null;
       })
       .addCase(fetchPartnerEarnings.fulfilled, (state, action) => {
-        state.loading = false;
+        state.earningsLoading = false;
+        const period = action.payload?.period ?? action.meta.arg ?? 'month';
+        state.earningsByPeriod[period] = action.payload;
         state.earnings = action.payload;
       })
       .addCase(fetchPartnerEarnings.rejected, (state, action) => {
-        state.loading = false;
+        state.earningsLoading = false;
         state.error = action.payload;
       })
 

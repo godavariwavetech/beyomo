@@ -109,6 +109,23 @@ const getReferral = async (userId) => {
   return { referralCode: user.referralCode, walletCredits: user.walletBalance, referralCount };
 };
 
+const deleteAccount = async (userId) => {
+  const user = await User.findByPk(userId);
+  if (!user || user.status === "deleted") throw new AppError("User not found", 404);
+
+  await user.update({
+    status: "deleted",
+    name: null,
+    email: null,
+    profilePicture: null,
+    phone: `deleted_${userId}_${Date.now()}`,
+    deviceTokens: [],
+    fcmToken: null,
+  });
+
+  return { message: "Account deleted" };
+};
+
 const getUserReviews = async (userId, page = 1, limit = 10) => {
   const offset = (page - 1) * limit;
   const { count: total, rows: reviews } = await Review.findAndCountAll({
@@ -129,5 +146,5 @@ module.exports = {
   getProfile, updateProfile,
   addAddress, updateAddress, deleteAddress,
   updateDeviceToken, getBookings, getWallet,
-  getReferral, getUserReviews,
+  getReferral, getUserReviews, deleteAccount,
 };

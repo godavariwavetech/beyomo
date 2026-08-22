@@ -34,7 +34,9 @@ const PERIOD_LABELS: Record<Period, string> = {
 const EarningsDashboardScreen = ({navigation}: any) => {
   const insets = useSafeAreaInsets();
   const dispatch = useDispatch<AppDispatch>();
-  const {earnings, wallet, loading} = useSelector((state: RootState) => state.Partner as any);
+  const {earningsByPeriod, earningsLoading, wallet} = useSelector(
+    (state: RootState) => state.Partner as any,
+  );
   const [period, setPeriod] = useState<Period>('month');
   const [refreshing, setRefreshing] = useState(false);
 
@@ -85,14 +87,31 @@ const EarningsDashboardScreen = ({navigation}: any) => {
       : 'All settled — no pending dues';
   const settlementColor = balance > 0 ? '#22C55E' : balance < 0 ? '#EF4444' : '#105641';
 
-  const stats = earnings?.period === period ? earnings.stats : null;
-  const recentEarnings: any[] = earnings?.period === period ? (earnings.recentEarnings ?? []) : [];
-  const avgRating = earnings?.averageRating;
-  const totalReviews = earnings?.totalReviews ?? 0;
-  const totalEarnings = earnings?.totalEarnings ?? 0;
+  // Read the slice for the period actually being shown. Previously this compared the single
+  // cached response's `period` against the selected tab and fell back to null whenever they
+  // disagreed — which is every render between tapping a tab and its response landing, so the
+  // amounts blanked out to placeholders and the header dropped to the all-time fallback.
+  const current = earningsByPeriod?.[period] ?? null;
+  // Rating, review count and the all-time total do not vary by period, so read them from
+  // whichever period has already loaded — otherwise opening a new tab briefly reports
+  // "No ratings yet" for a partner who clearly has ratings.
+  const anyLoaded =
+    current ?? (Object.values(earningsByPeriod ?? {}).find(Boolean) as any) ?? null;
+  const stats = current?.stats ?? null;
+  const recentEarnings: any[] = current?.recentEarnings ?? [];
+  const avgRating = anyLoaded?.averageRating;
+  const totalReviews = anyLoaded?.totalReviews ?? 0;
+  const totalEarnings = anyLoaded?.totalEarnings ?? 0;
+  // Only block on the spinner the first time a period is opened; a refresh of an
+  // already-loaded period keeps the previous figures on screen instead of flashing.
+  const firstLoad = earningsLoading && !current;
 
-  const fmtCurrency = (n: number) =>
-    n >= 100000 ? `₹${(n / 100000).toFixed(2)}L` : `₹${n.toLocaleString('en-IN')}`;
+  const fmtCurrency = (n: number) => {
+    const v = Number(n) || 0;
+    return v >= 100000
+      ? `₹${(v / 100000).toFixed(2)}L`
+      : `₹${v.toLocaleString('en-IN', {maximumFractionDigits: 2})}`;
+  };
 
   return (
     <View style={styles.root}>
@@ -112,11 +131,11 @@ const EarningsDashboardScreen = ({navigation}: any) => {
               <Text style={styles.headerLabel}>
                 {period === 'all' ? 'Total Earnings (All Time)' : `Earnings — ${PERIOD_LABELS[period]}`}
               </Text>
-              {loading && !earnings ? (
+              {firstLoad ? (
                 <ActivityIndicator color="#FDD77A" style={{marginTop: sw(8)}} />
               ) : (
                 <Text style={styles.headerAmount}>
-                  {stats ? fmtCurrency(stats.earned) : fmtCurrency(totalEarnings)}
+                  {fmtCurrency(stats ? stats.earned : totalEarnings)}
                 </Text>
               )}
             </View>
@@ -211,7 +230,7 @@ const EarningsDashboardScreen = ({navigation}: any) => {
             </TouchableOpacity>
           </View>
 
-          {loading && !earnings ? (
+          {firstLoad ? (
             <ActivityIndicator color="#012823" style={{marginVertical: sw(16)}} />
           ) : recentEarnings.length === 0 ? (
             <View style={styles.emptyCard}>

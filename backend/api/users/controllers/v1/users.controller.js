@@ -132,6 +132,14 @@ const getUserReviews = catchAsync(async (req, res) => {
   res.status(200).json({ status: true, data: result.reviews, pagination: result.pagination });
 });
 
+/**
+ * DELETE /api/v1/users/profile
+ */
+const deleteAccount = catchAsync(async (req, res, next) => {
+  const result = await usersService.deleteAccount(req.user.userId);
+  res.status(200).json({ status: true, message: result.message });
+});
+
 module.exports = {
   getProfile,
   updateProfile,
@@ -143,4 +151,5 @@ module.exports = {
   getWallet,
   getReferral,
   getUserReviews,
+  deleteAccount,
 };

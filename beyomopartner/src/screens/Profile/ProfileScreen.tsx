@@ -70,7 +70,10 @@ const ProfileScreen = ({navigation}: {navigation: any}) => {
   const displayExperience = profile?.experience ? `${profile.experience} years experience` : '';
   const displayAvatar = resolveImageUrl(profile?.profilePicture ?? profile?.avatar ?? profile?.photo ?? profile?.profilePic) ?? '';
   const jobsDone = dashboard?.bookingStats?.totalCompleted ?? 0;
-  const earned = profile?.totalEarnings ?? dashboard?.totalEarnings ?? 0;
+  // Prefer the dashboard's live figure. `profile.totalEarnings` is the raw partners-table
+  // column, which only the settlement ledger ever increments and which defaults to 0 — so it
+  // is never null, the ?? never fell through, and this stat disagreed with Home and Earnings.
+  const earned = dashboard?.totalEarnings ?? profile?.totalEarnings ?? 0;
   const rating = profile?.ratingsAverage ?? dashboard?.ratings?.average;
 
   return (
@@ -122,7 +125,9 @@ const ProfileScreen = ({navigation}: {navigation: any}) => {
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
-            <Text style={styles.statVal}>₹{Number(earned).toLocaleString()}</Text>
+            <Text style={styles.statVal}>
+              ₹{(Number(earned) || 0).toLocaleString('en-IN', {maximumFractionDigits: 2})}
+            </Text>
             <Text style={styles.statLabel}>Earned</Text>
           </View>
           <View style={styles.statDivider} />
@@ -191,6 +196,13 @@ const ProfileScreen = ({navigation}: {navigation: any}) => {
         <TouchableOpacity style={styles.logoutBtn} activeOpacity={0.85} onPress={handleLogout}>
           <Ionicons name="log-out-outline" size={sw(18)} color="#DB1919" />
           <Text style={styles.logoutText}>Logout</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.deleteAccountBtn}
+          activeOpacity={0.7}
+          onPress={() => navigation.navigate('DeleteAccount')}>
+          <Text style={styles.deleteAccountText}>Delete Account</Text>
         </TouchableOpacity>
 
       </ScrollView>
@@ -301,6 +313,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
   logoutText: {fontFamily: fonts.title, fontSize: sw(14), fontWeight: '700', color: '#DB1919'},
+
+  deleteAccountBtn: {alignItems: 'center', paddingVertical: sw(8)},
+  deleteAccountText: {fontFamily: fonts.textFont, fontSize: sw(12), fontWeight: '500', color: '#999999', textDecorationLine: 'underline'},
 });
 
 export default ProfileScreen;

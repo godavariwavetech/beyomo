@@ -202,6 +202,13 @@ const ProfileScreen = ({navigation}: Props) => {
           <Ionicons name="log-out-outline" size={sw(20)} color="#DB1919" />
           <Text style={styles.logoutText}>Logout</Text>
         </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.deleteAccountBtn}
+          activeOpacity={0.7}
+          onPress={() => navigation?.navigate('DeleteAccount')}>
+          <Text style={styles.deleteAccountText}>Delete Account</Text>
+        </TouchableOpacity>
       </ScrollView>
     </View>
   );
@@ -309,6 +316,9 @@ const styles = StyleSheet.create({
     paddingVertical: sw(10),
   },
   logoutText: {fontFamily: fonts.textFont, fontSize: sw(12), fontWeight: '500', color: '#DB1919', lineHeight: sw(18)},
+
+  deleteAccountBtn: {alignItems: 'center', paddingVertical: sw(6)},
+  deleteAccountText: {fontFamily: fonts.textFont, fontSize: sw(12), fontWeight: '500', color: '#828282', textDecorationLine: 'underline'},
 });
 
 export default ProfileScreen;
