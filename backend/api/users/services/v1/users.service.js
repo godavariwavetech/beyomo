@@ -5,6 +5,7 @@ const Booking = require("../../../bookings/models/booking.model");
 const Review = require("../../../reviews/models/review.model");
 const Service = require("../../../services/models/service.model");
 const Partner = require("../../../partners/models/partner.model");
+const { softDeletePatch } = require("../../../../utils/accountSoftDelete");
 const AppError = require("../../../../utils/errorHandlers/appError");
 
 const getProfile = async (userId) => {
@@ -113,18 +114,7 @@ const deleteAccount = async (userId) => {
   const user = await User.findByPk(userId);
   if (!user || user.status === "deleted") throw new AppError("User not found", 404);
 
-  await user.update({
-    status: "deleted",
-    name: null,
-    email: null,
-    profilePicture: null,
-    // `phone` is UNIQUE varchar(20); `deleted_<id>_<13-digit timestamp>` overflowed it
-    // and MySQL rejected the update. The row id is already unique and never reused,
-    // so it alone is enough to free the real number for re-registration.
-    phone: `deleted_${userId}`,
-    deviceTokens: [],
-    fcmToken: null,
-  });
+  await user.update(softDeletePatch(user));
 
   return { message: "Account deleted" };
 };

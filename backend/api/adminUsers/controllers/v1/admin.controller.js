@@ -272,8 +272,10 @@ const getUserById = catchAsync(async (req, res, next) => {
 
 const updateUserStatus = catchAsync(async (req, res, next) => {
   const { status } = req.body;
-  if (!["active", "blocked"].includes(status)) {
-    return next(new AppError("Status must be active or blocked", 400));
+  // "deleted" is allowed here so this endpoint doubles as the delete/restore toggle:
+  // setting it soft-deletes, setting it back to active restores the stashed details.
+  if (!["active", "blocked", "deleted"].includes(status)) {
+    return next(new AppError("Status must be active, blocked or deleted", 400));
   }
   const user = await adminService.updateUserStatus(req.params.id, status);
   res.status(200).json({ status: true, message: "User status updated", data: user });

@@ -1,4 +1,4 @@
-const { Op } = require("sequelize");
+const { Op, fn, col, where: sqWhere } = require("sequelize");
 const { sequelize } = require("../../../../utils/dbconnect");
 const Banner = require("../../../banners/models/banner.model");
 const ServiceZone = require("../../../zones/models/zone.model");
@@ -28,6 +28,7 @@ const {
   DEFAULT_PARTNER_PERCENT,
   DEFAULT_GST_PERCENT,
 } = require("../../../../utils/revenueSplit");
+const { softDeletePatch, restorePatch } = require("../../../../utils/accountSoftDelete");
 const AppError = require("../../../../utils/errorHandlers/appError");
 
 // ==================== AUTH ====================
@@ -55,16 +56,29 @@ const cityIdsFilter = (cityIds) => {
   return { cityId: cityIds.length === 1 ? cityIds[0] : { [Op.in]: cityIds } };
 };
 
+// A deleted account's real name/phone/email live in `deletedSnapshot`, not in the columns,
+// so admin search must look there too — otherwise you cannot find the account you want to
+// restore by typing the number the customer gives you.
+const snapshotLike = (field, search) =>
+  sqWhere(fn("JSON_UNQUOTE", fn("JSON_EXTRACT", col("deletedSnapshot"), `$.${field}`)), {
+    [Op.like]: `%${search}%`,
+  });
+
+const searchOr = (search) => [
+  { name: { [Op.like]: `%${search}%` } },
+  { phone: { [Op.like]: `%${search}%` } },
+  { email: { [Op.like]: `%${search}%` } },
+  snapshotLike("name", search),
+  snapshotLike("phone", search),
+  snapshotLike("email", search),
+];
+
 const listUsers = async ({ search, status, cityIds, page = 1, limit = 10 }) => {
   const offset = (page - 1) * limit;
   const where = { ...cityIdsFilter(cityIds) };
   if (status) where.status = status;
   if (search) {
-    where[Op.or] = [
-      { name: { [Op.like]: `%${search}%` } },
-      { phone: { [Op.like]: `%${search}%` } },
-      { email: { [Op.like]: `%${search}%` } },
-    ];
+    where[Op.or] = searchOr(search);
   }
   const { count: total, rows: data } = await User.findAndCountAll({
     where, order: [["createdAt", "DESC"]], offset, limit,
@@ -81,15 +95,29 @@ const getUserById = async (userId) => {
 };
 
 const updateUserStatus = async (userId, status) => {
-  await User.update({ status }, { where: { id: userId } });
+  const validStatuses = ["active", "blocked", "deleted"];
+  if (!validStatuses.includes(status)) throw new AppError("Invalid status", 400);
+
   const user = await User.findByPk(userId);
   if (!user) throw new AppError("User not found", 404);
-  return user;
+
+  // The status field doubles as the delete toggle: flipping to "deleted" stashes the
+  // identifying fields, flipping back off "deleted" puts them and the phone number back.
+  if (status === "deleted" && user.status !== "deleted") {
+    await user.update(softDeletePatch(user));
+  } else if (status !== "deleted" && user.status === "deleted") {
+    await user.update({ ...(await restorePatch(user, User, "active")), status });
+  } else {
+    await user.update({ status });
+  }
+
+  return User.findByPk(userId);
 };
 
 const deleteUser = async (userId) => {
-  const [updated] = await User.update({ status: "deleted" }, { where: { id: userId } });
-  if (!updated) throw new AppError("User not found", 404);
+  const user = await User.findByPk(userId);
+  if (!user) throw new AppError("User not found", 404);
+  if (user.status !== "deleted") await user.update(softDeletePatch(user));
   return { message: "User deleted" };
 };
 
@@ -107,11 +135,7 @@ const listPartners = async ({ search, status, source, cityIds, page = 1, limit =
   if (status) where.status = status;
   if (source) where.source = source;
   if (search) {
-    where[Op.or] = [
-      { name: { [Op.like]: `%${search}%` } },
-      { phone: { [Op.like]: `%${search}%` } },
-      { email: { [Op.like]: `%${search}%` } },
-    ];
+    where[Op.or] = searchOr(search);
   }
   const { count: total, rows: data } = await Partner.findAndCountAll({
     where, order: [["createdAt", "DESC"]], offset, limit,
@@ -179,12 +203,22 @@ const updatePartner = async (partnerId, data) => {
 };
 
 const updatePartnerStatus = async (partnerId, status) => {
-  const validStatuses = ["pending", "approved", "suspended", "rejected"];
+  const validStatuses = ["pending", "approved", "suspended", "rejected", "deleted"];
   if (!validStatuses.includes(status)) throw new AppError("Invalid status", 400);
 
-  await Partner.update({ status }, { where: { id: partnerId } });
+  const existing = await Partner.findByPk(partnerId);
+  if (!existing) throw new AppError("Partner not found", 404);
+
+  // Same toggle as users: "deleted" snapshots and wipes, anything else restores.
+  if (status === "deleted" && existing.status !== "deleted") {
+    await existing.update(softDeletePatch(existing));
+  } else if (status !== "deleted" && existing.status === "deleted") {
+    await existing.update({ ...(await restorePatch(existing, Partner, "pending")), status });
+  } else {
+    await existing.update({ status });
+  }
+
   const partner = await Partner.findByPk(partnerId);
-  if (!partner) throw new AppError("Partner not found", 404);
 
   if (partner.fcmToken) {
     const messages = {

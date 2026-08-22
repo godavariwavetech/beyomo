@@ -46,6 +46,10 @@ const Partner = sequelize.define("Partner", {
   // Signed running settlement balance: positive = admin owes partner; negative = partner owes admin
   walletBalance: { type: DataTypes.DECIMAL(12, 2), defaultValue: 0 },
   status: { type: DataTypes.ENUM("pending", "approved", "suspended", "rejected", "deleted"), defaultValue: "pending" },
+  // Set when the account is soft-deleted. `deletedSnapshot` keeps the identifying fields
+  // that the delete wipes, so an admin can toggle the account back and get the data again.
+  deletedAt: { type: DataTypes.DATE, allowNull: true, defaultValue: null },
+  deletedSnapshot: { type: DataTypes.JSON, allowNull: true, defaultValue: null },
   source: { type: DataTypes.ENUM("app", "website"), allowNull: false, defaultValue: "app" },
   deviceTokens: { type: DataTypes.JSON, defaultValue: [] },
   fcmToken: { type: DataTypes.TEXT, allowNull: true, defaultValue: null },

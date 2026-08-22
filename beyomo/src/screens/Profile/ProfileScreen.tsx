@@ -21,13 +21,14 @@ import {logoutUser, actionLogout} from '../../redux/reducers/auth';
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
 
-const MENU_ITEMS = [
+const MENU_ITEMS: {id: string; label: string; icon: string; route: string; danger?: boolean}[] = [
   {id: 'addresses',  label: 'My Addresses',    icon: 'location-outline',              route: 'MyAddresses'},
   // {id: 'coupons',    label: 'Coupons & Offers', icon: 'pricetag-outline',             route: 'Coupons'}, // hidden for now — screen/route stay intact, just not linked.
   // {id: 'refer',      label: 'Refer & Earn',     icon: 'people-outline',               route: 'ReferEarn'}, // hidden for now — screen/route stay intact, just not linked.
   {id: 'reviews',    label: 'My Reviews',       icon: 'star-outline',                 route: 'MyReviews'},
   {id: 'help',       label: 'Help & Support',   icon: 'chatbubble-ellipses-outline',  route: 'HelpSupport'},
   {id: 'about',      label: 'About Us',         icon: 'information-circle-outline',   route: 'AboutUs'},
+  {id: 'delete', label: 'Delete Account', icon: 'trash-outline', route: 'DeleteAccount', danger: true},
 ];
 
 interface Props {
@@ -189,8 +190,14 @@ const ProfileScreen = ({navigation}: Props) => {
                 activeOpacity={0.7}
                 onPress={() => navigation?.navigate(item.route)}>
                 <View style={styles.menuLeft}>
-                  <Ionicons name={item.icon as any} size={sw(20)} color="#012823" />
-                  <Text style={styles.menuLabel}>{item.label}</Text>
+                  <Ionicons
+                    name={item.icon as any}
+                    size={sw(20)}
+                    color={item.danger ? '#DB1919' : '#012823'}
+                  />
+                  <Text style={[styles.menuLabel, item.danger && styles.menuLabelDanger]}>
+                    {item.label}
+                  </Text>
                 </View>
                 <Ionicons name="chevron-forward" size={sw(16)} color="#292D32" />
               </TouchableOpacity>
@@ -201,13 +208,6 @@ const ProfileScreen = ({navigation}: Props) => {
         <TouchableOpacity style={styles.logoutBtn} activeOpacity={0.85} onPress={handleLogout}>
           <Ionicons name="log-out-outline" size={sw(20)} color="#DB1919" />
           <Text style={styles.logoutText}>Logout</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.deleteAccountBtn}
-          activeOpacity={0.7}
-          onPress={() => navigation?.navigate('DeleteAccount')}>
-          <Text style={styles.deleteAccountText}>Delete Account</Text>
         </TouchableOpacity>
       </ScrollView>
     </View>
@@ -317,8 +317,7 @@ const styles = StyleSheet.create({
   },
   logoutText: {fontFamily: fonts.textFont, fontSize: sw(12), fontWeight: '500', color: '#DB1919', lineHeight: sw(18)},
 
-  deleteAccountBtn: {alignItems: 'center', paddingVertical: sw(6)},
-  deleteAccountText: {fontFamily: fonts.textFont, fontSize: sw(12), fontWeight: '500', color: '#828282', textDecorationLine: 'underline'},
+  menuLabelDanger: {color: '#DB1919'},
 });
 
 export default ProfileScreen;

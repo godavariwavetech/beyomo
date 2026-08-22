@@ -15,6 +15,10 @@ const User = sequelize.define("User", {
   walletBalance: { type: DataTypes.DECIMAL(10, 2), defaultValue: 0, allowNull: false },
   cityId: { type: DataTypes.INTEGER, allowNull: true },
   status: { type: DataTypes.ENUM("active", "blocked", "deleted"), defaultValue: "active", allowNull: false },
+  // Set when the account is soft-deleted. `deletedSnapshot` keeps the identifying fields
+  // that the delete wipes, so an admin can toggle the account back and get the data again.
+  deletedAt: { type: DataTypes.DATE, allowNull: true, defaultValue: null },
+  deletedSnapshot: { type: DataTypes.JSON, allowNull: true, defaultValue: null },
 }, {
   timestamps: true,
   tableName: "users",

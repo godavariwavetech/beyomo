@@ -17,6 +17,7 @@ const {
   DEFAULT_PARTNER_PERCENT,
   DEFAULT_GST_PERCENT,
 } = require("../../../../utils/revenueSplit");
+const { softDeletePatch } = require("../../../../utils/accountSoftDelete");
 const AppError = require("../../../../utils/errorHandlers/appError");
 const logger = require("../../../../utils/logger");
 
@@ -30,18 +31,7 @@ const deleteAccount = async (partnerId) => {
   const partner = await Partner.findByPk(partnerId);
   if (!partner || partner.status === "deleted") throw new AppError("Partner not found", 404);
 
-  await partner.update({
-    status: "deleted",
-    name: null,
-    email: null,
-    profilePicture: null,
-    // `phone` is UNIQUE varchar(20); `deleted_<id>_<13-digit timestamp>` overflowed it
-    // and MySQL rejected the update. The row id is already unique and never reused,
-    // so it alone is enough to free the real number for re-registration.
-    phone: `deleted_${partnerId}`,
-    deviceTokens: [],
-    fcmToken: null,
-  });
+  await partner.update(softDeletePatch(partner));
 
   return { message: "Account deleted" };
 };

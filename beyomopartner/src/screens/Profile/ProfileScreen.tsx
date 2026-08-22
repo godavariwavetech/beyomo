@@ -24,11 +24,12 @@ import AppAlertModal from '../../components/AppAlertModal/AppAlertModal';
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
 
-const MENU_ITEMS: {id: string; label: string; icon: string; route: string; params?: Record<string, any>}[] = [
+const MENU_ITEMS: {id: string; label: string; icon: string; route: string; params?: Record<string, any>; danger?: boolean}[] = [
   {id: 'reviews', label: 'My Reviews', icon: 'star-outline', route: 'MyReviews'},
   {id: 'city', label: 'Change City', icon: 'location-outline', route: 'CitySelector', params: {goBack: true}},
   {id: 'help', label: 'Help & Support', icon: 'chatbubble-ellipses-outline', route: 'HelpSupport'},
   {id: 'about', label: 'About Us', icon: 'information-circle-outline', route: 'AboutUs'},
+  {id: 'delete', label: 'Delete Account', icon: 'trash-outline', route: 'DeleteAccount', danger: true},
 ];
 
 const ProfileScreen = ({navigation}: {navigation: any}) => {
@@ -182,10 +183,16 @@ const ProfileScreen = ({navigation}: {navigation: any}) => {
                 activeOpacity={0.7}
                 onPress={() => navigation.navigate(item.route, item.params)}>
                 <View style={styles.menuLeft}>
-                  <View style={styles.menuIconWrap}>
-                    <Ionicons name={item.icon as any} size={sw(18)} color="#012823" />
+                  <View style={[styles.menuIconWrap, item.danger && styles.menuIconWrapDanger]}>
+                    <Ionicons
+                      name={item.icon as any}
+                      size={sw(18)}
+                      color={item.danger ? '#DB1919' : '#012823'}
+                    />
                   </View>
-                  <Text style={styles.menuLabel}>{item.label}</Text>
+                  <Text style={[styles.menuLabel, item.danger && styles.menuLabelDanger]}>
+                    {item.label}
+                  </Text>
                 </View>
                 <Ionicons name="chevron-forward" size={sw(16)} color="#AAAAAA" />
               </TouchableOpacity>
@@ -196,13 +203,6 @@ const ProfileScreen = ({navigation}: {navigation: any}) => {
         <TouchableOpacity style={styles.logoutBtn} activeOpacity={0.85} onPress={handleLogout}>
           <Ionicons name="log-out-outline" size={sw(18)} color="#DB1919" />
           <Text style={styles.logoutText}>Logout</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.deleteAccountBtn}
-          activeOpacity={0.7}
-          onPress={() => navigation.navigate('DeleteAccount')}>
-          <Text style={styles.deleteAccountText}>Delete Account</Text>
         </TouchableOpacity>
 
       </ScrollView>
@@ -314,8 +314,8 @@ const styles = StyleSheet.create({
   },
   logoutText: {fontFamily: fonts.title, fontSize: sw(14), fontWeight: '700', color: '#DB1919'},
 
-  deleteAccountBtn: {alignItems: 'center', paddingVertical: sw(8)},
-  deleteAccountText: {fontFamily: fonts.textFont, fontSize: sw(12), fontWeight: '500', color: '#999999', textDecorationLine: 'underline'},
+  menuIconWrapDanger: {backgroundColor: 'rgba(219,25,25,0.08)'},
+  menuLabelDanger: {color: '#DB1919'},
 });
 
 export default ProfileScreen;
