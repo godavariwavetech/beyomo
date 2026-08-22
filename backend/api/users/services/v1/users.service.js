@@ -118,7 +118,10 @@ const deleteAccount = async (userId) => {
     name: null,
     email: null,
     profilePicture: null,
-    phone: `deleted_${userId}_${Date.now()}`,
+    // `phone` is UNIQUE varchar(20); `deleted_<id>_<13-digit timestamp>` overflowed it
+    // and MySQL rejected the update. The row id is already unique and never reused,
+    // so it alone is enough to free the real number for re-registration.
+    phone: `deleted_${userId}`,
     deviceTokens: [],
     fcmToken: null,
   });
