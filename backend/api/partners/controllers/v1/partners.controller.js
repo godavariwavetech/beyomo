@@ -95,6 +95,14 @@ const getProfile = catchAsync(async (req, res, next) => {
 });
 
 /**
+ * DELETE /api/v1/partners/profile
+ */
+const deleteAccount = catchAsync(async (req, res, next) => {
+  const result = await partnersService.deleteAccount(req.partner.userId);
+  res.status(200).json({ status: true, message: result.message });
+});
+
+/**
  * PATCH /api/v1/partners/profile
  */
 const updateProfile = catchAsync(async (req, res, next) => {
@@ -295,6 +303,7 @@ const getWallet = catchAsync(async (req, res) => {
 module.exports = {
   getProfile,
   updateProfile,
+  deleteAccount,
   uploadDocuments,
   getDashboard,
   getBookings,

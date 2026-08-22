@@ -12,12 +12,14 @@ const {
   getWallet,
   getReferral,
   getUserReviews,
+  deleteAccount,
 } = require("../../controllers/v1/users.controller");
 
 router.use(authenticate);
 
 router.get("/profile", getProfile);
 router.patch("/profile", updateProfile);
+router.delete("/profile", deleteAccount);
 router.post("/address", addAddress);
 router.put("/address/:addressId", updateAddress);
 router.delete("/address/:addressId", deleteAddress);

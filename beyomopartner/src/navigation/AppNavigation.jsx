@@ -24,6 +24,7 @@ import ActiveJobScreen from '../screens/Jobs/ActiveJobScreen';
 
 import NotificationsScreen from '../screens/Notifications/NotificationsScreen';
 import EditProfileScreen from '../screens/Profile/EditProfileScreen';
+import DeleteAccountScreen from '../screens/Profile/DeleteAccountScreen';
 import MyReviewsScreen from '../screens/Profile/MyReviewsScreen';
 import HelpSupportScreen from '../screens/Profile/HelpSupportScreen';
 import AboutUsScreen from '../screens/Profile/AboutUsScreen';
@@ -84,6 +85,7 @@ const AppNavigation = () => {
         <Stack.Screen name="ActiveJob" component={ActiveJobScreen} />
         <Stack.Screen name="Notifications" component={NotificationsScreen} />
         <Stack.Screen name="EditProfile" component={EditProfileScreen} />
+        <Stack.Screen name="DeleteAccount" component={DeleteAccountScreen} />
         <Stack.Screen name="MyReviews" component={MyReviewsScreen} />
         <Stack.Screen name="HelpSupport" component={HelpSupportScreen} />
         <Stack.Screen name="AboutUs" component={AboutUsScreen} />

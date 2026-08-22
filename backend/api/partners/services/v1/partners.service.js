@@ -26,6 +26,23 @@ const getProfile = async (partnerId) => {
   return partner;
 };
 
+const deleteAccount = async (partnerId) => {
+  const partner = await Partner.findByPk(partnerId);
+  if (!partner || partner.status === "deleted") throw new AppError("Partner not found", 404);
+
+  await partner.update({
+    status: "deleted",
+    name: null,
+    email: null,
+    profilePicture: null,
+    phone: `deleted_${partnerId}_${Date.now()}`,
+    deviceTokens: [],
+    fcmToken: null,
+  });
+
+  return { message: "Account deleted" };
+};
+
 const saveBase64Image = (base64DataUri, partnerId) => {
   const matches = base64DataUri.match(/^data:image\/(jpeg|jpg|png|webp);base64,(.+)$/);
   if (!matches) return null;
@@ -149,6 +166,8 @@ const updateDocuments = async (partnerId, documentData) => {
   };
 };
 
+const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+
 const parseServiceItems = (s) => {
   if (Array.isArray(s)) return s;
   if (typeof s === "string") { try { return JSON.parse(s); } catch { return []; } }
@@ -165,11 +184,24 @@ const partnerEarningForBooking = (b, partnerId) => {
   const hasTracking = svcs.length > 0 && svcs[0].serviceStatus !== undefined;
   const bookingEarning = parseFloat(b.partnerEarning || b.totalAmount || 0);
   if (!hasTracking) return bookingEarning;
-  const rawTotal = svcs.reduce((sum, s) => sum + s.price * (s.qty || 1), 0);
-  const myRaw = svcs
+  // Soft-removed services are not part of the booking's charged amount, so they must not
+  // sit in the denominator either — leaving them in shrank every partner's share.
+  // `price` is parseFloat-guarded: a single malformed item used to poison the whole sum
+  // with NaN, which serialised to null and rendered as ₹0 on the dashboard.
+  const itemRaw = (s) => (parseFloat(s.price) || 0) * (s.qty || 1);
+  const active = svcs.filter(s => !s.removed);
+  const rawTotal = active.reduce((sum, s) => sum + itemRaw(s), 0);
+  const myRaw = active
     .filter(s => String(s.assignedPartnerId) === String(partnerId))
-    .reduce((sum, s) => sum + s.price * (s.qty || 1), 0);
-  return rawTotal > 0 ? bookingEarning * (myRaw / rawTotal) : bookingEarning;
+    .reduce((sum, s) => sum + itemRaw(s), 0);
+  // A partner who is the booking's primary owner but holds no individually-stamped
+  // service (legacy rows written before per-service claiming) still earned the booking.
+  if (myRaw === 0 && String(b.partnerId) === String(partnerId)) {
+    return active.some(s => s.assignedPartnerId != null) ? 0 : round2(bookingEarning);
+  }
+  // Scaling by a service share yields long floats (794.0553816...), which the apps rendered
+  // verbatim — round to paise here so every consumer gets a presentable amount.
+  return round2(rawTotal > 0 ? bookingEarning * (myRaw / rawTotal) : bookingEarning);
 };
 
 // The dashboard's Total Earning is computed live from completed bookings — the same
@@ -189,9 +221,9 @@ const computeTotalEarned = async (partnerId) => {
       ],
       status: "completed",
     },
-    attributes: ["id", "services", "partnerEarning", "totalAmount"],
+    attributes: ["id", "partnerId", "services", "partnerEarning", "totalAmount"],
   });
-  return completed.reduce((sum, b) => sum + partnerEarningForBooking(b, partnerId), 0);
+  return round2(completed.reduce((sum, b) => sum + partnerEarningForBooking(b, partnerId), 0));
 };
 
 const getDashboard = async (partnerId) => {
@@ -502,8 +534,18 @@ const getEarnings = async (partnerId, period = "month") => {
 
   // Live sum for every period (including "all") using the same per-booking formula as
   // the dashboard's computeTotalEarned, so the two screens can never disagree.
-  const totalEarned = completedBookings.reduce((sum, b) => sum + partnerEarningForBooking(b, partnerId), 0);
+  const totalEarnedForPeriod = round2(
+    completedBookings.reduce((sum, b) => sum + partnerEarningForBooking(b, partnerId), 0),
+  );
   const totalJobs = completedBookings.length;
+
+  // All-time total computed live, exactly like the dashboard's computeTotalEarned.
+  // `partner.totalEarnings` is only ever incremented by the settlement ledger job, so it
+  // reads 0 for any partner whose completed jobs were never settled — which is what made
+  // the Earnings header fall back to ₹0 while a period tab was still loading.
+  const allTimeEarned = period === "all"
+    ? totalEarnedForPeriod
+    : await computeTotalEarned(partnerId);
 
   const recentEarnings = completedBookings.slice(0, 10).map((b) => {
     const myEarning = partnerEarningForBooking(b, partnerId);
@@ -525,10 +567,11 @@ const getEarnings = async (partnerId, period = "month") => {
 
   return {
     period,
-    stats: { jobs: totalJobs, earned: totalEarned },
+    stats: { jobs: totalJobs, earned: totalEarnedForPeriod },
     averageRating: partner?.ratingsAverage ?? null,
     totalReviews: partner?.ratingsCount ?? 0,
-    totalEarnings: partner?.totalEarnings ?? 0,
+    totalEarnings: allTimeEarned,
+    settledEarnings: parseFloat(partner?.totalEarnings ?? 0),
     recentEarnings,
   };
 };
@@ -925,7 +968,7 @@ const removeBookingPackage = async (partnerId, bookingId, packageId) => {
 };
 
 module.exports = {
-  getProfile, updateProfile, updateDocuments,
+  getProfile, updateProfile, updateDocuments, deleteAccount,
   getDashboard, getBookings, getBookingById, getAvailableBookings, acceptBooking, claimServices, updateBookingStatus,
   markArrived, updateDeviceToken, getEarnings, addExtraServices, addBookingPackage, removeBookingPackage,
 };

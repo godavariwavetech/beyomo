@@ -17,18 +17,26 @@ import {fonts} from '../../config/theme';
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
 
-const STATS = [
-  {label: 'Happy Clients', value: '50K+'},
-  {label: 'Expert Artists', value: '500+'},
-  {label: 'Cities', value: '12'},
-  {label: 'Services', value: '80+'},
-];
+// Wordmark is rendered from its true aspect ratio (499 x 196) rather than a square box.
+const LOGO_W = sw(180);
 
-const VALUES = [
-  {icon: 'shield-checkmark-outline', title: 'Trust & Safety', desc: 'Every expert is verified, trained and background-checked.'},
-  {icon: 'sparkles-outline', title: 'Premium Quality', desc: 'We use only salon-grade, dermatologist-approved products.'},
-  {icon: 'home-outline', title: 'Doorstep Comfort', desc: 'Your favourite salon experience, delivered at home.'},
-  {icon: 'leaf-outline', title: 'Eco-Conscious', desc: 'Committed to sustainable and eco-friendly beauty practices.'},
+// Copy mirrors the About Us page on beyomo.com so the app and the website tell the same
+// story. The previous stats block (50K+ clients / 500+ artists / 12 cities) was invented
+// and contradicted the site, which states Beyomo is launching in 2026 across Andhra Pradesh.
+const WHO_WE_ARE = {
+  eyebrow: 'Who We Are',
+  title: 'A salon that comes to your door',
+  paragraphs: [
+    "Beyomo stands for Beauty at Your Moment because great beauty experiences shouldn't wait for an appointment slot at a crowded salon. Launching in 2026 across Andhra Pradesh, Beyomo is a home salon platform that brings vetted, trained professionals to your doorstep, with premium products and the kind of care you'd expect from the best salon in town.",
+    'We serve both men and women, covering everything from everyday grooming to bridal and groom makeup and go further with specialist aesthetic treatments delivered safely at home by certified professionals.',
+  ],
+};
+
+const PROMISE = [
+  {icon: 'home-outline', title: 'Doorstep Convenience', desc: 'A full salon experience without stepping out of your home.'},
+  {icon: 'sparkles-outline', title: 'Premium Quality', desc: 'Top-grade products and highly skilled professionals on every visit.'},
+  {icon: 'shield-checkmark-outline', title: 'Vetted Professionals', desc: 'Background-checked, trained, and trusted to be in your home.'},
+  {icon: 'time-outline', title: 'Your Schedule', desc: 'Book at a time that works for you, not us.'},
 ];
 
 const AboutUsScreen = ({navigation}: any) => {
@@ -43,11 +51,13 @@ const AboutUsScreen = ({navigation}: any) => {
           <Ionicons name="arrow-back" size={sw(22)} color="#FFFFFF" />
         </TouchableOpacity>
         <View style={styles.heroContent}>
-          <Text style={styles.brandName}>BEYOMO</Text>
-          <Text style={styles.tagline}>SALON COMES HOME</Text>
-          <Text style={styles.heroSub}>
-            Bringing luxury beauty services to your doorstep — because you deserve the best, always.
-          </Text>
+          <Image
+            source={require('../../assets/beyomo_logo_icon.png')}
+            style={styles.logo}
+            resizeMode="contain"
+            accessibilityLabel="Beyomo"
+          />
+          <Text style={styles.heroSub}>Beauty at Your Moment</Text>
         </View>
       </LinearGradient>
 
@@ -55,28 +65,24 @@ const AboutUsScreen = ({navigation}: any) => {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[styles.scroll, {paddingBottom: insets.bottom + sw(32)}]}>
 
-        {/* Stats */}
-        <View style={styles.statsRow}>
-          {STATS.map(stat => (
-            <View key={stat.label} style={styles.statBox}>
-              <Text style={styles.statValue}>{stat.value}</Text>
-              <Text style={styles.statLabel}>{stat.label}</Text>
-            </View>
+        {/* Who We Are */}
+        <View style={styles.section}>
+          <Text style={styles.eyebrow}>{WHO_WE_ARE.eyebrow}</Text>
+          <Text style={styles.sectionTitle}>{WHO_WE_ARE.title}</Text>
+          {WHO_WE_ARE.paragraphs.map((para, i) => (
+            <Text key={i} style={styles.sectionText}>
+              {para}
+            </Text>
           ))}
         </View>
 
-        {/* Mission */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Our Mission</Text>
-          <Text style={styles.sectionText}>
-            At Beyomo, we believe beauty is a form of self-care that should be accessible, comfortable, and joyful. We connect you with skilled beauty professionals who bring the full salon experience — right to your home.
-          </Text>
+        {/* Our Promise */}
+        <View style={styles.promiseHeader}>
+          <Text style={styles.eyebrow}>Our Promise</Text>
+          <Text style={styles.sectionTitle}>What you can always expect</Text>
         </View>
-
-        {/* Values */}
-        <Text style={styles.sectionTitle}>Our Values</Text>
         <View style={styles.valuesGrid}>
-          {VALUES.map(v => (
+          {PROMISE.map(v => (
             <View key={v.title} style={styles.valueCard}>
               <View style={styles.valueIcon}>
                 <Ionicons name={v.icon as any} size={sw(22)} color="#105641" />
@@ -89,8 +95,9 @@ const AboutUsScreen = ({navigation}: any) => {
 
         {/* Version info */}
         <View style={styles.versionCard}>
-          <Text style={styles.versionText}>Beyomo v1.0.0</Text>
-          <Text style={styles.versionSub}>© 2026 Beyomo Technologies Pvt Ltd</Text>
+          <Text style={styles.versionText}>Beyomo Partner v1.0.0</Text>
+          <Text style={styles.versionSub}>Copyright © 2026 Beyomo — Beauty & Wellness at Home.</Text>
+          <Text style={styles.versionSub}>All Rights Reserved.</Text>
         </View>
       </ScrollView>
     </View>
@@ -100,7 +107,7 @@ const AboutUsScreen = ({navigation}: any) => {
 const styles = StyleSheet.create({
   root: {flex: 1, backgroundColor: '#F5F5F5'},
 
-  hero: {paddingBottom: sw(28), paddingHorizontal: sw(16)},
+  hero: {paddingBottom: sw(18), paddingHorizontal: sw(16)},
   backBtn: {
     width: sw(36),
     height: sw(36),
@@ -108,50 +115,40 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.15)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: sw(12),
+    marginBottom: sw(6),
   },
-  heroContent: {alignItems: 'center', gap: sw(6)},
-  brandName: {fontFamily: fonts.title, fontSize: sw(32), fontWeight: '700', color: '#FFFFFF', letterSpacing: sw(4)},
-  tagline: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#C8A84C', letterSpacing: sw(2)},
+  heroContent: {alignItems: 'center', gap: sw(8)},
+  logo: {width: LOGO_W, height: LOGO_W * (196 / 499)},
   heroSub: {
     fontFamily: fonts.textFont,
     fontSize: sw(13),
     color: 'rgba(255,255,255,0.75)',
     textAlign: 'center',
     lineHeight: sw(20),
-    marginTop: sw(6),
     paddingHorizontal: sw(8),
   },
 
-  scroll: {paddingHorizontal: sw(16), paddingTop: sw(16), gap: sw(16)},
-
-  statsRow: {
-    flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    borderRadius: sw(12),
-    padding: sw(16),
-    justifyContent: 'space-between',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 1},
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-  },
-  statBox: {alignItems: 'center', flex: 1},
-  statValue: {fontFamily: fonts.title, fontSize: sw(18), fontWeight: '700', color: '#105641'},
-  statLabel: {fontFamily: fonts.textFont, fontSize: sw(10), color: '#656565', textAlign: 'center', marginTop: sw(2)},
+  scroll: {paddingHorizontal: sw(16), paddingTop: sw(14), gap: sw(12)},
 
   section: {
     backgroundColor: '#FFFFFF',
     borderRadius: sw(12),
-    padding: sw(16),
-    gap: sw(8),
+    padding: sw(14),
+    gap: sw(6),
     elevation: 2,
     shadowColor: '#000',
     shadowOffset: {width: 0, height: 1},
     shadowOpacity: 0.06,
     shadowRadius: 6,
   },
+  eyebrow: {
+    fontFamily: fonts.textFont,
+    fontSize: sw(11),
+    color: '#105641',
+    letterSpacing: sw(1.5),
+    textTransform: 'uppercase',
+  },
+  promiseHeader: {gap: sw(4)},
   sectionTitle: {fontFamily: fonts.title, fontSize: sw(15), fontWeight: '700', color: '#171816'},
   sectionText: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#5C5C5C', lineHeight: sw(21)},
 
@@ -183,7 +180,7 @@ const styles = StyleSheet.create({
   valueTitle: {fontFamily: fonts.textFont, fontSize: sw(13), fontWeight: '700', color: '#171816'},
   valueDesc: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#656565', lineHeight: sw(17)},
 
-  versionCard: {alignItems: 'center', gap: sw(4), paddingTop: sw(8)},
+  versionCard: {alignItems: 'center', gap: sw(2), paddingTop: sw(4)},
   versionText: {fontFamily: fonts.textFont, fontSize: sw(12), color: '#A3A3A3'},
   versionSub: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#BBBBBB'},
 });

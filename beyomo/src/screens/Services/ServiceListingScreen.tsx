@@ -798,7 +798,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: sw(8),
     paddingVertical: sw(6),
   },
-  newLaunchText: {fontFamily: fonts.textFont, fontSize: sw(14), fontWeight: '500', color: '#FFFFFF', lineHeight: sw(12)},
+  newLaunchText: {fontFamily: fonts.textFont, fontSize: sw(14), fontWeight: '500', color: '#FFFFFF', lineHeight: sw(18)},
   cardBody: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -814,7 +814,7 @@ const styles = StyleSheet.create({
   cardTopInfo: {gap: sw(10)},
   serviceName: {fontFamily: fonts.textFont, fontSize: sw(18), fontWeight: '700', color: '#000000', lineHeight: sw(22)},
   durationRow: {flexDirection: 'row', alignItems: 'center', gap: sw(4)},
-  durationText: {fontFamily: fonts.textFont, fontSize: sw(14), color: '#656565', lineHeight: sw(12)},
+  durationText: {fontFamily: fonts.textFont, fontSize: sw(14), color: '#656565', lineHeight: sw(18)},
   cardMeta: {gap: sw(6)},
   bookedCount: {fontFamily: fonts.textFont, fontSize: sw(12), fontWeight: '500', color: '#0068F0', lineHeight: sw(12)},
   viewDetailsBtn: {
@@ -833,10 +833,10 @@ const styles = StyleSheet.create({
   priceBlock: {alignItems: 'flex-end', gap: sw(12)},
   startsAtLabel: {fontFamily: fonts.textFont, fontSize: sw(13), fontWeight: '500', color: '#A0AEC0'},
   priceRow: {flexDirection: 'row', alignItems: 'center', gap: sw(4)},
-  currentPrice: {fontFamily: fonts.textFont, fontSize: sw(16), fontWeight: '700', color: '#000000', lineHeight: sw(12)},
-  originalPrice: {fontFamily: fonts.textFont, fontSize: sw(14), fontWeight: '400', color: '#656565', lineHeight: sw(12), textDecorationLine: 'line-through'},
+  currentPrice: {fontFamily: fonts.textFont, fontSize: sw(16), fontWeight: '700', color: '#000000', lineHeight: sw(20)},
+  originalPrice: {fontFamily: fonts.textFont, fontSize: sw(14), fontWeight: '400', color: '#656565', lineHeight: sw(18), textDecorationLine: 'line-through'},
   discountRow: {flexDirection: 'row', alignItems: 'center', gap: sw(4)},
-  discountText: {fontFamily: fonts.textFont, fontSize: sw(14), fontWeight: '600', color: '#008F30', lineHeight: sw(12)},
+  discountText: {fontFamily: fonts.textFont, fontSize: sw(14), fontWeight: '600', color: '#008F30', lineHeight: sw(18)},
   addBtn: {
     flexDirection: 'row',
     alignItems: 'center',

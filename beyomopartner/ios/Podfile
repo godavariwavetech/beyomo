@@ -1,12 +1,46 @@
 # Resolve react_native_pods.rb with node to allow for hoisting
-require Pod::Executable.execute_command('node', ['-p',
-  'require.resolve(
-    "react-native/scripts/react_native_pods.rb",
-    {paths: [process.argv[1]]},
-  )', __dir__]).strip
+ def node_require(script)
+  # Resolve script with node to allow for hoisting
+  require Pod::Executable.execute_command('node', ['-p',
+   "require.resolve(
+      '#{script}',
+      {paths: [process.argv[1]]},
+     )", __dir__]).strip
+end
+
+# Use it to require both react-native's and this package's scripts:
+node_require('react-native/scripts/react_native_pods.rb')
+node_require('react-native-permissions/scripts/setup.rb')
+
+
 
 platform :ios, min_ios_version_supported
+use_modular_headers!
+use_frameworks! :linkage => :static
 prepare_react_native_project!
+
+setup_permissions([
+  # 'AppTrackingTransparency',
+  # 'Bluetooth',
+  # 'Calendars',
+  # 'CalendarsWriteOnly',
+  # 'Camera',
+  # 'Contacts',
+  # 'FaceID',
+  'LocationAccuracy',
+  'LocationAlways',
+  'LocationWhenInUse',
+  # 'MediaLibrary',
+  # 'Microphone',
+  # 'Motion',
+  'Notifications',
+  # 'PhotoLibrary',
+  # 'PhotoLibraryAddOnly',
+  # 'Reminders',
+  # 'Siri',
+  # 'SpeechRecognition',
+  # 'StoreKit',
+])
 
 linkage = ENV['USE_FRAMEWORKS']
 if linkage != nil
@@ -16,6 +50,11 @@ end
 
 target 'beyomopartner' do
   config = use_native_modules!
+
+  # Disable new architecture until react-native-screens, react-native-gesture-handler,
+  # and react-native-safe-area-context release fixes for RCTEventEmitter.receiveEvent
+  # compatibility with RN 0.79 bridgeless mode.
+  ENV['RCT_NEW_ARCH_ENABLED'] = '0'
 
   use_react_native!(
     :path => config[:reactNativePath],
@@ -31,5 +70,17 @@ target 'beyomopartner' do
       :mac_catalyst_enabled => false,
       # :ccache_enabled => true
     )
+    # ==================== FIX FOR fmt consteval ERROR (Xcode 26.4+) ====================
+    # Forces only the fmt pod to compile with C++17 to bypass broken consteval handling
+    # in newer Apple Clang while keeping the rest of React Native on C++20.
+    installer.pods_project.targets.each do |target|
+      if target.name == 'fmt'
+        target.build_configurations.each do |config|
+          config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'c++17'
+          # Optional: extra safety
+          # config.build_settings['CLANG_CXX_LIBRARY'] = 'libc++'
+        end
+      end
+    end
   end
 end

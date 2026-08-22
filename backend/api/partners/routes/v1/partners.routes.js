@@ -5,6 +5,7 @@ const partnerAuthenticate = require("../../../../utils/partnerAuthenticate");
 const {
   getProfile,
   updateProfile,
+  deleteAccount,
   uploadDocuments,
   getDashboard,
   getBookings,
@@ -35,6 +36,7 @@ router.use(partnerAuthenticate);
 
 router.get("/profile", getProfile);
 router.patch("/profile", updateProfile);
+router.delete("/profile", deleteAccount);
 router.post("/documents", uploadDocuments);
 router.get("/dashboard", getDashboard);
 router.get("/earnings", getEarnings);

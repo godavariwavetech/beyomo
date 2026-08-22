@@ -63,14 +63,16 @@ const CitySelectorScreen = ({navigation, route}: Props) => {
   };
 
   return (
-    <View style={[styles.root, {paddingTop: insets.top}]}>
+    <View style={styles.root}>
       <StatusBar barStyle="light-content" backgroundColor="#0E5843" />
 
       {/* Header */}
-      <LinearGradient colors={['#0E5843', '#022723']} style={styles.header}>
+      <LinearGradient
+        colors={['#0E5843', '#022723']}
+        style={[styles.header, {paddingTop: insets.top + sw(24)}]}>
         {returnToHome && (
           <TouchableOpacity
-            style={styles.backBtn}
+            style={[styles.backBtn, {top: insets.top + sw(24)}]}
             activeOpacity={0.7}
             onPress={() => navigation?.goBack()}>
             <Ionicons name="arrow-back" size={sw(22)} color="#FFFFFF" />
@@ -156,7 +158,6 @@ const styles = StyleSheet.create({
   root: {flex: 1, backgroundColor: '#F5F5F5'},
 
   header: {
-    paddingTop: sw(24),
     paddingBottom: sw(28),
     paddingHorizontal: sw(24),
     alignItems: 'center',
@@ -164,7 +165,6 @@ const styles = StyleSheet.create({
   },
   backBtn: {
     position: 'absolute',
-    top: sw(24),
     left: sw(16),
     padding: sw(6),
   },

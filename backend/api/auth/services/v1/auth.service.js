@@ -102,6 +102,8 @@ const verifyOtpService = async (phone, otp, userType = "user") => {
       isNew = true;
     } else if (entity.status === "suspended") {
       throw new AppError("Your partner account has been suspended. Please contact support.", 403);
+    } else if (entity.status === "deleted") {
+      throw new AppError("Account not found.", 404);
     }
   } else {
     throw new AppError("Invalid userType", 400);
