@@ -33,6 +33,15 @@ const addExtraServicesSchema = Joi.object({
   ).optional().default([]),
 });
 
+const addBookingPackageSchema = Joi.object({
+  packageId: Joi.number().integer().positive().required(),
+  qty: Joi.number().integer().min(1).max(5).default(1),
+  services: Joi.array().items(Joi.object({
+    id: Joi.alternatives().try(Joi.number(), Joi.string()).required(),
+    qty: Joi.number().integer().min(1).max(5).default(1),
+  })).min(1).required(),
+});
+
 const updateProfileSchema = Joi.object({
   name: Joi.string().trim().min(2).max(60),
   email: Joi.string().email().trim().lowercase(),
@@ -254,6 +263,25 @@ const addExtraServices = catchAsync(async (req, res, next) => {
 });
 
 /**
+ * PATCH /api/v1/partners/bookings/:id/add-package
+ */
+const addBookingPackage = catchAsync(async (req, res, next) => {
+  const { error, value } = addBookingPackageSchema.validate(req.body);
+  if (error) return next(new AppError(error.details[0].message, 400));
+
+  const booking = await partnersService.addBookingPackage(req.partner.userId, req.params.id, value.packageId, value.qty, value.services);
+  res.status(200).json({ status: true, message: 'Package added to booking', data: booking });
+});
+
+/**
+ * PATCH /api/v1/partners/bookings/:id/remove-package
+ */
+const removeBookingPackage = catchAsync(async (req, res, next) => {
+  const booking = await partnersService.removeBookingPackage(req.partner.userId, req.params.id, req.body?.packageId);
+  res.status(200).json({ status: true, message: 'Package removed from booking', data: booking });
+});
+
+/**
  * GET /api/v1/partners/wallet
  */
 const getWallet = catchAsync(async (req, res) => {
@@ -279,6 +307,8 @@ module.exports = {
   updateDeviceToken,
   getEarnings,
   addExtraServices,
+  addBookingPackage,
+  removeBookingPackage,
   sendTestNotification,
   getWallet,
 };

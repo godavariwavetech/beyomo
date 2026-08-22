@@ -68,6 +68,7 @@ const SplashScreen = ({navigation}: any) => {
     const minWait = new Promise<void>(r => setTimeout(r, 2500));
     const versionCheck = checkForceUpdate('partner');
 
+
     // Silently detect city in background — never blocks navigation. Falls back
     // to Nellore (the only serviceable city) if GPS fails or is denied.
     (async () => {

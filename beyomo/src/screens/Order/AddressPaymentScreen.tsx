@@ -502,10 +502,19 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
 
       const result = await api.post(endpoints.BOOKINGS, isCartMode
         ? {
-            packages: cartPackagesPayload,
-            extraServices: servicesToSubmit.length
-              ? servicesToSubmit.map(s => ({id: String(s.id), qty: s.qty}))
-              : undefined,
+            // Backend requires `services` (not `extraServices`) whenever there's no
+            // package in the booking — only send `packages`/`extraServices` when the
+            // cart actually has a package, same as the website's Checkout.
+            ...(cartPackagesPayload.length > 0
+              ? {
+                  packages: cartPackagesPayload,
+                  extraServices: servicesToSubmit.length
+                    ? servicesToSubmit.map(s => ({id: String(s.id), qty: s.qty}))
+                    : undefined,
+                }
+              : {
+                  services: servicesToSubmit.map(s => ({id: String(s.id), qty: s.qty})),
+                }),
             address: {
               label: addrLabel(selectedAddr),
               line1: addrLine(selectedAddr),
@@ -545,11 +554,12 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
             packageQty: routePackageId ? currentPackageQty : undefined,
             paymentMode,
           });
-      if (isCartMode) dispatch(clearCart());
       const bk = result.data?.data;
-      let paymentPending = false;
 
-      if (paymentMode === 'online') {
+      // Retries payment for the booking that's already been created (never creates a
+      // second one) — resolves true only once Razorpay + the backend's signature check
+      // both confirm the payment actually went through.
+      const attemptOnlinePayment = async (): Promise<boolean> => {
         const payResult = await payWithRazorpay({
           bookingId: bk?.id,
           bookingCode: bk?.bookingCode,
@@ -557,28 +567,50 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
           name: profile?.name,
           email: profile?.email,
         });
-        if (!payResult.success) {
-          paymentPending = true;
+        if (payResult.success) return true;
+        return new Promise<boolean>(resolve => {
           Alert.alert(
-            'Payment Pending',
-            `Your booking ${bk?.bookingCode} is saved, but payment wasn't completed. You can finish payment anytime from My Bookings.`,
+            'Payment Not Completed',
+            `${payResult.message} Your booking ${bk?.bookingCode} is saved as pending — you can retry now or pay later from My Bookings.`,
+            [
+              {text: 'Pay Later', style: 'cancel', onPress: () => resolve(false)},
+              {text: 'Retry Payment', onPress: () => attemptOnlinePayment().then(resolve)},
+            ],
           );
-        }
-      }
+        });
+      };
+
+      // Only the OrderPlaced/success flow means payment is actually confirmed — a
+      // pending online payment sends the user to the booking's own detail screen (where
+      // "Pay Now" already lives) instead of a success screen that hasn't been earned yet.
+      const paid = paymentMode === 'online' ? await attemptOnlinePayment() : true;
+
+      // Only clear the cart once the booking is actually done (paid online, or COD which
+      // has no payment step) — clearing it right after creation emptied this screen's
+      // bill/service list on screen before Razorpay even opened, looking like an already
+      // -placed order.
+      if (isCartMode && paid) dispatch(clearCart());
 
       // Reset (not navigate/push) so the cart/service-selection/checkout screens are
-      // dropped from history entirely — otherwise the back button from OrderPlaced (or
-      // from BookingDetail, which it auto-redirects to) would land back on stale checkout.
-      navigation?.reset({
-        index: 1,
-        routes: [
-          {name: 'Main'},
-          {
-            name: 'OrderPlaced',
-            params: {bookingCode: bk?.bookingCode, bookingId: bk?.id, paymentPending},
-          },
-        ],
-      });
+      // dropped from history entirely — otherwise the back button would land back on
+      // stale checkout.
+      navigation?.reset(
+        paid
+          ? {
+              index: 1,
+              routes: [
+                {name: 'Main'},
+                {name: 'OrderPlaced', params: {bookingCode: bk?.bookingCode, bookingId: bk?.id}},
+              ],
+            }
+          : {
+              index: 1,
+              routes: [
+                {name: 'Main'},
+                {name: 'BookingDetail', params: {bookingId: bk?.id}},
+              ],
+            },
+      );
     } catch (err: any) {
       Alert.alert(
         'Booking failed',

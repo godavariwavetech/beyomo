@@ -499,6 +499,12 @@ export default function Bookings() {
     }
 
     const svcs = Array.isArray(selected?.services) ? selected.services : [];
+    // Services' listed `price` is the raw undiscounted per-item price — bookings with
+    // packages/combos earn less than the sum of those prices, so scale each partner's
+    // raw-price share by the booking's real (already-discounted) partnerEarning instead
+    // of summing raw prices directly (that overstated payouts for combo bookings).
+    const rawTotal = svcs.reduce((sum, s) => sum + (s.price ?? 0) * (s.qty || 1), 0);
+    const bookingEarning = parseFloat(selected?.partnerEarning ?? (totalAmt - commission));
     const byPartner = {};
     svcs.forEach(s => {
       if (!s.assignedPartnerId) return;
@@ -506,7 +512,12 @@ export default function Bookings() {
       if (!byPartner[key]) byPartner[key] = { name: s.assignedPartnerName || 'Partner', amount: 0 };
       byPartner[key].amount += s.price * (s.qty || 1);
     });
-    if (Object.keys(byPartner).length > 0) return Object.values(byPartner);
+    if (Object.keys(byPartner).length > 0) {
+      if (rawTotal > 0 && bookingEarning) {
+        Object.values(byPartner).forEach(p => { p.amount = p.amount * (bookingEarning / rawTotal); });
+      }
+      return Object.values(byPartner);
+    }
     // Fallback: partner assigned at booking level (e.g. via "Assign / Change Partner")
     // but no service has been individually claimed/stamped with assignedPartnerId yet.
     if (selected?.partnerId) {
