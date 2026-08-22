@@ -149,9 +149,54 @@ const updateDocuments = async (partnerId, documentData) => {
   };
 };
 
+const parseServiceItems = (s) => {
+  if (Array.isArray(s)) return s;
+  if (typeof s === "string") { try { return JSON.parse(s); } catch { return []; } }
+  return [];
+};
+
+// Edge case 5: compute this partner's actual earning from their slice of services.
+// Services' listed `price` is the raw undiscounted per-item price — bookings with
+// packages/combos earn less than the sum of those prices, so scale the booking's real
+// (already-discounted) partnerEarning by this partner's share of the raw total instead
+// of summing raw prices directly (that overstated earnings for combo bookings).
+const partnerEarningForBooking = (b, partnerId) => {
+  const svcs = parseServiceItems(b.services);
+  const hasTracking = svcs.length > 0 && svcs[0].serviceStatus !== undefined;
+  const bookingEarning = parseFloat(b.partnerEarning || b.totalAmount || 0);
+  if (!hasTracking) return bookingEarning;
+  const rawTotal = svcs.reduce((sum, s) => sum + s.price * (s.qty || 1), 0);
+  const myRaw = svcs
+    .filter(s => String(s.assignedPartnerId) === String(partnerId))
+    .reduce((sum, s) => sum + s.price * (s.qty || 1), 0);
+  return rawTotal > 0 ? bookingEarning * (myRaw / rawTotal) : bookingEarning;
+};
+
+// The dashboard's Total Earning is computed live from completed bookings — the same
+// per-booking formula the Earnings screen uses for its "All Time" total — instead of
+// reading partner.totalEarnings (a counter incremented by the async settlement ledger
+// job). That counter can lag or undercount if a ledger write ever fails silently, which
+// made the dashboard total disagree with the Earnings screen's live-computed figure.
+const computeTotalEarned = async (partnerId) => {
+  const pidInt = parseInt(partnerId);
+  const completed = await Booking.findAll({
+    where: {
+      [Op.or]: [
+        { partnerId: pidInt },
+        literal(
+          `JSON_CONTAINS(JSON_EXTRACT(COALESCE(\`Booking\`.\`services\`, '[]'), '$[*].assignedPartnerId'), '${pidInt}')`
+        ),
+      ],
+      status: "completed",
+    },
+    attributes: ["id", "services", "partnerEarning", "totalAmount"],
+  });
+  return completed.reduce((sum, b) => sum + partnerEarningForBooking(b, partnerId), 0);
+};
+
 const getDashboard = async (partnerId) => {
   const partner = await Partner.findByPk(partnerId, {
-    attributes: ["totalEarnings", "pendingEarnings", "ratingsAverage", "ratingsCount", "status"],
+    attributes: ["pendingEarnings", "ratingsAverage", "ratingsCount", "status"],
   });
   if (!partner) throw new AppError("Partner not found", 404);
 
@@ -173,7 +218,7 @@ const getDashboard = async (partnerId) => {
     ],
   };
 
-  const [totalBookings, todayJobs, completedToday, totalCompleted] = await Promise.all([
+  const [totalBookings, todayJobs, completedToday, totalCompleted, totalEarnings] = await Promise.all([
     Booking.count({ where: partnerCondition }),
     // "Today Jobs" = this partner's active (not cancelled) jobs scheduled for today —
     // NOT status: "pending", since an assigned booking is never "pending" (that status
@@ -183,10 +228,11 @@ const getDashboard = async (partnerId) => {
     }),
     Booking.count({ where: { ...partnerCondition, status: "completed", completedAt: { [Op.gte]: today } } }),
     Booking.count({ where: { ...partnerCondition, status: "completed" } }),
+    computeTotalEarned(partnerId),
   ]);
 
   return {
-    totalEarnings: partner.totalEarnings,
+    totalEarnings,
     pendingEarnings: partner.pendingEarnings,
     ratings: { average: partner.ratingsAverage, count: partner.ratingsCount },
     status: partner.status,
@@ -454,41 +500,14 @@ const getEarnings = async (partnerId, period = "month") => {
     Partner.findByPk(partnerId, { attributes: ["totalEarnings", "ratingsAverage", "ratingsCount"] }),
   ]);
 
-  const parseSvcs = (s) => {
-    if (Array.isArray(s)) return s;
-    if (typeof s === "string") { try { return JSON.parse(s); } catch { return []; } }
-    return [];
-  };
-
-  // Edge case 5: compute this partner's actual earning from their slice of services.
-  // Services' listed `price` is the raw undiscounted per-item price — bookings with
-  // packages/combos earn less than the sum of those prices, so scale the booking's real
-  // (already-discounted) partnerEarning by this partner's share of the raw total instead
-  // of summing raw prices directly (that overstated earnings for combo bookings).
-  const partnerEarningForBooking = (b) => {
-    const svcs = parseSvcs(b.services);
-    const hasTracking = svcs.length > 0 && svcs[0].serviceStatus !== undefined;
-    const bookingEarning = parseFloat(b.partnerEarning || b.totalAmount || 0);
-    if (!hasTracking) return bookingEarning;
-    const rawTotal = svcs.reduce((sum, s) => sum + s.price * (s.qty || 1), 0);
-    const myRaw = svcs
-      .filter(s => String(s.assignedPartnerId) === String(partnerId))
-      .reduce((sum, s) => sum + s.price * (s.qty || 1), 0);
-    return rawTotal > 0 ? bookingEarning * (myRaw / rawTotal) : bookingEarning;
-  };
-
-  // "All Time" must agree with the partner dashboard's Total Earning, which reads the
-  // settlement ledger's running total (partner.totalEarnings) rather than recomputing
-  // from bookings — those two calculations can diverge on split/multi-partner bookings,
-  // so for "all" use the ledger figure as the source of truth instead of resumming here.
-  const totalEarned = period === "all"
-    ? parseFloat(partner?.totalEarnings || 0)
-    : completedBookings.reduce((sum, b) => sum + partnerEarningForBooking(b), 0);
+  // Live sum for every period (including "all") using the same per-booking formula as
+  // the dashboard's computeTotalEarned, so the two screens can never disagree.
+  const totalEarned = completedBookings.reduce((sum, b) => sum + partnerEarningForBooking(b, partnerId), 0);
   const totalJobs = completedBookings.length;
 
   const recentEarnings = completedBookings.slice(0, 10).map((b) => {
-    const myEarning = partnerEarningForBooking(b);
-    const svcs = parseSvcs(b.services);
+    const myEarning = partnerEarningForBooking(b, partnerId);
+    const svcs = parseServiceItems(b.services);
     const myServiceNames = svcs
       .filter(s => String(s.assignedPartnerId) === String(partnerId))
       .map(s => s.name)
