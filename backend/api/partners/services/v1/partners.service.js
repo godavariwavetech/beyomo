@@ -477,7 +477,13 @@ const getEarnings = async (partnerId, period = "month") => {
     return rawTotal > 0 ? bookingEarning * (myRaw / rawTotal) : bookingEarning;
   };
 
-  const totalEarned = completedBookings.reduce((sum, b) => sum + partnerEarningForBooking(b), 0);
+  // "All Time" must agree with the partner dashboard's Total Earning, which reads the
+  // settlement ledger's running total (partner.totalEarnings) rather than recomputing
+  // from bookings — those two calculations can diverge on split/multi-partner bookings,
+  // so for "all" use the ledger figure as the source of truth instead of resumming here.
+  const totalEarned = period === "all"
+    ? parseFloat(partner?.totalEarnings || 0)
+    : completedBookings.reduce((sum, b) => sum + partnerEarningForBooking(b), 0);
   const totalJobs = completedBookings.length;
 
   const recentEarnings = completedBookings.slice(0, 10).map((b) => {

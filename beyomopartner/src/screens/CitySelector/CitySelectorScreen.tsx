@@ -16,6 +16,7 @@ import {useDispatch, useSelector} from 'react-redux';
 import {fonts} from '../../config/theme';
 import {BASE_URL, endpoints} from '../../config/config';
 import {setSelectedCity} from '../../redux/reducers/city';
+import {updatePartnerProfile} from '../../redux/reducers/partner';
 import type {RootState} from '../../redux/store';
 import type {CityGeo} from '../../utils/geoUtils';
 import {useAppAlert} from '../../hooks/useAppAlert';
@@ -37,7 +38,7 @@ const resolveNext = (token: string | null, partner: any): string => {
 };
 
 const CitySelectorScreen = ({navigation, route}: Props) => {
-  const dispatch = useDispatch();
+  const dispatch = useDispatch<any>();
   const insets = useSafeAreaInsets();
   const token = useSelector((state: RootState) => state.Auth.token);
   const partner = useSelector((state: RootState) => state.Auth.partner);
@@ -45,8 +46,10 @@ const CitySelectorScreen = ({navigation, route}: Props) => {
   const [cities, setCities] = useState<CityGeo[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<CityGeo | null>(null);
+  const [saving, setSaving] = useState(false);
   const {alertConfig, showAlert, hideAlert} = useAppAlert();
 
+  const isChangeCity: boolean = !!route?.params?.goBack;
   const nextRoute: string = route?.params?.nextRoute ?? resolveNext(token, partner);
 
   useEffect(() => {
@@ -57,13 +60,34 @@ const CitySelectorScreen = ({navigation, route}: Props) => {
       .finally(() => setLoading(false));
   }, []);
 
-  const confirm = () => {
+  const confirm = async () => {
     if (!selected) {
       showAlert('Select City', 'Please select a city to continue.');
       return;
     }
+
+    // Changing city from the profile menu should update the partner's actual
+    // service location, since that's what job matching filters bookings by —
+    // not just the locally remembered city used before login.
+    if (isChangeCity) {
+      setSaving(true);
+      try {
+        await dispatch(
+          updatePartnerProfile({
+            cityId: selected.id,
+            location: {city: selected.name, state: selected.state},
+          } as any),
+        ).unwrap();
+      } catch (err: any) {
+        setSaving(false);
+        showAlert('Could Not Update City', err ?? 'Please try again.');
+        return;
+      }
+      setSaving(false);
+    }
+
     dispatch(setSelectedCity(selected));
-    if (route?.params?.goBack) {
+    if (isChangeCity) {
       navigation?.goBack();
     } else {
       navigation?.replace(nextRoute);
@@ -135,14 +159,20 @@ const CitySelectorScreen = ({navigation, route}: Props) => {
 
       <View style={[styles.footer, {paddingBottom: insets.bottom + sw(8)}]}>
         <TouchableOpacity
-          style={[styles.confirmBtn, !selected && styles.confirmBtnDisabled]}
+          style={[styles.confirmBtn, (!selected || saving) && styles.confirmBtnDisabled]}
           activeOpacity={0.85}
           onPress={confirm}
-          disabled={!selected}>
-          <Text style={styles.confirmText}>
-            {selected ? `Continue in ${selected.name}` : 'Select a City to Continue'}
-          </Text>
-          <Ionicons name="arrow-forward" size={sw(18)} color="#FFFFFF" />
+          disabled={!selected || saving}>
+          {saving ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <>
+              <Text style={styles.confirmText}>
+                {selected ? `Continue in ${selected.name}` : 'Select a City to Continue'}
+              </Text>
+              <Ionicons name="arrow-forward" size={sw(18)} color="#FFFFFF" />
+            </>
+          )}
         </TouchableOpacity>
       </View>
 
