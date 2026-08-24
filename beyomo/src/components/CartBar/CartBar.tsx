@@ -26,7 +26,7 @@ export default function CartBar({navigation}: {navigation: any}) {
     cartServices.reduce((sum: number, s: any) => sum + (s.isFree ? 0 : s.price * s.qty), 0);
 
   return (
-    <View style={[styles.cartBar, {paddingBottom: insets.bottom + sw(8)}]}>
+    <View style={[styles.cartBar, {paddingBottom: insets.bottom > 0 ? insets.bottom : sw(8)}]}>
       <View>
         <Text style={styles.cartPrice}>₹{Math.round(totalPrice).toLocaleString('en-IN')}</Text>
         <View style={styles.cartSubRow}>

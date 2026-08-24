@@ -304,14 +304,14 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
                     {!!cat.image && (
                       <Image source={{uri: cat.image}} style={[styles.categoryThumb, styles.categoryThumbActive]} resizeMode="cover" />
                     )}
-                    <Text style={[styles.categoryText, styles.categoryTextActive]}>{cat.label}</Text>
+                    <Text style={[styles.categoryText, styles.categoryTextActive]} numberOfLines={2} adjustsFontSizeToFit>{cat.label}</Text>
                   </LinearGradient>
                 ) : (
                   <>
                     {!!cat.image && (
                       <Image source={{uri: cat.image}} style={styles.categoryThumb} resizeMode="cover" />
                     )}
-                    <Text style={styles.categoryText}>{cat.label}</Text>
+                    <Text style={styles.categoryText} numberOfLines={2} adjustsFontSizeToFit>{cat.label}</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -610,25 +610,31 @@ const ServiceCard = ({
   onViewDetails: () => void;
 }) => (
   <View style={styles.card}>
-    {!!item.image && (
-      <View style={styles.cardImageWrapper}>
-        <Image source={{uri: item.image}} style={styles.cardImage} resizeMode="cover" />
-        {item.discountPct > 0 && (
-          <View style={styles.newLaunchBadge}>
-            <Text style={styles.newLaunchText}>{item.discountPct}% OFF</Text>
-          </View>
-        )}
-      </View>
-    )}
-
     <View style={styles.cardBody}>
       <View style={styles.cardLeft}>
         <View style={styles.cardTopInfo}>
           <Text style={styles.serviceName}>{item.name}</Text>
           {!!item.duration && (
             <View style={styles.durationRow}>
-              <Ionicons name="time-outline" size={sw(16)} color="#656565" />
+              <Ionicons name="time-outline" size={sw(14)} color="#8A6D1F" />
               <Text style={styles.durationText}>{item.duration}</Text>
+            </View>
+          )}
+
+          {!item.isFree && (
+            <View style={styles.priceBlock}>
+              {item.priceStartsFrom && <Text style={styles.startsAtLabel}>Starts at</Text>}
+              <View style={styles.priceRow}>
+                <Text style={styles.currentPrice}>₹{item.price.toLocaleString('en-IN')}</Text>
+                {item.originalPrice > item.price && (
+                  <Text style={styles.originalPrice}>₹{item.originalPrice.toLocaleString('en-IN')}</Text>
+                )}
+                {item.discountPct > 0 && (
+                  <View style={styles.discountPill}>
+                    <Text style={styles.discountPillText}>{item.discountPct}% OFF</Text>
+                  </View>
+                )}
+              </View>
             </View>
           )}
         </View>
@@ -642,21 +648,23 @@ const ServiceCard = ({
             onPress={onViewDetails}
             hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}
             style={styles.viewDetailsBtn}>
-            <Text style={styles.viewDetails}>View Details</Text>
+            <Text style={styles.viewDetails}>View Details ›</Text>
           </TouchableOpacity>
         </View>
       </View>
 
       <View style={styles.cardRight}>
+        {!!item.image ? (
+          <Image source={{uri: item.image}} style={styles.cardThumb} resizeMode="cover" />
+        ) : (
+          <View style={[styles.cardThumb, styles.cardThumbPlaceholder]}>
+            <Ionicons name="image-outline" size={sw(22)} color="#C5C5C5" />
+          </View>
+        )}
         {item.isFree ? (
           <>
-            <View style={styles.freePriceBlock}>
-              <View style={styles.freeBadge}>
-                <Text style={styles.freeBadgeText}>FREE</Text>
-              </View>
-              {item.originalPrice > 0 && (
-                <Text style={styles.freeOriginalPrice}>₹{item.originalPrice.toLocaleString('en-IN')}</Text>
-              )}
+            <View style={styles.freeBadge}>
+              <Text style={styles.freeBadgeText}>FREE</Text>
             </View>
             <View style={styles.freeLockedBtn}>
               <Ionicons name="checkmark-circle" size={sw(14)} color="#105641" />
@@ -665,21 +673,6 @@ const ServiceCard = ({
           </>
         ) : (
           <>
-            <View style={styles.priceBlock}>
-              {item.priceStartsFrom && <Text style={styles.startsAtLabel}>Starts at</Text>}
-              <View style={styles.priceRow}>
-                <Text style={styles.currentPrice}>₹{item.price.toLocaleString('en-IN')}</Text>
-                {item.originalPrice > item.price && (
-                  <Text style={styles.originalPrice}>₹{item.originalPrice.toLocaleString('en-IN')}</Text>
-                )}
-              </View>
-              {item.discountPct > 0 && (
-                <View style={styles.discountRow}>
-                  <Ionicons name="pricetag" size={sw(12)} color="#008F30" />
-                  <Text style={styles.discountText}>{item.discountPct}% OFF</Text>
-                </View>
-              )}
-            </View>
             {qty === 0 ? (
               <TouchableOpacity style={styles.addBtn} activeOpacity={0.7} onPress={onIncrement}>
                 <Text style={styles.addBtnText}>Add</Text>
@@ -719,11 +712,11 @@ const styles = StyleSheet.create({
   titleUnderline: {width: sw(38), height: 1.5, backgroundColor: '#C49738'},
 
   categoryScroll: {flexGrow: 0, marginBottom: sw(12)},
-  categoryContent: {paddingHorizontal: sw(16), gap: sw(12), alignItems: 'flex-start'},
-  categoryItem: {alignItems: 'center', width: sw(59)},
+  categoryContent: {paddingHorizontal: sw(16), gap: sw(14), alignItems: 'flex-start'},
+  categoryItem: {alignItems: 'center', width: sw(70)},
   categoryActiveWrapper: {
-    width: sw(59),
-    minHeight: sw(77),
+    width: sw(70),
+    minHeight: sw(84),
     borderRadius: sw(16),
     borderBottomLeftRadius: sw(8),
     borderBottomRightRadius: sw(8),
@@ -731,16 +724,16 @@ const styles = StyleSheet.create({
     paddingBottom: sw(4),
     gap: sw(2),
   },
-  categoryThumb: {width: sw(59), height: sw(59), borderRadius: sw(9.3)},
+  categoryThumb: {width: sw(64), height: sw(64), borderRadius: sw(10)},
   categoryThumbActive: {borderWidth: 1, borderColor: '#105641'},
   categoryText: {
     fontFamily: fonts.textFont,
-    fontSize: sw(12),
+    fontSize: sw(11),
     fontWeight: '600',
     color: '#414141',
-    lineHeight: sw(14),
+    lineHeight: sw(13),
     textAlign: 'center',
-    marginTop: sw(4),
+    marginTop: sw(6),
   },
   categoryTextActive: {color: '#FEFEFE', marginTop: sw(2)},
 
@@ -756,17 +749,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: sw(6),
-    backgroundColor: '#FEFEFE',
-    borderWidth: 0.5,
-    borderColor: '#C5C5C5',
-    borderRadius: sw(8),
-    paddingHorizontal: sw(10),
-    paddingVertical: sw(6),
+    backgroundColor: '#FFFFFF',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#D8D2C4',
+    borderRadius: sw(20),
+    paddingHorizontal: sw(14),
+    paddingVertical: sw(8),
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.03,
+    shadowRadius: 3,
+    elevation: 1,
   },
-  filterText: {fontFamily: fonts.textFont, fontSize: sw(12), color: '#414141', lineHeight: sw(18)},
-  filterTextActive: {color: '#105641', fontWeight: '600'},
+  filterText: {fontFamily: 'Poppins-SemiBold', fontSize: sw(12), color: '#414141', lineHeight: sw(16), letterSpacing: 0.2},
+  filterTextActive: {color: '#105641'},
   filterBtnActive: {borderColor: '#105641', backgroundColor: '#EAF5F0'},
-  resultCount: {fontFamily: fonts.textFont, fontSize: sw(14), color: '#414141', lineHeight: sw(21)},
+  resultCount: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#5C5C5C', lineHeight: sw(18), letterSpacing: 0.2},
 
   scroll: {flex: 1},
   scrollContent: {paddingHorizontal: sw(16), gap: sw(20)},
@@ -774,11 +772,12 @@ const styles = StyleSheet.create({
   card: {
     borderRadius: sw(16),
     overflow: 'hidden',
+    backgroundColor: '#FDF5F3',
     shadowColor: '#000',
-    shadowOffset: {width: 0, height: 4},
-    shadowOpacity: 0.16,
-    shadowRadius: 16,
-    elevation: 6,
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
   },
   cardImageWrapper: {
     width: '100%',
@@ -803,48 +802,65 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    backgroundColor: '#FEFEFE',
-    borderBottomLeftRadius: sw(16),
-    borderBottomRightRadius: sw(16),
-    padding: sw(12),
+    backgroundColor: 'transparent',
+    padding: sw(14),
     paddingBottom: sw(16),
     gap: sw(12),
   },
   cardLeft: {flex: 1, gap: sw(12)},
   cardTopInfo: {gap: sw(10)},
-  serviceName: {fontFamily: fonts.textFont, fontSize: sw(18), fontWeight: '700', color: '#000000', lineHeight: sw(22)},
+  serviceName: {fontFamily: 'Poppins-Medium', fontSize: sw(15), color: '#171816', lineHeight: sw(20)},
   durationRow: {flexDirection: 'row', alignItems: 'center', gap: sw(4)},
-  durationText: {fontFamily: fonts.textFont, fontSize: sw(14), color: '#656565', lineHeight: sw(12)},
+  durationText: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#5C5C5C', lineHeight: sw(14), letterSpacing: 0.2},
   cardMeta: {gap: sw(6)},
   bookedCount: {fontFamily: fonts.textFont, fontSize: sw(12), fontWeight: '500', color: '#0068F0', lineHeight: sw(12)},
   viewDetailsBtn: {
     paddingVertical: sw(4),
   },
   viewDetails: {
-    fontFamily: fonts.textFont,
-    fontSize: sw(15),
-    fontWeight: '600',
+    fontFamily: fonts.title,
+    fontSize: sw(12),
     color: '#105641',
-    lineHeight: sw(18),
-    textDecorationLine: 'underline',
+    lineHeight: sw(16),
+    letterSpacing: 0.3,
   },
 
-  cardRight: {alignItems: 'flex-end', justifyContent: 'space-between', gap: sw(12)},
-  priceBlock: {alignItems: 'flex-end', gap: sw(12)},
-  startsAtLabel: {fontFamily: fonts.textFont, fontSize: sw(13), fontWeight: '500', color: '#A0AEC0'},
-  priceRow: {flexDirection: 'row', alignItems: 'center', gap: sw(4)},
-  currentPrice: {fontFamily: fonts.textFont, fontSize: sw(16), fontWeight: '700', color: '#000000', lineHeight: sw(12)},
-  originalPrice: {fontFamily: fonts.textFont, fontSize: sw(14), fontWeight: '400', color: '#656565', lineHeight: sw(12), textDecorationLine: 'line-through'},
-  discountRow: {flexDirection: 'row', alignItems: 'center', gap: sw(4)},
-  discountText: {fontFamily: fonts.textFont, fontSize: sw(14), fontWeight: '600', color: '#008F30', lineHeight: sw(12)},
+  cardRight: {alignItems: 'center', justifyContent: 'flex-start', gap: sw(8), width: sw(90)},
+  cardThumb: {
+    width: sw(90),
+    height: sw(90),
+    borderRadius: sw(12),
+    backgroundColor: '#F4E1CC',
+  },
+  cardThumbPlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  priceBlock: {gap: sw(6)},
+  startsAtLabel: {fontFamily: fonts.textFont, fontSize: sw(12), color: '#8A8A8A'},
+  priceRow: {flexDirection: 'row', alignItems: 'center', gap: sw(6), flexWrap: 'wrap'},
+  currentPrice: {fontFamily: 'Poppins-SemiBold', fontSize: sw(15), color: '#012823', lineHeight: sw(20)},
+  originalPrice: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#8A8A8A', textDecorationLine: 'line-through'},
+  discountPill: {
+    backgroundColor: '#E8F5EE',
+    borderRadius: sw(6),
+    paddingHorizontal: sw(6),
+    paddingVertical: sw(2),
+  },
+  discountPillText: {
+    fontFamily: 'Poppins-SemiBold',
+    fontSize: sw(11),
+    color: '#0E8043',
+    letterSpacing: 0.2,
+  },
   addBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: sw(4),
-    paddingHorizontal: sw(14),
-    height: sw(35),
-    backgroundColor: 'rgba(16, 86, 65, 0.05)',
+    gap: sw(2),
+    width: sw(90),
+    height: sw(32),
+    backgroundColor: 'rgba(16, 86, 65, 0.06)',
     borderWidth: 1,
     borderColor: '#105641',
     borderRadius: sw(20),

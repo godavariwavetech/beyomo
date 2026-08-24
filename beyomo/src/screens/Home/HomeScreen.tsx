@@ -20,7 +20,7 @@ import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useDispatch, useSelector} from 'react-redux';
 import {fonts} from '../../config/theme';
 import {fetchCategories} from '../../redux/reducers/services';
-import {addServicesToCart} from '../../redux/reducers/cart';
+import {addServicesToCart, incrementServiceQty, decrementServiceQty} from '../../redux/reducers/cart';
 import {fetchNotifications} from '../../redux/reducers/notifications';
 import {fetchUserBookings} from '../../redux/reducers/bookings';
 import CartBar from '../../components/CartBar/CartBar';
@@ -67,7 +67,7 @@ const FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1570172619644-dfd03ed5
 const HEADER_CARD_ASPECT = 2.6;
 // Slightly narrower than the full slide width, with matching side margins below, so the
 // card has breathing room from the device edges instead of touching them directly.
-const HEADER_CARD_W = width - sw(24);
+const HEADER_CARD_W = width;
 const HEADER_CARD_H = HEADER_CARD_W / HEADER_CARD_ASPECT;
 
 // Service grid items fill the full row width exactly — 4 columns with a fixed gap between
@@ -118,6 +118,7 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
   const authToken = useSelector((state: RootState) => (state as any).Auth?.token);
   const unreadCount = useSelector((state: RootState) => (state as any).Notifications?.unreadCount ?? 0);
   const userBookings = useSelector((state: RootState) => (state as any).Bookings?.list ?? []);
+  const cartServices = useSelector((state: RootState) => (state as any).Cart?.services ?? []);
   const [banners, setBanners] = useState<any[]>([]);
   const [popularServices, setPopularServices] = useState<any[]>([]);
   const [addedPopular, setAddedPopular] = useState<Set<string>>(new Set());
@@ -130,6 +131,14 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
   const [searchResults, setSearchResults] = useState<any>({categories: [], services: [], packages: [], offers: []});
   const [searchLoading, setSearchLoading] = useState(false);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Rotating search placeholder — cycles every 3s to hint at what's searchable
+  const searchPlaceholders = ['Search services, packages…', 'Try "Facial"', 'Book "Manicure"', 'Search "Bridal"'];
+  const [placeholderIdx, setPlaceholderIdx] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setPlaceholderIdx(i => (i + 1) % searchPlaceholders.length), 3000);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
@@ -289,21 +298,17 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
       <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
 
       {/* ══════════════════════════════════
-          FIXED HEADER — dark ellipse + nav row + Special Offers carousel
+          STICKY HEADER — stays pinned at top while scrolling
+          Contains: dark ellipse + nav row + search bar
       ══════════════════════════════════ */}
-      <View style={[styles.topSection, {paddingTop: insets.top}]}>
-
-        {/* Dark green ellipse fills the header background */}
+      <View style={[styles.stickyHeader, {paddingTop: insets.top}]}>
         <View style={styles.ellipse} />
-
-        {/* Botanical leaf decoration — top right, semi-transparent */}
         <Image
           source={require('../../assets/leaf_alt.png')}
           style={styles.headerLeaf}
           resizeMode="contain"
         />
 
-        {/* ── Navigation row: city pill | logo | search + whatsapp ── */}
         <View style={styles.headerRow}>
           <TouchableOpacity
             activeOpacity={0.7}
@@ -325,24 +330,17 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
           />
 
           <View style={styles.iconsGroup}>
-            {authToken ? (
-              <TouchableOpacity activeOpacity={0.7} style={styles.bellBtn} onPress={() => navigation.navigate('Notifications')}>
-                <Ionicons name="notifications-outline" size={sw(22)} color="#FFFFFF" />
-                {unreadCount > 0 && <View style={styles.unreadDot} />}
-              </TouchableOpacity>
-            ) : null}
             <TouchableOpacity activeOpacity={0.7} style={styles.bellBtn} onPress={() => Linking.openURL('https://wa.me/919885909192')}>
               <Ionicons name="logo-whatsapp" size={sw(24)} color="#25D366" />
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* ── Global search bar ── */}
         <View style={styles.searchBar}>
           <Ionicons name="search-outline" size={sw(18)} color="#8A8A8A" />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search for Hair Spa"
+            placeholder={searchPlaceholders[placeholderIdx]}
             placeholderTextColor="#8A8A8A"
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -355,31 +353,7 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
           )}
         </View>
 
-        {/* ── Hero banner — same admin-managed image the website's homepage shows ── */}
-        {heroBanner?.image ? (
-          <View style={{marginTop: sw(10)}}>
-            <View style={styles.headerCardShadowWrap}>
-              <View style={styles.headerCardImgWrap}>
-                <Image
-                  source={{uri: heroBanner.image}}
-                  style={styles.headerCardImg}
-                  resizeMode="cover"
-                />
-              </View>
-            </View>
-          </View>
-        ) : null}
-      </View>
-
-      <ScrollView
-        style={styles.scroll}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        contentContainerStyle={styles.contentContainer}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#105641']} tintColor="#105641" />
-        }>
-
+        {/* Inline search results appear right below the search bar */}
         {searchActive && (
           <View style={styles.searchResultsCard}>
             {searchLoading && <ActivityIndicator color="#105641" style={{marginVertical: sw(16)}} />}
@@ -434,6 +408,31 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
             )}
           </View>
         )}
+      </View>
+
+      <ScrollView
+        style={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={styles.contentContainer}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#105641']} tintColor="#105641" />
+        }>
+
+        {/* Hero banner scrolls with content */}
+        {heroBanner?.image ? (
+          <View>
+            <View style={styles.headerCardShadowWrap}>
+              <View style={styles.headerCardImgWrap}>
+                <Image
+                  source={{uri: heroBanner.image}}
+                  style={styles.headerCardImg}
+                  resizeMode="cover"
+                />
+              </View>
+            </View>
+          </View>
+        ) : null}
 
         {/* ══════════════════════════════════
             TRUST STRIP — real counts from cats + city + brand grid
@@ -442,7 +441,7 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
           <View style={styles.trustStrip}>
             <View style={styles.trustItem}>
               <Ionicons name="sparkles" size={sw(14)} color="#C8A84C" />
-              <Text style={styles.trustText}>{categories.length}+ Services</Text>
+              <Text style={styles.trustText}>{categories.length}+ Categories</Text>
             </View>
             <View style={styles.trustDot} />
             <View style={styles.trustItem}>
@@ -458,43 +457,6 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
                 </View>
               </>
             ) : null}
-          </View>
-        )}
-
-        {/* ══════════════════════════════════
-            BOOK AGAIN — returning users see their last 1-3 completed bookings
-            with a one-tap re-book CTA
-        ══════════════════════════════════ */}
-        {!searchActive && bookAgainList.length > 0 && (
-          <View style={styles.bookAgainSection}>
-            <Text style={styles.bookAgainTitle}>Book Again</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.bookAgainScroll}>
-              {bookAgainList.map((booking: any) => {
-                const firstSvc = booking.services[0];
-                const extraCount = booking.services.length - 1;
-                return (
-                  <View key={booking.id ?? booking._id} style={styles.bookAgainCard}>
-                    <Image source={{uri: firstSvc?.image ?? FALLBACK_IMAGE}} style={styles.bookAgainImg} />
-                    <View style={styles.bookAgainBody}>
-                      <Text style={styles.bookAgainName} numberOfLines={1}>{firstSvc?.name ?? 'Booking'}</Text>
-                      {extraCount > 0 ? (
-                        <Text style={styles.bookAgainExtra}>+ {extraCount} more service{extraCount > 1 ? 's' : ''}</Text>
-                      ) : null}
-                      <TouchableOpacity
-                        style={styles.bookAgainBtn}
-                        activeOpacity={0.8}
-                        onPress={() => rebookServices(booking)}>
-                        <Ionicons name="refresh" size={sw(12)} color="#FFFFFF" />
-                        <Text style={styles.bookAgainBtnText}>Book Again</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                );
-              })}
-            </ScrollView>
           </View>
         )}
 
@@ -622,7 +584,8 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
               contentContainerStyle={styles.popularScrollContent}>
               {popularServices.map((svc: any, idx: number) => {
                 const id = String(svc.id ?? svc._id);
-                const isAdded = addedPopular.has(id);
+                const cartLine = (cartServices as any[]).find(s => String(s.id) === id && !s.isFree);
+                const qty = cartLine?.qty ?? 0;
                 return (
                   <View key={id} style={styles.popularCard}>
                     <View style={styles.popularImgWrap}>
@@ -649,16 +612,31 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
                       <Text style={styles.popularPrice}>
                         {svc.priceStartsFrom ? 'From ' : ''}₹{Math.round(parseFloat(svc.basePrice) || 0).toLocaleString('en-IN')}
                       </Text>
-                      <TouchableOpacity
-                        style={[styles.popularAddBtn, isAdded && styles.popularAddBtnDone]}
-                        activeOpacity={0.8}
-                        disabled={isAdded}
-                        onPress={() => handleAddPopular(svc)}>
-                        <Text style={[styles.popularAddText, isAdded && styles.popularAddTextDone]}>
-                          {isAdded ? 'ADDED' : 'ADD'}
-                        </Text>
-                        {!isAdded && <Ionicons name="add" size={sw(14)} color="#105641" />}
-                      </TouchableOpacity>
+                      {qty === 0 ? (
+                        <TouchableOpacity
+                          style={styles.popularAddBtn}
+                          activeOpacity={0.8}
+                          onPress={() => handleAddPopular(svc)}>
+                          <Text style={styles.popularAddText}>ADD</Text>
+                          <Ionicons name="add" size={sw(14)} color="#105641" />
+                        </TouchableOpacity>
+                      ) : (
+                        <View style={styles.popularStepper}>
+                          <TouchableOpacity
+                            style={styles.popularStepBtn}
+                            activeOpacity={0.7}
+                            onPress={() => dispatch(decrementServiceQty(id))}>
+                            <Ionicons name="remove" size={sw(14)} color="#105641" />
+                          </TouchableOpacity>
+                          <Text style={styles.popularStepCount}>{qty}</Text>
+                          <TouchableOpacity
+                            style={styles.popularStepBtn}
+                            activeOpacity={0.7}
+                            onPress={() => dispatch(incrementServiceQty(id))}>
+                            <Ionicons name="add" size={sw(14)} color="#105641" />
+                          </TouchableOpacity>
+                        </View>
+                      )}
                     </View>
                   </View>
                 );
@@ -721,19 +699,11 @@ const styles = StyleSheet.create({
   headerCardShadowWrap: {
     width: HEADER_CARD_W,
     height: HEADER_CARD_H,
-    marginHorizontal: sw(12),
-    borderRadius: sw(16),
     backgroundColor: '#FCF8F3',
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    elevation: 2,
   },
   headerCardImgWrap: {
     width: '100%',
     height: '100%',
-    borderRadius: sw(16),
     overflow: 'hidden',
   },
   headerCardImg: {
@@ -929,6 +899,14 @@ const styles = StyleSheet.create({
   topSection: {
     overflow: 'hidden',
     paddingBottom: sw(4),
+  },
+  stickyHeader: {
+    overflow: 'hidden',
+    paddingBottom: sw(18),
+    zIndex: 10,
+    backgroundColor: '#012823',
+    borderBottomLeftRadius: sw(24),
+    borderBottomRightRadius: sw(24),
   },
   ellipse: {
     position: 'absolute',
@@ -1160,12 +1138,11 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   serviceLabel: {
-    fontFamily: fonts.secondry,
-    fontSize: sw(12.5),
-    color: '#171816',
+    fontFamily: fonts.textFont,
+    fontSize: sw(12),
+    color: '#4A4A4A',
     textAlign: 'center',
     lineHeight: sw(15),
-    letterSpacing: 0.2,
   },
   viewAllRow: {
     marginTop: sw(20),
@@ -1320,6 +1297,28 @@ const styles = StyleSheet.create({
   },
   popularAddTextDone: {
     color: '#8A6D1F',
+  },
+  popularStepper: {
+    marginTop: sw(6),
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: '#105641',
+    backgroundColor: '#EBF5EF',
+    borderRadius: sw(8),
+    overflow: 'hidden',
+  },
+  popularStepBtn: {
+    width: sw(30),
+    height: sw(30),
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  popularStepCount: {
+    fontFamily: fonts.title,
+    fontSize: sw(13),
+    color: '#105641',
   },
 
   /* ── Why Beyomo? ──────────────────────── */
