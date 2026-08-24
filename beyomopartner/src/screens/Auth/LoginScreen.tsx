@@ -2,6 +2,7 @@ import React, {useState, useEffect} from 'react';
 import {
   View,
   Text,
+  Image,
   TextInput,
   TouchableOpacity,
   StyleSheet,
@@ -64,7 +65,11 @@ const LoginScreen = ({navigation}: any) => {
 
           {/* ── Logo area ── */}
           <View style={styles.logoSection}>
-            <Text style={styles.appName}>BEYOMO</Text>
+            <Image
+              source={require('../../assets/beyomo_logo_icon.png')}
+              style={styles.logo}
+              resizeMode="contain"
+            />
             <View style={styles.taglineRow}>
               <View style={styles.taglineLine} />
               <Text style={styles.tagline}>SALON COMES HOME</Text>
@@ -160,6 +165,11 @@ const styles = StyleSheet.create({
   logoSection: {
     alignItems: 'center',
     marginBottom: sw(48),
+  },
+  logo: {
+    width: sw(180),
+    height: sw(180),
+    marginBottom: sw(8),
   },
   appName: {
     fontFamily: fonts.title,

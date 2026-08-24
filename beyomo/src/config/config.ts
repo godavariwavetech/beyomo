@@ -12,6 +12,7 @@ export const endpoints = {
 
   // User profile & addresses
   USER_PROFILE: '/api/v1/users/profile',
+  USER_DELETE_ACCOUNT: '/api/v1/users/profile',
   USER_ADDRESS: '/api/v1/users/address',
   USER_DEVICE_TOKEN: '/api/v1/users/device-token',
   USER_BOOKINGS: '/api/v1/users/bookings',

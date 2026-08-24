@@ -65,11 +65,40 @@ const IncomingRequestScreen = ({navigation, route}: any) => {
     (s: any) => !s.serviceStatus || s.serviceStatus === 'unassigned',
   );
 
+  // Group items that were part of a package/combo into a single card instead of
+  // listing each of their services as its own line — matching the customer app/website.
+  const packageItems = services.filter((s: any) => s.addedByPackage);
+  const otherServices = services.filter((s: any) => !s.addedByPackage);
+  const otherServicesTotal = otherServices.reduce((sum: number, s: any) => sum + (s.price ?? 0) * (s.qty || 1), 0);
+  const multiPackages: any[] = parseServices(booking?.packages);
+  const packageGroups = multiPackages.length > 0
+    ? multiPackages.map((pkg: any) => ({
+        key: pkg.packageId,
+        title: pkg.title,
+        price: Number(pkg.price || 0) * (pkg.qty || 1),
+        items: packageItems.filter((s: any) => s.packageId === pkg.packageId),
+      }))
+    : packageItems.length > 0
+      ? [{
+          key: booking?.packageId,
+          title: booking?.package?.title ?? 'Package Deal',
+          price: Math.max(0, (booking?.baseAmount ?? booking?.totalAmount ?? 0) - otherServicesTotal),
+          items: packageItems,
+        }]
+      : [];
+
   // Accepting always claims every unassigned service, so earnings reflect that full set.
+  // Services' listed `price` is the raw undiscounted per-item price — bookings with
+  // packages/combos earn less than the sum of those prices, so scale the booking's real
+  // (already-discounted) partnerEarning by the unassigned share of the raw total instead
+  // of summing raw prices directly (that overstated the earnings for combo bookings).
   const selectedEarnings = useMemo(() => {
-    if (!isMultiService) return booking?.partnerEarning ?? booking?.totalAmount ?? 0;
-    return unassignedServices.reduce((sum: number, svc: any) => sum + svc.price * (svc.qty || 1), 0);
-  }, [unassignedServices, isMultiService, booking]);
+    const bookingEarning = Number(booking?.partnerEarning ?? booking?.totalAmount ?? 0);
+    if (!isMultiService) return bookingEarning;
+    const rawTotal = services.reduce((sum: number, svc: any) => sum + svc.price * (svc.qty || 1), 0);
+    const rawUnassigned = unassignedServices.reduce((sum: number, svc: any) => sum + svc.price * (svc.qty || 1), 0);
+    return rawTotal > 0 ? bookingEarning * (rawUnassigned / rawTotal) : bookingEarning;
+  }, [services, unassignedServices, isMultiService, booking]);
 
   const orderId = booking?.bookingCode
     ?? (booking?.id ? String(booking.id).slice(-8).toUpperCase() : '—');
@@ -82,7 +111,6 @@ const IncomingRequestScreen = ({navigation, route}: any) => {
   ].filter(Boolean).join(', ') || booking?.address?.formatted || '—';
 
   const customerName = booking?.user?.name ?? booking?.userName ?? '—';
-  const customerPhone = booking?.user?.phone ?? booking?.userPhone ?? null;
 
   const scheduledAt = booking?.scheduledAt
     ? new Date(booking.scheduledAt).toLocaleString('en-IN', {
@@ -146,7 +174,7 @@ const IncomingRequestScreen = ({navigation, route}: any) => {
   if (!booking) {
     return (
       <View style={[styles.root, {justifyContent: 'center', alignItems: 'center', padding: sw(32)}]}>
-        <StatusBar barStyle="light-content" backgroundColor="#022723" />
+        <StatusBar translucent backgroundColor="transparent" barStyle="dark-content" />
         <Ionicons name="calendar-outline" size={sw(48)} color="#CCCCCC" />
         <Text style={styles.notFoundTitle}>Booking not found</Text>
         <TouchableOpacity style={styles.goBackBtn} onPress={() => navigation.goBack()}>
@@ -193,14 +221,13 @@ const IncomingRequestScreen = ({navigation, route}: any) => {
               <Text style={styles.cardLabel}>Customer</Text>
               <Text style={styles.cardValue}>{customerName}</Text>
             </View>
-            {customerPhone && (
-              <TouchableOpacity
-                style={styles.callBtn}
-                onPress={() => Linking.openURL(`tel:${customerPhone}`)}>
-                <Ionicons name="call" size={sw(16)} color="#105641" />
-              </TouchableOpacity>
-            )}
+            <View style={styles.callBtnLocked}>
+              <Ionicons name="lock-closed" size={sw(14)} color="#9CA3AF" />
+            </View>
           </View>
+          <Text style={styles.contactLockedNote}>
+            Contact number unlocks once you accept this job
+          </Text>
           <View style={styles.divider} />
           <View style={styles.cardRow}>
             <View style={[styles.iconBox, {backgroundColor: '#FFF3E4'}]}>
@@ -236,7 +263,28 @@ const IncomingRequestScreen = ({navigation, route}: any) => {
             </Text>
           </View>
 
-          {services.map((svc: any, idx: number) => {
+          {packageGroups.map((group) => (
+            <View
+              key={group.key ?? group.title}
+              style={[styles.svcRow, {alignItems: 'flex-start'}]}>
+              <View style={{flex: 1}}>
+                <View style={{flexDirection: 'row', alignItems: 'center', gap: sw(6), flexWrap: 'wrap'}}>
+                  <Text style={styles.svcName}>{group.title}</Text>
+                  <View style={styles.packageBadge}>
+                    <Text style={styles.packageBadgeText}>Package</Text>
+                  </View>
+                </View>
+                <View style={{marginTop: sw(4)}}>
+                  {group.items.map((s: any, i: number) => (
+                    <Text key={s._id ?? s.id ?? i} style={styles.metaChipText}>{i + 1}. {s.name}</Text>
+                  ))}
+                </View>
+              </View>
+              <Text style={styles.svcPrice}>₹{Number(group.price).toLocaleString('en-IN')}</Text>
+            </View>
+          ))}
+
+          {otherServices.map((svc: any, idx: number) => {
             const isTaken = svc.serviceStatus && svc.serviceStatus !== 'unassigned';
             const imgUri = resolveImageUrl(svc.image ?? booking?.service?.image) ?? FALLBACK_IMAGE;
 
@@ -414,6 +462,14 @@ const styles = StyleSheet.create({
     width: sw(36), height: sw(36), borderRadius: sw(18),
     backgroundColor: '#EAF5F0', alignItems: 'center', justifyContent: 'center',
   },
+  callBtnLocked: {
+    width: sw(36), height: sw(36), borderRadius: sw(18),
+    backgroundColor: '#F5F5F5', alignItems: 'center', justifyContent: 'center',
+  },
+  contactLockedNote: {
+    fontFamily: fonts.textFont, fontSize: sw(11), color: '#9CA3AF',
+    marginTop: -sw(4),
+  },
   mapBtn: {
     flexDirection: 'row', alignItems: 'center', gap: sw(8),
     borderWidth: 1.5, borderColor: '#3D5AF1',
@@ -445,6 +501,11 @@ const styles = StyleSheet.create({
   },
   metaChipText: {fontFamily: fonts.textFont, fontSize: sw(10), color: '#5C5C5C'},
   svcPrice: {fontFamily: fonts.title, fontSize: sw(13), fontWeight: '700', color: '#105641'},
+  packageBadge: {
+    backgroundColor: '#E4E1D8', borderRadius: sw(4),
+    paddingHorizontal: sw(5), paddingVertical: sw(1),
+  },
+  packageBadgeText: {fontFamily: fonts.textFont, fontSize: sw(11), fontWeight: '700', color: '#292524'},
   takenByText: {fontFamily: fonts.textFont, fontSize: sw(10), color: '#9CA3AF', marginTop: sw(2), fontStyle: 'italic'},
   takenBadge: {
     backgroundColor: '#E5E7EB', borderRadius: sw(6),

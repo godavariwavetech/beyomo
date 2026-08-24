@@ -23,6 +23,7 @@ import ServiceCompletedScreen from '../screens/Order/ServiceCompletedScreen';
 
 import NotificationsScreen from '../screens/Notifications/NotificationsScreen';
 import EditProfileScreen from '../screens/Profile/EditProfileScreen';
+import DeleteAccountScreen from '../screens/Profile/DeleteAccountScreen';
 import MyAddressesScreen from '../screens/Profile/MyAddressesScreen';
 import CouponsScreen from '../screens/Profile/CouponsScreen';
 import ReferEarnScreen from '../screens/Profile/ReferEarnScreen';
@@ -96,6 +97,7 @@ const AppNavigation = () => {
         <Stack.Screen name="BookingDetail" component={BookingDetailScreen} />
         <Stack.Screen name="Notifications" component={NotificationsScreen} />
         <Stack.Screen name="EditProfile" component={EditProfileScreen} />
+        <Stack.Screen name="DeleteAccount" component={DeleteAccountScreen} />
         <Stack.Screen name="MyAddresses" component={MyAddressesScreen} />
         <Stack.Screen name="Coupons" component={CouponsScreen} />
         <Stack.Screen name="ReferEarn" component={ReferEarnScreen} />

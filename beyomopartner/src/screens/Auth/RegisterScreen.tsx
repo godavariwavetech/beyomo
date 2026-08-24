@@ -13,6 +13,7 @@ import {
   ActivityIndicator,
   Modal,
   FlatList,
+  Image,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -31,7 +32,7 @@ const sw = (px: number) => (px / 393) * width;
 const STEPS = ['Personal Info', 'Location'];
 
 // Matches the fixed profession list on the website's "Join Now" form exactly
-const PROFESSIONS = ['Beautician', 'Hairdresser', 'Makeup Artist', 'Mehendi', 'Spa Therapist', 'Aesthetician'];
+const PROFESSIONS = ['Beautician', 'Female Hairdresser', 'Men Hairdresser', 'Makeup Artist', 'Mehendi Artist', 'Spa Therapist', 'Aesthetician', 'Nail Artist'];
 
 interface City {
   id: number;
@@ -51,6 +52,7 @@ const RegisterScreen = ({navigation}: any) => {
   // Step 1 – Personal Info (same fields as the website's "Join Now" form)
   const [name, setName] = useState('');
   const [professions, setProfessions] = useState<Set<string>>(new Set());
+  const [otherProfession, setOtherProfession] = useState('');
   const [gender, setGender] = useState<'female' | 'male'>('female');
   const [homeServicesConsent, setHomeServicesConsent] = useState(false);
 
@@ -87,6 +89,10 @@ const RegisterScreen = ({navigation}: any) => {
         showAlert('Required', 'Please confirm you are comfortable for Home Services.');
         return;
       }
+      if (professions.has('others') && !otherProfession.trim()) {
+        showAlert('Required', 'Please specify your profession.');
+        return;
+      }
     }
     setStep(s => s + 1);
   };
@@ -106,7 +112,9 @@ const RegisterScreen = ({navigation}: any) => {
           city: selectedCity.name,
           state: selectedCity.state,
         },
-        professions: Array.from(professions),
+        professions: professions.has('others')
+          ? [...Array.from(professions).filter(p => p !== 'others'), otherProfession.trim()]
+          : Array.from(professions),
         gender,
         homeServicesConsent,
       };
@@ -191,7 +199,11 @@ const RegisterScreen = ({navigation}: any) => {
 
           {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.appName}>BEYOMO</Text>
+            <Image
+              source={require('../../assets/beyomo_logo_icon.png')}
+              style={styles.logo}
+              resizeMode="contain"
+            />
             <View style={styles.taglineRow}>
               <View style={styles.taglineLine} />
               <Text style={styles.tagline}>PARTNER REGISTRATION</Text>
@@ -262,7 +274,41 @@ const RegisterScreen = ({navigation}: any) => {
                         </TouchableOpacity>
                       );
                     })}
+                    {(() => {
+                      const sel = professions.has('others');
+                      return (
+                        <TouchableOpacity
+                          style={[styles.categoryChip, sel && styles.categoryChipSelected]}
+                          onPress={() => {
+                            const next = new Set(professions);
+                            if (sel) {
+                              next.delete('others');
+                              setOtherProfession('');
+                            } else {
+                              next.add('others');
+                            }
+                            setProfessions(next);
+                          }}>
+                          {sel && (
+                            <Ionicons name="checkmark-circle" size={sw(16)} color="#1a1a1a" style={{marginRight: sw(4)}} />
+                          )}
+                          <Text style={[styles.categoryChipText, sel && styles.categoryChipTextSelected]}>
+                            Others
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })()}
                   </View>
+                  {professions.has('others') && (
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Please specify your profession"
+                      placeholderTextColor="#9CA3AF"
+                      value={otherProfession}
+                      onChangeText={setOtherProfession}
+                      returnKeyType="next"
+                    />
+                  )}
                 </View>
 
                 <View style={styles.inputGroup}>
@@ -377,12 +423,10 @@ const styles = StyleSheet.create({
   },
 
   header: {alignItems: 'center', marginBottom: sw(28)},
-  appName: {
-    fontFamily: fonts.title,
-    fontSize: sw(36),
-    fontWeight: '700',
-    color: '#FEFEFE',
-    letterSpacing: sw(4),
+  logo: {
+    width: sw(180),
+    height: sw(180 * (196 / 499)),
+    marginBottom: sw(4),
   },
   taglineRow: {flexDirection: 'row', alignItems: 'center', gap: sw(8), marginTop: sw(4)},
   taglineLine: {height: 1, width: sw(20), backgroundColor: '#C8A84C'},
