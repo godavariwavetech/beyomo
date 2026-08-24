@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { useCityFilter } from '../context/CityContext';
 import { Badge } from '../components/common/Badge';
 import Modal from '../components/common/Modal';
-import RevenueSplitFields from '../components/common/RevenueSplitFields';
+import RevenueSplitFields, { revenueSplitPayload } from '../components/common/RevenueSplitFields';
 import ImageUploader from '../components/common/ImageUploader';
 import api from '../services/api';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
@@ -140,9 +140,7 @@ export default function Offers() {
         isActive: form.isActive,
         cityId: form.cityId ? Number(form.cityId) : null,
         maxUses: form.maxUses ? Number(form.maxUses) : null,
-        adminPercent: parseFloat(form.adminPercent ?? 20),
-        partnerPercent: parseFloat(form.partnerPercent ?? 80),
-        gstPercent: parseFloat(form.gstPercent ?? 5),
+        ...revenueSplitPayload(form),
       };
       if (editTarget) {
         await api.patch(`/api/v1/admin/offers/${editTarget.id}`, payload);

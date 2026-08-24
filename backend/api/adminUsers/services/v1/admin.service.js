@@ -27,6 +27,7 @@ const {
   DEFAULT_ADMIN_PERCENT,
   DEFAULT_PARTNER_PERCENT,
   DEFAULT_GST_PERCENT,
+  normalizeSplitInput,
 } = require("../../../../utils/revenueSplit");
 const AppError = require("../../../../utils/errorHandlers/appError");
 
@@ -205,6 +206,7 @@ const listCategories = async () =>
   ServiceCategory.findAll({ order: [["sortOrder", "ASC"], ["name", "ASC"]] });
 
 const createCategory = async (data) => {
+  data = normalizeSplitInput(data);
   try {
     if (data.sortOrder == null) {
       const last = await ServiceCategory.findOne({ order: [["sortOrder", "DESC"]] });
@@ -232,6 +234,7 @@ const reorderCategories = async (orderedIds) => {
 };
 
 const updateCategory = async (id, data) => {
+  data = normalizeSplitInput(data);
   try {
     await ServiceCategory.update(data, { where: { id } });
   } catch (e) {
@@ -1016,6 +1019,16 @@ const createAdminUser = async (data, createdById) => {
 };
 
 const updateAdminUser = async (id, data) => {
+  const target = await AdminUser.findByPk(id);
+  if (!target) throw new AppError("Admin user not found", 404);
+
+  // email is unique — check it here so a clash comes back as a readable 400 rather than
+  // a raw SequelizeUniqueConstraintError 500, matching what createAdminUser already does.
+  if (data.email && data.email !== target.email) {
+    const existing = await AdminUser.findOne({ where: { email: data.email } });
+    if (existing) throw new AppError("An admin user with this email already exists", 400);
+  }
+
   await AdminUser.update(data, { where: { id } });
   const admin = await AdminUser.findByPk(id, { attributes: { exclude: ["password"] } });
   if (!admin) throw new AppError("Admin user not found", 404);

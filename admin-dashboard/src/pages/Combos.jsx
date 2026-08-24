@@ -4,7 +4,7 @@ import { Plus, Edit2, Trash2, Boxes, Search, MapPin, GripVertical } from 'lucide
 import { useAuth } from '../context/AuthContext';
 import { useCityFilter } from '../context/CityContext';
 import Modal from '../components/common/Modal';
-import RevenueSplitFields from '../components/common/RevenueSplitFields';
+import RevenueSplitFields, { revenueSplitPayload } from '../components/common/RevenueSplitFields';
 import ImageUploader from '../components/common/ImageUploader';
 import ServiceTree from '../components/common/ServiceTree';
 import ReorderableServiceList from '../components/common/ReorderableServiceList';
@@ -256,9 +256,7 @@ export default function Combos() {
       })),
       serviceCount: null,
       categoryId: null,
-      adminPercent:   parseFloat(form.adminPercent ?? 20),
-      partnerPercent: parseFloat(form.partnerPercent ?? 80),
-      gstPercent:     parseFloat(form.gstPercent ?? 5),
+      ...revenueSplitPayload(form),
     };
 
     setSaving(true);

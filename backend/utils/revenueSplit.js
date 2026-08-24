@@ -139,6 +139,33 @@ const resolveRatesForMultiPackageBooking = async ({ packages = [], serviceItems 
   };
 };
 
+/**
+ * Normalizes an incoming create/update payload's revenue split before it hits the DB.
+ * adminPercent and partnerPercent are two halves of the same 100%, so only the admin
+ * cut is authoritative — the partner's share is always derived from it. Without this,
+ * an admin-dashboard payload carrying a stale partnerPercent (e.g. 80 alongside an
+ * adminPercent of 80) persisted a split summing to 160%, which then drove booking
+ * totals, partner earnings, and settlement ledgers apart.
+ */
+const normalizeSplitInput = (data) => {
+  if (!data || typeof data !== "object") return data;
+  if (data.adminPercent == null && data.partnerPercent == null) return data;
+
+  let admin = parseFloat(data.adminPercent);
+  if (!Number.isFinite(admin)) {
+    // Only the partner cut was sent — treat that as authoritative instead.
+    const partner = parseFloat(data.partnerPercent);
+    admin = Number.isFinite(partner) ? 100 - partner : DEFAULT_ADMIN_PERCENT;
+  }
+  admin = Math.min(100, Math.max(0, admin));
+
+  return {
+    ...data,
+    adminPercent: parseFloat(admin.toFixed(2)),
+    partnerPercent: parseFloat((100 - admin).toFixed(2)),
+  };
+};
+
 module.exports = {
   DEFAULT_ADMIN_PERCENT,
   DEFAULT_PARTNER_PERCENT,
@@ -146,4 +173,5 @@ module.exports = {
   computeWeightedCategoryRates,
   resolveRatesForBooking,
   resolveRatesForMultiPackageBooking,
+  normalizeSplitInput,
 };
