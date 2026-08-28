@@ -697,7 +697,7 @@ const ServiceCard = ({
 );
 
 const styles = StyleSheet.create({
-  root: {flex: 1, backgroundColor: '#FCF8F3'},
+  root: {flex: 1, backgroundColor: '#FBEADB'},
 
   header: {
     flexDirection: 'row',
@@ -705,7 +705,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: sw(16),
     paddingBottom: sw(12),
-    backgroundColor: '#FCF8F3',
+    backgroundColor: '#FBEADB',
   },
   titleBlock: {alignItems: 'center', gap: sw(8)},
   title: {fontFamily: fonts.primary, fontSize: sw(20), fontWeight: '400', color: '#171816', lineHeight: sw(23)},
@@ -825,11 +825,21 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
 
-  cardRight: {alignItems: 'flex-end', justifyContent: 'space-between', gap: sw(12)},
-  priceBlock: {alignItems: 'flex-end', gap: sw(12)},
-  startsAtLabel: {fontFamily: fonts.textFont, fontSize: sw(13), fontWeight: '500', color: '#A0AEC0'},
-  priceRow: {flexDirection: 'row', alignItems: 'center', gap: sw(4)},
-  currentPrice: {fontFamily: fonts.textFont, fontSize: sw(16), fontWeight: '700', color: '#000000', lineHeight: sw(20)},
+  cardRight: {alignItems: 'center', justifyContent: 'flex-start', gap: sw(8), width: sw(90)},
+  cardThumb: {
+    width: sw(90),
+    height: sw(90),
+    borderRadius: sw(12),
+    backgroundColor: '#F4E1CC',
+  },
+  cardThumbPlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  priceBlock: {alignItems: 'flex-start', gap: sw(6)},
+  startsAtLabel: {fontFamily: fonts.textFont, fontSize: sw(12), color: '#8A8A8A'},
+  priceRow: {flexDirection: 'row', alignItems: 'center', gap: sw(6), flexWrap: 'wrap'},
+  currentPrice: {fontFamily: 'Poppins-SemiBold', fontSize: sw(15), color: '#012823', lineHeight: sw(20)},
   originalPrice: {fontFamily: fonts.textFont, fontSize: sw(14), fontWeight: '400', color: '#656565', lineHeight: sw(18), textDecorationLine: 'line-through'},
   discountRow: {flexDirection: 'row', alignItems: 'center', gap: sw(4)},
   discountText: {fontFamily: fonts.textFont, fontSize: sw(14), fontWeight: '600', color: '#008F30', lineHeight: sw(18)},

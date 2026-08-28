@@ -26,7 +26,7 @@ export default function CartBar({navigation}: {navigation: any}) {
     cartServices.reduce((sum: number, s: any) => sum + (s.isFree ? 0 : s.price * s.qty), 0);
 
   return (
-    <View style={[styles.cartBar, {paddingBottom: insets.bottom > 0 ? insets.bottom : sw(8)}]}>
+    <View style={[styles.cartBar, {paddingBottom: sw(6)}]}>
       <View>
         <Text style={styles.cartPrice}>₹{Math.round(totalPrice).toLocaleString('en-IN')}</Text>
         <View style={styles.cartSubRow}>
@@ -57,7 +57,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 0.5,
     borderTopColor: '#105641',
     paddingHorizontal: sw(16),
-    paddingTop: sw(12),
+    paddingTop: sw(8),
     shadowColor: '#000',
     shadowOffset: {width: 0, height: -4},
     shadowOpacity: 0.12,

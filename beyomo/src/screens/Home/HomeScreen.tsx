@@ -353,9 +353,14 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
           )}
         </View>
 
-        {/* Inline search results appear right below the search bar */}
+        {/* Inline search results appear right below the search bar (scrollable) */}
         {searchActive && (
-          <View style={styles.searchResultsCard}>
+          <ScrollView
+            style={styles.searchResultsCard}
+            contentContainerStyle={{gap: sw(8)}}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={true}
+            nestedScrollEnabled>
             {searchLoading && <ActivityIndicator color="#105641" style={{marginVertical: sw(16)}} />}
             {!searchLoading && !hasSearchResults && (
               <Text style={styles.searchEmpty}>No results for "{searchQuery.trim()}"</Text>
@@ -406,7 +411,7 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
                 ))}
               </>
             )}
-          </View>
+          </ScrollView>
         )}
       </View>
 
@@ -1015,7 +1020,7 @@ const styles = StyleSheet.create({
     padding: sw(12),
     backgroundColor: '#FFFFFF',
     borderRadius: sw(12),
-    gap: sw(8),
+    maxHeight: sw(420),
     shadowColor: '#000',
     shadowOffset: {width: 0, height: 2},
     shadowOpacity: 0.08,
