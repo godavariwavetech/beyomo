@@ -3,6 +3,7 @@ const { sequelize } = require("../../../../utils/dbconnect");
 const ServicePackage = require("../../models/package.model");
 const Service = require("../../../services/models/service.model");
 const AppError = require("../../../../utils/errorHandlers/appError");
+const { normalizeSplitInput } = require("../../../../utils/revenueSplit");
 
 const activeWhere = () => ({
   isActive: true,
@@ -117,12 +118,12 @@ const reorderPackages = async (packageType, orderedIds) => {
   });
 };
 
-const createPackage = async (data) => ServicePackage.create(data);
+const createPackage = async (data) => ServicePackage.create(normalizeSplitInput(data));
 
 const updatePackage = async (id, data) => {
   const pkg = await ServicePackage.findByPk(id);
   if (!pkg) throw new AppError("Package not found", 404);
-  return pkg.update(data);
+  return pkg.update(normalizeSplitInput(data));
 };
 
 const deletePackage = async (id) => {

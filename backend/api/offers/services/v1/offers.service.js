@@ -2,6 +2,7 @@ const { Op } = require("sequelize");
 const Offer = require("../../models/offer.model");
 const Service = require("../../../services/models/service.model");
 const AppError = require("../../../../utils/errorHandlers/appError");
+const { normalizeSplitInput } = require("../../../../utils/revenueSplit");
 
 const startOfToday = () => {
   const d = new Date();
@@ -144,12 +145,12 @@ const listAll = async ({ page = 1, limit = 20, cityIds } = {}) => {
   return { total: count, data: rows.map(parseOfferRow) };
 };
 
-const createOffer = async (data) => Offer.create(data);
+const createOffer = async (data) => Offer.create(normalizeSplitInput(data));
 
 const updateOffer = async (id, data) => {
   const offer = await Offer.findByPk(id);
   if (!offer) throw new AppError("Offer not found", 404);
-  return offer.update(data);
+  return offer.update(normalizeSplitInput(data));
 };
 
 const deleteOffer = async (id) => {

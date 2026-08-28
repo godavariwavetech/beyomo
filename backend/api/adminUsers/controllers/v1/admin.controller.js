@@ -28,6 +28,10 @@ const createAdminUserSchema = Joi.object({
 
 const updateAdminUserSchema = Joi.object({
   name: Joi.string().trim(),
+  // The edit form shows Email as an editable required field and posts it back on every
+  // save, so leaving it out of this schema made every admin-user update fail outright
+  // with `"email" is not allowed` (Joi rejects unknown keys by default).
+  email: Joi.string().email().trim().lowercase(),
   role: Joi.string().valid("super_admin", "admin", "manager", "analyst", "support"),
   customPermissions: Joi.array().items(Joi.string()),
   allowedCities: Joi.array().items(Joi.number()).allow(null),

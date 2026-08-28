@@ -3,7 +3,7 @@ import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { Plus, Edit2, Power, Search, Users, ShoppingBag, DollarSign, Trash2, FolderOpen, Upload, RefreshCw, MapPin, CheckCircle, XCircle, GripVertical, ListOrdered, Flame } from 'lucide-react';
 import { Badge, StarRating } from '../components/common/Badge';
 import Modal from '../components/common/Modal';
-import RevenueSplitFields from '../components/common/RevenueSplitFields';
+import RevenueSplitFields, { revenueSplitPayload } from '../components/common/RevenueSplitFields';
 import { useAuth } from '../context/AuthContext';
 import { useServices, useCategories } from '../hooks/useServices';
 import { useCityFilter } from '../context/CityContext';
@@ -339,9 +339,7 @@ export default function Services() {
     const payload = {
       ...catForm,
       cityIds: catForm.cityIds ?? [],
-      adminPercent:   parseFloat(catForm.adminPercent   ?? 20),
-      partnerPercent: parseFloat(catForm.partnerPercent ?? 80),
-      gstPercent:     parseFloat(catForm.gstPercent     ?? 18),
+      ...revenueSplitPayload(catForm),
     };
     if (editingCat) {
       const res = await catUpdate(String(editingCat._id ?? editingCat.id), payload);
