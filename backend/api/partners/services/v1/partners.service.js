@@ -11,6 +11,7 @@ const ServiceCategory = require("../../../services/models/serviceCategory.model"
 const User = require("../../../users/models/user.model");
 const ServicePackage = require("../../../packages/models/package.model");
 const settlementsService = require("../../../settlements/services/v1/settlements.service");
+const { cityPriceResolver } = require("../../../services/services/v1/cityPricing");
 const {
   resolveRatesForBooking,
   DEFAULT_ADMIN_PERCENT,
@@ -812,12 +813,13 @@ const addExtraServices = async (partnerId, bookingId, { services: serviceItems =
       throw new AppError('One or more services not found or unavailable', 404);
     }
     const serviceMap = Object.fromEntries(foundServices.map(s => [s.id, s]));
+    const priceOf = await cityPriceResolver(serviceIds, booking.cityId);
     newCatalogEntries = catalogItems.map(item => {
       const svc = serviceMap[parseInt(item.id)];
       return {
         serviceId: svc.id,
         name: svc.name,
-        price: parseFloat(svc.basePrice),
+        price: priceOf(svc),
         qty: item.qty || 1,
         duration: svc.duration || null,
         image: svc.image || null,

@@ -10,6 +10,7 @@ const Partner = require("../../../partners/models/partner.model");
 const ServiceCategory = require("../../../services/models/serviceCategory.model");
 const Service = require("../../../services/models/service.model");
 const ServiceCityMap = require("../../../services/models/service_city_map.model");
+const { cityPriceResolver } = require("../../../services/services/v1/cityPricing");
 const Booking = require("../../../bookings/models/booking.model");
 const Payment = require("../../../payments/models/payment.model");
 const Coupon = require("../../../coupons/models/coupon.model");
@@ -24,6 +25,8 @@ const { sendPushNotification } = require("../../../../utils/firebaseUtils");
 const { haversineKm } = require("../../../../utils/geoUtils");
 const {
   resolveRatesForBooking,
+  resolveRatesForMultiPackageBooking,
+  computeWeightedCategoryRates,
   DEFAULT_ADMIN_PERCENT,
   DEFAULT_PARTNER_PERCENT,
   DEFAULT_GST_PERCENT,
@@ -257,23 +260,58 @@ const deleteCategory = async (id) => {
 // ==================== SERVICES ====================
 
 // Replace a service's city mappings atomically inside an existing transaction.
-// mappings: array of { cityId, isActive } — preserves per-city pause state.
+// mappings: array of { cityId, isActive, customPrice } — preserves per-city pause
+// state AND the per-city price override. Dropping customPrice here would wipe every
+// city's rate card on any unrelated edit to the service, since this destroys and
+// recreates the rows.
 const syncCityMappings = async (serviceId, mappings = [], t) => {
+  // Carry forward existing overrides for any mapping the caller sent without an
+  // explicit customPrice (e.g. an older client, or a payload built from cityIds only).
+  const existing = await ServiceCityMap.findAll({
+    where: { serviceId },
+    attributes: ["cityId", "customPrice"],
+    transaction: t,
+  });
+  const priorPrice = new Map(existing.map((m) => [Number(m.cityId), m.customPrice]));
+
   await ServiceCityMap.destroy({ where: { serviceId }, transaction: t });
   if (mappings.length > 0) {
     await ServiceCityMap.bulkCreate(
-      mappings.map(({ cityId, isActive = true }) => ({ serviceId, cityId, isActive })),
+      mappings.map(({ cityId, isActive = true, customPrice }) => ({
+        serviceId,
+        cityId,
+        isActive,
+        customPrice: customPrice === undefined
+          ? (priorPrice.get(Number(cityId)) ?? null)
+          : (customPrice === null || customPrice === "" ? null : customPrice),
+      })),
       { transaction: t, ignoreDuplicates: true }
     );
   }
 };
 
-// Attach computed `cityIds` (active city IDs) to a plain service object
-const attachCityIds = (svc) => {
+// Attach computed `cityIds` (active city IDs) to a plain service object.
+// `cityMappings` is normalised so the dashboard always gets numeric cityId and a
+// numeric-or-null customPrice, and `basePrice` is resolved to the requested city's
+// effective price when one is asked for.
+const attachCityIds = (svc, cityId = null) => {
   const plain = svc.get ? svc.get({ plain: true }) : { ...svc };
-  plain.cityIds = (plain.cityMappings ?? [])
-    .filter((m) => m.isActive)
-    .map((m) => m.cityId);
+  const mappings = (plain.cityMappings ?? []).map((m) => ({
+    ...m,
+    cityId: Number(m.cityId),
+    isActive: m.isActive ?? true,
+    customPrice: m.customPrice == null ? null : parseFloat(m.customPrice),
+  }));
+
+  plain.cityMappings = mappings;
+  plain.cityIds = mappings.filter((m) => m.isActive).map((m) => m.cityId);
+  // Keep the global figure available so the edit form can show "base" vs "this city"
+  plain.baseServicePrice = parseFloat(plain.basePrice ?? 0);
+
+  if (cityId) {
+    const mapping = mappings.find((m) => m.cityId === Number(cityId) && m.isActive);
+    if (mapping?.customPrice != null) plain.basePrice = mapping.customPrice;
+  }
   return plain;
 };
 
@@ -294,7 +332,7 @@ const listServices = async ({ categoryId, search, cityId, page = 1, limit = 20 }
     ],
   });
 
-  let data = rows.map(attachCityIds);
+  let data = rows.map((r) => attachCityIds(r, cityId));
 
   // Client-side city filter: global (no mappings) or has active mapping for requested city
   if (cityId) {
@@ -361,11 +399,33 @@ const deleteService = async (id) => {
   });
 };
 
-// Toggle a single city's active flag without touching the rest of the service.
-// Uses upsert so it works even if the admin added the city locally but hasn't saved yet.
-const toggleServiceCityStatus = async (serviceId, cityId, isActive) => {
-  await ServiceCityMap.upsert({ serviceId: Number(serviceId), cityId: Number(cityId), isActive });
-  return { serviceId: Number(serviceId), cityId: Number(cityId), isActive };
+// Toggle a single city's active flag (and optionally its price) without touching the
+// rest of the service. Written as find-then-update rather than upsert so that an
+// isActive-only call cannot clobber the city's customPrice back to NULL.
+const toggleServiceCityStatus = async (serviceId, cityId, isActive, customPrice = undefined) => {
+  const sid = Number(serviceId);
+  const cid = Number(cityId);
+  const patch = {};
+  if (isActive !== undefined) patch.isActive = isActive;
+  if (customPrice !== undefined) {
+    patch.customPrice = customPrice === null || customPrice === "" ? null : customPrice;
+  }
+
+  const existing = await ServiceCityMap.findOne({ where: { serviceId: sid, cityId: cid } });
+  if (existing) {
+    await existing.update(patch);
+  } else {
+    // Admin added the city locally but hasn't saved the service yet.
+    await ServiceCityMap.create({ serviceId: sid, cityId: cid, isActive: isActive ?? true, ...patch });
+  }
+
+  const row = await ServiceCityMap.findOne({ where: { serviceId: sid, cityId: cid } });
+  return {
+    serviceId: sid,
+    cityId: cid,
+    isActive: row?.isActive ?? isActive ?? true,
+    customPrice: row?.customPrice == null ? null : parseFloat(row.customPrice),
+  };
 };
 
 // ==================== BOOKINGS ====================
@@ -388,6 +448,20 @@ const createBookingForCustomer = async (adminId, data) => {
   const catalogItems = serviceItems.filter(s => !s.isAddOn);
   const addOnItems = serviceItems.filter(s => s.isAddOn);
 
+  // Resolve the city before pricing — it selects the rate card (see cityPriceResolver).
+  let cityId = null;
+  if (address.city) {
+    const city = await City.findOne({ where: { name: { [Op.like]: `%${address.city.trim()}%` }, isActive: true } });
+    cityId = city ? city.id : null;
+    if (city && city.lat && city.lng && address.lat && address.lng) {
+      const dist = haversineKm(address.lat, address.lng, city.lat, city.lng);
+      const limit = city.radius ?? 30;
+      if (dist > limit) {
+        throw new AppError(`Address is outside the ${city.name} service area (${Math.round(dist)} km from city center)`, 400);
+      }
+    }
+  }
+
   let enrichedServices = [];
   if (catalogItems.length > 0) {
     const serviceIds = [...new Set(catalogItems.map(s => parseInt(s.id)))];
@@ -395,10 +469,11 @@ const createBookingForCustomer = async (adminId, data) => {
     if (foundServices.length !== serviceIds.length) throw new AppError("One or more services not found or unavailable", 404);
 
     const serviceMap = Object.fromEntries(foundServices.map(s => [s.id, s]));
+    const priceOf = await cityPriceResolver(serviceIds, cityId);
     enrichedServices = catalogItems.map(item => {
       const svc = serviceMap[parseInt(item.id)];
       return {
-        serviceId: svc.id, name: svc.name, price: parseFloat(svc.basePrice), qty: item.qty || 1,
+        serviceId: svc.id, name: svc.name, price: priceOf(svc), qty: item.qty || 1,
         duration: svc.duration || null, image: svc.image || null,
         serviceStatus: "unassigned", assignedPartnerId: null, assignedPartnerName: null,
         addedByAdmin: true,
@@ -424,19 +499,6 @@ const createBookingForCustomer = async (adminId, data) => {
   // (a booking made up entirely of custom add-ons has no real catalog service).
   const primaryServiceId = enrichedServices.find(s => s.serviceId)?.serviceId ?? null;
   const primaryServiceName = enrichedServices.length === 1 ? enrichedServices[0].name : `${enrichedServices.length} services`;
-
-  let cityId = null;
-  if (address.city) {
-    const city = await City.findOne({ where: { name: { [Op.like]: `%${address.city.trim()}%` }, isActive: true } });
-    cityId = city ? city.id : null;
-    if (city && city.lat && city.lng && address.lat && address.lng) {
-      const dist = haversineKm(address.lat, address.lng, city.lat, city.lng);
-      const limit = city.radius ?? 30;
-      if (dist > limit) {
-        throw new AppError(`Address is outside the ${city.name} service area (${Math.round(dist)} km from city center)`, 400);
-      }
-    }
-  }
 
   const booking = await Booking.create({
     userId,
@@ -546,6 +608,50 @@ const getBookingDetail = async (bookingId) => {
     direction: e.direction, amount: parseFloat(e.amount), status: e.status,
     partnerNetAmount: parseFloat(e.partnerNetAmount), adminCommissionAmount: parseFloat(e.adminCommissionAmount),
   }));
+
+  // Recompute the revenue split from the CURRENT category / package rates instead of the
+  // frozen value stored on the booking at creation time. When an admin raises a category's
+  // adminPercent (e.g. 20% -> 30%), new bookings pick it up but older rows keep their old
+  // partnerEarning snapshot — so the dashboard would otherwise keep showing the stale split.
+  // These fields let the UI display the up-to-date admin/partner split per booking.
+  try {
+    const serviceItems = plain.services ?? [];
+    let rates;
+    if (Array.isArray(plain.packages) && plain.packages.length > 0) {
+      // Multi-package: each package keeps its own split — blend them by price weight.
+      const ratePools = [];
+      for (const p of plain.packages) {
+        const pkg = await ServicePackage.findByPk(p.packageId);
+        if (pkg) ratePools.push({ package: { adminPercent: pkg.adminPercent, partnerPercent: pkg.partnerPercent, gstPercent: pkg.gstPercent }, qty: p.qty || 1 });
+        else ratePools.push({ package: { adminPercent: DEFAULT_ADMIN_PERCENT, partnerPercent: DEFAULT_PARTNER_PERCENT, gstPercent: DEFAULT_GST_PERCENT }, qty: p.qty || 1 });
+      }
+      rates = await resolveRatesForMultiPackageBooking({ packages: ratePools, serviceItems });
+    } else {
+      let pkg = null;
+      if (plain.packageId != null) {
+        const found = await ServicePackage.findByPk(plain.packageId);
+        if (found) {
+          pkg = {
+            adminPercent: found.adminPercent,
+            partnerPercent: found.partnerPercent,
+            gstPercent: found.gstPercent,
+          };
+        }
+      }
+      rates = await resolveRatesForBooking({ serviceItems, package: pkg });
+    }
+    plain.recomputedAdminPercent = rates.adminPercent;
+    plain.recomputedPartnerPercent = rates.partnerPercent;
+
+    const baseAmount = parseFloat(plain.baseAmount ?? 0);
+    const couponDiscount = parseFloat(plain.couponDiscountAmount ?? 0);
+    const taxableAmount = Math.max(0, baseAmount - couponDiscount);
+    plain.recomputedAdminCommission = Math.round(taxableAmount * rates.adminPercent / 100);
+    plain.recomputedPartnerEarning = Math.round(taxableAmount * rates.partnerPercent / 100);
+  } catch {
+    // Fall back to the frozen stored values; never fail reading a booking detail.
+  }
+
   return plain;
 };
 
@@ -654,10 +760,11 @@ const editBookingServices = async (bookingId, serviceItems = [], removeIndices =
     if (foundServices.length !== serviceIds.length) throw new AppError("One or more services not found or unavailable", 404);
 
     const serviceMap = Object.fromEntries(foundServices.map(s => [s.id, s]));
+    const priceOf = await cityPriceResolver(serviceIds, booking.cityId);
     const newEntries = catalogItems.map(item => {
       const svc = serviceMap[parseInt(item.id)];
       return {
-        serviceId: svc.id, name: svc.name, price: parseFloat(svc.basePrice), qty: item.qty || 1,
+        serviceId: svc.id, name: svc.name, price: priceOf(svc), qty: item.qty || 1,
         duration: svc.duration || null, image: svc.image || null, addedByAdmin: true,
         adminPercent: svc.category ? parseFloat(svc.category.adminPercent) : DEFAULT_ADMIN_PERCENT,
         partnerPercent: svc.category ? parseFloat(svc.category.partnerPercent) : DEFAULT_PARTNER_PERCENT,

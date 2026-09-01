@@ -5,6 +5,7 @@ const Partner = require("../../../partners/models/partner.model");
 const Booking = require("../../../bookings/models/booking.model");
 const Payment = require("../../../payments/models/payment.model");
 const Review = require("../../../reviews/models/review.model");
+const Coupon = require("../../../coupons/models/coupon.model");
 const AppError = require("../../../../utils/errorHandlers/appError");
 const moment = require("moment");
 
@@ -27,6 +28,7 @@ const getDashboardStats = async (cityIds = null) => {
     totalBookings, bookingsToday, bookingsThisMonth,
     completedBookings, cancelledBookings, pendingBookings,
     revenueThisMonth, revenueLastMonth, totalRevenue, avgRating,
+    activeCoupons, awaitingReview,
   ] = await Promise.all([
     User.count({ where: { status: { [Op.ne]: "deleted" }, ...cityFilter } }),
     User.count({ where: { createdAt: { [Op.gte]: today }, ...cityFilter } }),
@@ -56,6 +58,26 @@ const getDashboardStats = async (cityIds = null) => {
       where: { status: "visible" },
       attributes: [[fn("AVG", col("rating")), "avg"]], raw: true,
     }),
+    // A coupon counts as live only if it is switched on, inside its validity window,
+    // AND has usage left — the dashboard tile previously showed a hardcoded 0.
+    Coupon.count({
+      where: {
+        isActive: true,
+        validFrom: { [Op.lte]: new Date() },
+        validTill: { [Op.gte]: new Date() },
+        [Op.and]: literal("(maxUses IS NULL OR usedCount < maxUses)"),
+      },
+    }),
+    // Reviews carry only visible/hidden — there is no "pending moderation" queue to
+    // count. The actionable number for an admin is the opposite side: jobs that are
+    // finished but the customer never rated.
+    sequelize.query(
+      `SELECT COUNT(*) AS n FROM bookings b
+       LEFT JOIN reviews r ON r.bookingId = b.id
+       WHERE b.status = 'completed' AND r.id IS NULL
+       ${cityIds?.length ? `AND b.cityId IN (${cityIds.join(",")})` : ""}`,
+      { type: sequelize.QueryTypes.SELECT }
+    ),
   ]);
 
   const currentMonthRevenue = parseFloat(revenueThisMonth?.total || 0);
@@ -70,6 +92,8 @@ const getDashboardStats = async (cityIds = null) => {
     bookings: { total: totalBookings, today: bookingsToday, thisMonth: bookingsThisMonth, completed: completedBookings, cancelled: cancelledBookings, pending: pendingBookings },
     revenue: { total: parseFloat(totalRevenue?.total || 0), thisMonth: currentMonthRevenue, lastMonth: previousMonthRevenue, growth: revenueGrowth },
     avgRating: avgRating?.avg ? parseFloat(parseFloat(avgRating.avg).toFixed(1)) : 0,
+    coupons: { active: activeCoupons },
+    reviews: { awaitingReview: parseInt(awaitingReview?.[0]?.n || 0, 10) },
   };
 };
 
@@ -309,4 +333,180 @@ const getUserEngagement = async ({ page = 1, limit = 20, cityIds = null }) => {
   };
 };
 
-module.exports = { getDashboardStats, getRevenueData, getBookingAnalytics, getUserGrowth, getCouponUsage, getUserEngagement };
+
+// ── Reports page summary ──────────────────────────────────────────────────────
+// One aggregate powering every tab of the admin Reports page. It exists because that
+// page previously rendered hardcoded stat cards (a literal "₹43.24L" and friends)
+// alongside chart series derived from revenue with invented ratios — bookings guessed
+// as revenue/1200, then split 85% completed / 10% cancelled. Every number here is
+// measured from the tables.
+//
+// `months` bounds the window (the page's 12m/6m/3m selector). Monetary figures come
+// from completed bookings, since partnerEarning — the basis of the commission split —
+// is only meaningful once a booking is actually done.
+const getReportsSummary = async ({ months = 12, cityIds = null } = {}) => {
+  const span = [3, 6, 12].includes(Number(months)) ? Number(months) : 12;
+  const startDate = moment().subtract(span, "months").startOf("month").toDate();
+  const daysInSpan = Math.max(1, moment().diff(moment(startDate), "days"));
+
+  const cityWhere = cityIds?.length ? `AND cityId IN (${cityIds.join(",")})` : "";
+  const cityWhereB = cityIds?.length ? `AND b.cityId IN (${cityIds.join(",")})` : "";
+  const q = (sql, replacements = { startDate }) =>
+    sequelize.query(sql, { replacements, type: sequelize.QueryTypes.SELECT });
+
+  // Admin's cut is what remains of the discounted, pre-tax amount after the partner's
+  // share. GST is a pass-through to the government and never part of either side's
+  // earnings — the same basis createBooking uses to derive partnerEarning.
+  const COMMISSION_EXPR =
+    "GREATEST(COALESCE(baseAmount,0) - COALESCE(couponDiscountAmount,0) - COALESCE(partnerEarning,0), 0)";
+
+  const [
+    revenueSeries, bookingSeries, userSeries, partnerSeries,
+    revenueTotals, bookingTotals, statusDist, userTotals, retention, partnerPerf, topServices,
+  ] = await Promise.all([
+    q(`SELECT DATE_FORMAT(createdAt, '%Y-%m') AS month,
+              COALESCE(SUM(totalAmount), 0)        AS revenue,
+              COALESCE(SUM(${COMMISSION_EXPR}), 0) AS commission,
+              COALESCE(SUM(partnerEarning), 0)     AS payout
+       FROM bookings
+       WHERE status = 'completed' AND createdAt >= :startDate ${cityWhere}
+       GROUP BY month ORDER BY month ASC`),
+
+    q(`SELECT DATE_FORMAT(createdAt, '%Y-%m') AS month,
+              COUNT(*) AS bookings,
+              SUM(status = 'completed') AS completed,
+              SUM(status = 'cancelled') AS cancelled
+       FROM bookings
+       WHERE createdAt >= :startDate ${cityWhere}
+       GROUP BY month ORDER BY month ASC`),
+
+    q(`SELECT DATE_FORMAT(createdAt, '%Y-%m') AS month, COUNT(*) AS count
+       FROM users WHERE createdAt >= :startDate ${cityWhere}
+       GROUP BY month ORDER BY month ASC`),
+
+    // partners has no cityId column, so the city filter cannot narrow this series
+    q(`SELECT DATE_FORMAT(createdAt, '%Y-%m') AS month, COUNT(*) AS count
+       FROM partners WHERE createdAt >= :startDate
+       GROUP BY month ORDER BY month ASC`),
+
+    q(`SELECT COALESCE(SUM(totalAmount), 0)        AS revenue,
+              COALESCE(SUM(${COMMISSION_EXPR}), 0) AS commission,
+              COALESCE(SUM(partnerEarning), 0)     AS payout
+       FROM bookings
+       WHERE status = 'completed' AND createdAt >= :startDate ${cityWhere}`),
+
+    q(`SELECT COUNT(*) AS total,
+              SUM(status = 'completed') AS completed,
+              SUM(status = 'cancelled') AS cancelled,
+              COUNT(DISTINCT userId)    AS bookingUsers
+       FROM bookings WHERE createdAt >= :startDate ${cityWhere}`),
+
+    q(`SELECT status, COUNT(*) AS count FROM bookings
+       WHERE 1=1 ${cityWhere} GROUP BY status ORDER BY count DESC`),
+
+    q(`SELECT COUNT(*) AS total,
+              SUM(createdAt >= :monthStart) AS newThisMonth
+       FROM users WHERE 1=1 ${cityWhere}`,
+      { monthStart: moment().startOf("month").toDate() }),
+
+    // Retention = share of booking customers who came back for a second booking.
+    q(`SELECT COUNT(*) AS bookedUsers, SUM(c >= 2) AS repeatUsers FROM (
+         SELECT userId, COUNT(*) AS c FROM bookings
+         WHERE createdAt >= :startDate ${cityWhere} GROUP BY userId
+       ) t`),
+
+    q(`SELECT p.name,
+              COUNT(b.id)                        AS jobs,
+              COALESCE(p.ratingsAverage, 0)      AS rating,
+              COALESCE(SUM(b.partnerEarning), 0) AS earnings
+       FROM partners p
+       JOIN bookings b ON b.partnerId = p.id AND b.status = 'completed'
+       WHERE b.createdAt >= :startDate ${cityWhereB}
+       GROUP BY p.id, p.name, p.ratingsAverage
+       ORDER BY earnings DESC LIMIT 10`),
+
+    q(`SELECT COALESCE(s.name, 'Unknown') AS name,
+              COUNT(*) AS count,
+              COALESCE(SUM(b.totalAmount), 0) AS revenue
+       FROM bookings b LEFT JOIN services s ON b.serviceId = s.id
+       WHERE b.status = 'completed' AND b.createdAt >= :startDate ${cityWhereB}
+       GROUP BY b.serviceId, s.name ORDER BY revenue DESC LIMIT 10`),
+  ]);
+
+  const num = (v) => parseFloat(v || 0);
+  const int = (v) => parseInt(v || 0, 10);
+  const pct = (part, whole) => (whole > 0 ? parseFloat(((part / whole) * 100).toFixed(1)) : 0);
+
+  const rev = revenueTotals[0] ?? {};
+  const bk = bookingTotals[0] ?? {};
+  const us = userTotals[0] ?? {};
+  const ret = retention[0] ?? {};
+
+  // Users and partners are counted in separate tables; align them on one month axis so
+  // the growth chart can plot both series against a single set of labels.
+  const byMonth = new Map();
+  for (const r of userSeries) byMonth.set(r.month, { month: r.month, users: int(r.count), partners: 0 });
+  for (const r of partnerSeries) {
+    const e = byMonth.get(r.month) ?? { month: r.month, users: 0, partners: 0 };
+    e.partners = int(r.count);
+    byMonth.set(r.month, e);
+  }
+
+  const totalBookings = int(bk.total);
+  const monthsWithRevenue = revenueSeries.length || 1;
+
+  return {
+    period: { months: span, from: moment(startDate).format("YYYY-MM-DD"), days: daysInSpan },
+    revenue: {
+      total: num(rev.revenue),
+      platformEarnings: num(rev.commission),
+      partnerPayouts: num(rev.payout),
+      avgMonthly: parseFloat((num(rev.revenue) / monthsWithRevenue).toFixed(2)),
+      series: revenueSeries.map((r) => ({
+        month: r.month,
+        revenue: num(r.revenue),
+        commission: num(r.commission),
+        payout: num(r.payout),
+      })),
+    },
+    bookings: {
+      total: totalBookings,
+      completed: int(bk.completed),
+      cancelled: int(bk.cancelled),
+      completionRate: pct(int(bk.completed), totalBookings),
+      cancellationRate: pct(int(bk.cancelled), totalBookings),
+      avgPerDay: parseFloat((totalBookings / daysInSpan).toFixed(1)),
+      // All-time split across every status, for the dashboard's donut.
+      statusDistribution: statusDist.map((r) => ({ status: r.status, count: int(r.count) })),
+      series: bookingSeries.map((r) => ({
+        month: r.month,
+        bookings: int(r.bookings),
+        completed: int(r.completed),
+        cancelled: int(r.cancelled),
+      })),
+    },
+    users: {
+      total: int(us.total),
+      newThisMonth: int(us.newThisMonth),
+      retentionRate: pct(int(ret.repeatUsers), int(ret.bookedUsers)),
+      avgBookingsPerUser: int(bk.bookingUsers) > 0
+        ? parseFloat((totalBookings / int(bk.bookingUsers)).toFixed(1))
+        : 0,
+      series: [...byMonth.values()].sort((a, b) => a.month.localeCompare(b.month)),
+    },
+    partnerPerformance: partnerPerf.map((p) => ({
+      name: p.name,
+      jobs: int(p.jobs),
+      rating: num(p.rating),
+      earnings: num(p.earnings),
+    })),
+    topServices: topServices.map((s) => ({
+      name: s.name,
+      count: int(s.count),
+      revenue: num(s.revenue),
+    })),
+  };
+};
+
+module.exports = { getDashboardStats, getRevenueData, getBookingAnalytics, getUserGrowth, getCouponUsage, getUserEngagement, getReportsSummary };
+

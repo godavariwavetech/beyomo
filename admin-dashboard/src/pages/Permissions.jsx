@@ -66,8 +66,11 @@ export default function Permissions() {
   const openEdit = (a) => {
     setEditingAdmin(a);
     setAdminForm({ name: a.name, email: a.email, role: a.role });
+    // Filter to ALL_MODULES so a permission for a retired module (coupons, say) can't
+    // survive invisibly: the checkbox grid only renders ALL_MODULES, but the whole array
+    // is written back on save, which would otherwise carry the dead entry forward.
     const perms = parseJSON(a.customPermissions) || ROLE_PERMISSIONS[a.role] || [];
-    setCustomPerms([...perms]);
+    setCustomPerms(perms.filter(p => ALL_MODULES.includes(p)));
     setUseCustom(!!parseJSON(a.customPermissions));
     const az = parseJSON(a.allowedZones);
     setAllowAllZones(!az || az.length === 0);

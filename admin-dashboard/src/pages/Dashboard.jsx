@@ -13,8 +13,25 @@ import { useAutoRefresh } from '../hooks/useAutoRefresh';
 const fmtCurrency = (v) => v >= 100000 ? `₹${(v/100000).toFixed(2)}L` : `₹${v.toLocaleString('en-IN')}`;
 const fmtNum = (v) => typeof v === 'number' && v % 1 !== 0 ? v.toFixed(1) : v?.toLocaleString('en-IN');
 
+// "2026-08" reads better on an axis as "Aug 26".
+const fmtMonth = (m) => {
+  if (!m || typeof m !== 'string') return m ?? '';
+  const [y, mo] = m.split('-');
+  const d = new Date(Number(y), Number(mo) - 1, 1);
+  return isNaN(d) ? m : d.toLocaleDateString('en-IN', { month: 'short', year: '2-digit' });
+};
+
+const STATUS_COLORS = {
+  completed: '#22C55E', pending: '#F59E0B', confirmed: '#02B0E8',
+  in_progress: '#8B5CF6', cancelled: '#EF4444',
+};
+const titleCase = (s) => String(s ?? '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+
 function StatCard({ icon: Icon, label, value, change, changeType, extra, gradient }) {
   const Up = changeType === 'up';
+  // A tile with no period-over-period figure shows its context line only — previously
+  // every tile hardcoded changeType:'up', so all eight arrows were permanently green.
+  const flat = changeType === 'flat' || change === null || change === undefined;
   return (
     <div className="stat-card" style={gradient ? { background: gradient, border: 'none' } : {}}>
       <div className="stat-card-header">
@@ -27,11 +44,13 @@ function StatCard({ icon: Icon, label, value, change, changeType, extra, gradien
         </div>
       </div>
       <div className="stat-change" style={gradient ? { color: 'rgba(255,255,255,0.8)' } : {}}>
-        {Up ? <TrendingUp size={14} style={{ color: gradient ? 'rgba(255,255,255,0.9)' : 'var(--c-success)' }} />
-             : <TrendingDown size={14} style={{ color: gradient ? 'rgba(255,255,255,0.9)' : 'var(--c-danger)' }} />}
-        <span style={{ color: gradient ? 'rgba(255,255,255,0.9)' : (Up ? 'var(--c-success)' : 'var(--c-danger)'), fontWeight: 600 }}>
-          {Up ? '+' : ''}{change}{typeof change === 'number' && Math.abs(change) < 20 && label !== 'Avg. Rating' ? '%' : ''}
-        </span>
+        {!flat && (Up ? <TrendingUp size={14} style={{ color: gradient ? 'rgba(255,255,255,0.9)' : 'var(--c-success)' }} />
+                      : <TrendingDown size={14} style={{ color: gradient ? 'rgba(255,255,255,0.9)' : 'var(--c-danger)' }} />)}
+        {!flat && (
+          <span style={{ color: gradient ? 'rgba(255,255,255,0.9)' : (Up ? 'var(--c-success)' : 'var(--c-danger)'), fontWeight: 600 }}>
+            {Up ? '+' : ''}{change}{typeof change === 'number' && Math.abs(change) < 20 && label !== 'Avg. Rating' ? '%' : ''}
+          </span>
+        )}
         <span style={{ fontSize: 12 }}>{extra}</span>
       </div>
     </div>
@@ -67,7 +86,7 @@ export default function Dashboard() {
     todayBookings:  { value: 0, change: 0, changeType: 'up', extra: 'this month' },
     monthlyRevenue: { value: 0, change: 0, changeType: 'up', extra: 'vs last month' },
     activeJobs:     { value: 0, change: 0, changeType: 'up', extra: 'in queue' },
-    pendingReviews: { value: 0, change: 0, changeType: 'up', extra: 'awaiting moderation' },
+    awaitingReview: { value: 0, change: 0, changeType: 'up', extra: 'completed, unrated' },
     activeCoupons:  { value: 0, change: 0, changeType: 'up', extra: 'live now' },
     avgRating:      { value: 0, change: 0, changeType: 'up', extra: 'from reviews' },
   };
@@ -84,29 +103,38 @@ export default function Dashboard() {
     action('get', `/api/v1/admin/reports/dashboard${qp}`).then(res => {
       if (!res.ok || !res.data?.data) return;
       const d = res.data.data;
+      const growth = d.revenue?.growth ?? 0;
       setStats({
-        totalUsers:     { value: d.users?.total ?? 0,          change: d.users?.newThisMonth ?? 0,   changeType: 'up',                                              extra: 'new this month' },
-        totalPartners:  { value: d.partners?.total ?? 0,       change: d.partners?.pending ?? 0,     changeType: 'up',                                              extra: 'pending verify' },
-        todayBookings:  { value: d.bookings?.today ?? 0,       change: d.bookings?.thisMonth ?? 0,   changeType: 'up',                                              extra: 'this month total' },
-        monthlyRevenue: { value: d.revenue?.thisMonth ?? 0,    change: d.revenue?.growth ?? 0,       changeType: (d.revenue?.growth ?? 0) >= 0 ? 'up' : 'down',     extra: 'vs last month' },
-        activeJobs:     { value: d.bookings?.pending ?? 0,     change: 0,                            changeType: 'up',                                              extra: 'pending bookings' },
-        pendingReviews: { value: 0,                            change: 0,                            changeType: 'up',                                              extra: 'awaiting moderation' },
-        activeCoupons:  { value: 0,                            change: 0,                            changeType: 'up',                                              extra: 'live now' },
-        avgRating:      { value: d.avgRating ?? 0,             change: 0,                            changeType: 'up',                                              extra: 'from reviews' },
+        totalUsers:     { value: d.users?.total ?? 0,       change: d.users?.newThisMonth ?? 0, changeType: 'up',                        extra: 'new this month' },
+        totalPartners:  { value: d.partners?.total ?? 0,    change: d.partners?.pending ?? 0,   changeType: 'up',                        extra: 'pending verify' },
+        todayBookings:  { value: d.bookings?.today ?? 0,    change: d.bookings?.thisMonth ?? 0, changeType: 'up',                        extra: 'this month total' },
+        // The only tile with a real period-over-period delta, so it is the only one
+        // whose arrow can legitimately point down.
+        monthlyRevenue: { value: d.revenue?.thisMonth ?? 0, change: growth,                     changeType: growth >= 0 ? 'up' : 'down', extra: 'vs last month' },
+        activeJobs:     { value: d.bookings?.pending ?? 0,  change: null,                       changeType: 'flat',                      extra: 'pending bookings' },
+        awaitingReview: { value: d.reviews?.awaitingReview ?? 0, change: null,                  changeType: 'flat',                      extra: 'completed, unrated' },
+        activeCoupons:  { value: d.coupons?.active ?? 0,    change: null,                       changeType: 'flat',                      extra: 'live right now' },
+        avgRating:      { value: d.avgRating ?? 0,          change: null,                       changeType: 'flat',                      extra: 'from visible reviews' },
       });
     });
-    action('get', `/api/v1/admin/reports/revenue${cityParam ? `?cityIds=${cityParam}` : ''}`).then(res => {
-      const arr = res.data?.data?.data;
-      if (res.ok && Array.isArray(arr)) setRevenueData(arr);
+    // One aggregate feeds all three charts below; each series is measured server-side.
+    action('get', `/api/v1/admin/reports/summary?months=12${cityParam ? `&cityIds=${cityParam}` : ''}`).then(res => {
+      const d = res.data?.data;
+      if (!res.ok || !d) return;
+      setRevenueData((d.revenue?.series ?? []).map(r => ({ ...r, month: fmtMonth(r.month) })));
+      setUGD((d.users?.series ?? []).map(r => ({ ...r, month: fmtMonth(r.month) })));
+      setBSD((d.bookings?.statusDistribution ?? []).map(r => ({
+        name: titleCase(r.status),
+        value: r.count,
+        color: STATUS_COLORS[r.status] ?? '#94A3B8',
+      })));
+      setTS((d.topServices ?? []).map(x => ({ name: x.name, bookings: x.count })));
     });
     action('get', `/api/v1/admin/bookings?limit=6${cityParam ? `&cityIds=${cityParam}` : ''}`).then(res => {
       if (res.ok && Array.isArray(res.data?.data)) setRB(res.data.data);
     });
     action('get', `/api/v1/admin/partners?limit=5${cityParam ? `&cityIds=${cityParam}` : ''}`).then(res => {
       if (res.ok && Array.isArray(res.data?.data)) setOP(res.data.data);
-    });
-    action('get', '/api/v1/admin/services?limit=7').then(res => {
-      if (res.ok && Array.isArray(res.data?.data)) setTS(res.data.data);
     });
   };
 
@@ -126,7 +154,7 @@ export default function Dashboard() {
       </div>
       <div className="stats-grid" style={{ marginTop: -8 }}>
         <StatCard icon={Zap}    label="Active Jobs Now"  value={fmtNum(s.activeJobs.value)}    change={s.activeJobs.change}    changeType={s.activeJobs.changeType}    extra={s.activeJobs.extra} />
-        <StatCard icon={Star}   label="Pending Reviews"  value={fmtNum(s.pendingReviews.value)} change={s.pendingReviews.change} changeType={s.pendingReviews.changeType} extra={s.pendingReviews.extra} />
+        <StatCard icon={Star}   label="Awaiting Review"  value={fmtNum(s.awaitingReview.value)} change={s.awaitingReview.change} changeType={s.awaitingReview.changeType} extra={s.awaitingReview.extra} />
         <StatCard icon={Tag}    label="Active Coupons"   value={fmtNum(s.activeCoupons.value)}  change={s.activeCoupons.change}  changeType={s.activeCoupons.changeType}  extra={s.activeCoupons.extra} />
         <StatCard icon={TrendingUp} label="Avg. Rating"  value={fmtNum(s.avgRating.value)}     change={s.avgRating.change}     changeType={s.avgRating.changeType}     extra={s.avgRating.extra} />
       </div>
@@ -190,13 +218,19 @@ export default function Dashboard() {
         <div className="card">
           <div className="card-header">
             <div className="card-title">Top Services by Bookings</div>
+            <div className="card-subtitle">Completed bookings, last 12 months</div>
           </div>
           <div className="card-body" style={{ paddingTop: 8 }}>
+            {topServices.length === 0 && (
+              <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--c-text-muted)', fontSize: 13 }}>
+                No completed bookings yet.
+              </div>
+            )}
             {topServices.map((svc, i) => {
-              const bookings = svc.totalBookings ?? svc.bookings ?? 0;
-              const maxBookings = topServices[0]?.totalBookings ?? topServices[0]?.bookings ?? 1;
+              const bookings = svc.bookings ?? 0;
+              const maxBookings = Math.max(1, ...topServices.map(x => x.bookings ?? 0));
               return (
-                <div key={svc._id ?? svc.id} style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                <div key={svc.name} style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
                   <span style={{ width: 20, fontSize: 13, color: 'var(--c-text-muted)', fontWeight: 600 }}>#{i+1}</span>
                   <span style={{ fontSize: 18 }}>{svc.icon ?? '✨'}</span>
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -221,13 +255,13 @@ export default function Dashboard() {
         <div className="card">
           <div className="card-header">
             <div className="card-title">User & Partner Growth</div>
-            <div className="card-subtitle">Last 8 weeks</div>
+            <div className="card-subtitle">Signups per month, last 12 months</div>
           </div>
           <div className="card-body" style={{ paddingTop: 8 }}>
             <ResponsiveContainer width="100%" height={260}>
               <LineChart data={userGrowthData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--c-border)" />
-                <XAxis dataKey="week" tick={{ fontSize: 11 }} />
+                <XAxis dataKey="month" tick={{ fontSize: 11 }} />
                 <YAxis yAxisId="u" tick={{ fontSize: 11 }} />
                 <YAxis yAxisId="p" orientation="right" tick={{ fontSize: 11 }} />
                 <Tooltip content={<CustomTooltip />} />

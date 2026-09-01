@@ -58,7 +58,7 @@ const {
   listNotifications, broadcastNotification,
   listAdminUsers, createAdminUser, updateAdminUser, deleteAdminUser,
   listFeedback, updateFeedbackStatus,
-  listEarnings, saveSettings,
+  listEarnings, saveSettings, getSettings,
   updateAdminDeviceToken, testPushNotification,
   listOffersHandler, createOfferHandler, updateOfferHandler, deleteOfferHandler,
   listPackagesHandler, createPackageHandler, updatePackageHandler, deletePackageHandler,
@@ -162,7 +162,8 @@ router.patch("/feedback/:id/status", adminAuthenticate(["super_admin", "admin", 
 // Earnings (completed bookings)
 router.get("/earnings", adminAuthenticate(), listEarnings);
 
-// Settings (acknowledge saves — extend with DB later)
+// Settings (persisted)
+router.get("/settings", adminAuthenticate(), getSettings);
 router.patch("/settings/:section", adminAuthenticate(["super_admin", "admin"]), saveSettings);
 
 // Banners

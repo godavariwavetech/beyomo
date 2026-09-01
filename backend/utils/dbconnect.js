@@ -91,6 +91,8 @@ const ADDITIVE_SCHEMA = [
   "ALTER TABLE services ADD COLUMN IF NOT EXISTS showOnHome TINYINT(1) NOT NULL DEFAULT 0",
   // City prefix code for the city+year+series booking ID format (e.g. NLR2600001)
   "ALTER TABLE cities ADD COLUMN IF NOT EXISTS code VARCHAR(5) NULL",
+  // Per-city price override — NULL means "use services.basePrice" for that city
+  "ALTER TABLE service_city_map ADD COLUMN IF NOT EXISTS customPrice DECIMAL(10,2) NULL DEFAULT NULL",
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────

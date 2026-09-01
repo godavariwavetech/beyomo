@@ -23,7 +23,7 @@ const SETTING_SECTIONS = [
   { id:'api',         label:'API & Integrations',icon:<Key size={16}/>, superAdminOnly:true },
 ];
 
-const ALL_PAGES = ['dashboard','users','partners','bookings','services','earnings','coupons','reviews','notifications','reports','settings'];
+const ALL_PAGES = ['dashboard','users','partners','bookings','services','earnings','reviews','notifications','reports','settings'];
 
 function AgreementSection() {
   const [exists, setExists] = useState(null);
@@ -253,9 +253,20 @@ export default function Settings() {
     fetchList().then(res => { if (res.ok) setAdmins(res.data?.data ?? []); });
   };
 
-  useEffect(() => { loadAdmins(); }, []);
-  useAutoRefresh(loadAdmins);
   const [commission, setCommission] = useState(20);
+
+  useEffect(() => {
+    loadAdmins();
+    settingsAction('get', '/api/v1/admin/settings').then(res => {
+      if (res.ok) {
+        const settings = res.data?.data ?? {};
+        if (settings.commission?.rate != null) setCommission(Number(settings.commission.rate));
+        if (settings.general) setGeneral(prev => ({ ...prev, ...settings.general }));
+        if (settings.notifications) setNotifToggles(prev => ({ ...prev, ...settings.notifications }));
+      }
+    });
+  }, []);
+  useAutoRefresh(loadAdmins);
   const NOTIF_ITEMS = [
     { label:'Booking Confirmation',  desc:'Notify users when booking is confirmed',             defaultOn:true },
     { label:'Partner Assigned',      desc:'Notify users when a partner is assigned',            defaultOn:true },

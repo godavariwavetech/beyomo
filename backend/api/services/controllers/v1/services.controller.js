@@ -55,7 +55,8 @@ const getServices = catchAsync(async (req, res, next) => {
  * GET /api/v1/services/:id
  */
 const getServiceById = catchAsync(async (req, res, next) => {
-  const service = await servicesService.getServiceById(req.params.id);
+  const cityId = req.query.cityId ? parseInt(req.query.cityId) : null;
+  const service = await servicesService.getServiceById(req.params.id, cityId);
   res.status(200).json({ status: true, data: service });
 });
 

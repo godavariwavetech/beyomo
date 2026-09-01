@@ -6,6 +6,7 @@ const Joi = require("joi");
 const AdminUser = require("../../models/adminUser.model");
 const User = require("../../../users/models/user.model");
 const Partner = require("../../../partners/models/partner.model");
+const AdminSetting = require("../../../settings/models/adminSetting.model");
 const { sendPushNotification } = require("../../../../utils/firebaseUtils");
 
 // ==================== VALIDATION SCHEMAS ====================
@@ -134,7 +135,13 @@ const categorySchema = Joi.object({
   cityIds: Joi.array().items(Joi.number().integer()).default([]),
 });
 
-const cityMappingItem = Joi.object({ cityId: Joi.number().integer().required(), isActive: Joi.boolean().default(true) });
+// customPrice: per-city price override. null/"" clears it back to the global basePrice;
+// omitting the key entirely leaves whatever the city already had untouched.
+const cityMappingItem = Joi.object({
+  cityId: Joi.number().integer().required(),
+  isActive: Joi.boolean().default(true),
+  customPrice: Joi.number().positive().allow(null, ""),
+});
 
 const serviceSchema = Joi.object({
   categoryId: Joi.alternatives().try(Joi.number(), Joi.string()).required(),
@@ -411,11 +418,16 @@ const reorderServices = catchAsync(async (req, res, next) => {
   res.status(200).json({ status: true, message: "Service order updated" });
 });
 
+const patchServiceCitySchema = Joi.object({
+  isActive: Joi.boolean(),
+  customPrice: Joi.number().positive().allow(null, ""),
+}).min(1);
+
 const patchServiceCity = catchAsync(async (req, res, next) => {
   const { id, cityId } = req.params;
-  const { isActive } = req.body;
-  if (typeof isActive !== "boolean") return next(new AppError("isActive (boolean) is required", 400));
-  const result = await adminService.toggleServiceCityStatus(id, cityId, isActive);
+  const { error, value } = patchServiceCitySchema.validate(req.body);
+  if (error) return next(new AppError(error.details[0].message, 400));
+  const result = await adminService.toggleServiceCityStatus(id, cityId, value.isActive, value.customPrice);
   res.status(200).json({ status: true, data: result });
 });
 
@@ -620,7 +632,18 @@ const listEarnings = catchAsync(async (req, res, next) => {
 });
 
 const saveSettings = catchAsync(async (req, res, next) => {
+  const section = String(req.params.section || "").trim();
+  if (!section) return next(new AppError("Settings section is required", 400));
+
+  await AdminSetting.upsert({ section, value: req.body ?? {} });
   res.status(200).json({ status: true, message: "Settings saved" });
+});
+
+const getSettings = catchAsync(async (req, res, next) => {
+  const rows = await AdminSetting.findAll();
+  const settings = {};
+  rows.forEach((row) => { settings[row.section] = row.value; });
+  res.status(200).json({ status: true, data: settings });
 });
 
 // ==================== COUPONS ====================
@@ -1038,7 +1061,7 @@ module.exports = {
   listNotifications, broadcastNotification,
   listAdminUsers, createAdminUser, updateAdminUser, deleteAdminUser,
   listFeedback, updateFeedbackStatus,
-  listEarnings, saveSettings,
+  listEarnings, saveSettings, getSettings,
   listBanners, createBanner, updateBanner, deleteBanner,
   listZones, createZone, updateZone, deleteZone,
   listCities, createCity, updateCity, deleteCity,
