@@ -68,7 +68,7 @@ const getServices = async (query, page = 1, limit = 20) => {
   return { data: services, pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } };
 };
 
-const getServiceById = async (serviceId) => {
+const getServiceById = async (serviceId, cityId = null) => {
   const service = await Service.findOne({
     where: { id: serviceId, isActive: true },
     include: [
@@ -77,7 +77,17 @@ const getServiceById = async (serviceId) => {
     ],
   });
   if (!service) throw new AppError("Service not found", 404);
-  return service;
+
+  // Same per-city price override the list endpoint applies — without this the detail
+  // screen shows the global base price while the list shows the city's rate.
+  const plain = service.get({ plain: true });
+  if (cityId) {
+    const mapping = (service.cityMappings ?? []).find(
+      (m) => Number(m.cityId) === Number(cityId) && m.isActive
+    );
+    if (mapping?.customPrice != null) plain.basePrice = mapping.customPrice;
+  }
+  return plain;
 };
 
 const getNearbyPartners = async (lat, lng, serviceId, radiusKm = 10, page = 1, limit = 20) => {

@@ -82,4 +82,14 @@ const getUserEngagement = catchAsync(async (req, res) => {
   res.status(200).json({ status: true, ...result });
 });
 
-module.exports = { getDashboard, getRevenue, getBookings, getUsers, getCouponUsage, getUserEngagement };
+/**
+ * GET /api/v1/admin/reports/summary?months=3|6|12&cityIds=
+ * Every stat card and chart series the admin Reports page renders, in one round trip.
+ */
+const getSummary = catchAsync(async (req, res) => {
+  const cityIds = await resolveCityIds(req);
+  const data = await reportsService.getReportsSummary({ months: req.query.months, cityIds });
+  res.status(200).json({ status: true, data });
+});
+
+module.exports = { getDashboard, getRevenue, getBookings, getUsers, getCouponUsage, getUserEngagement, getSummary };

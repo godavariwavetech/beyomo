@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area
 } from 'recharts';
 import { Download, TrendingUp, Users, UserCog, Star } from 'lucide-react';
-import { useReports } from '../hooks/useReports';
+import api from '../services/api';
 import { useCityFilter } from '../context/CityContext';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
 
@@ -20,7 +20,46 @@ const COLORS = ['#064081','#02B0E8','#FF9500','#FDD77A','#22C55E','#8B5CF6','#EF
 
 const TABS = ['Revenue','Bookings','User Growth','Partner Performance','Service Analytics'];
 
+const RANGE_MONTHS = { '12m': 12, '6m': 6, '3m': 3 };
+
 const fmtRupee = v => `₹${(v/1000).toFixed(0)}k`;
+
+// Cards show large sums in Indian units (lakh/crore) rather than a raw rupee figure.
+const fmtCompact = (v) => {
+  const n = Number(v) || 0;
+  if (Math.abs(n) >= 1e7) return `₹${(n / 1e7).toFixed(2)}Cr`;
+  if (Math.abs(n) >= 1e5) return `₹${(n / 1e5).toFixed(2)}L`;
+  if (Math.abs(n) >= 1e3) return `₹${(n / 1e3).toFixed(1)}k`;
+  return `₹${n.toLocaleString('en-IN')}`;
+};
+
+const fmtNum = (v) => (Number(v) || 0).toLocaleString('en-IN');
+
+// A month key like "2026-08" reads better on an axis as "Aug 26".
+const fmtMonth = (m) => {
+  if (!m || typeof m !== 'string') return m ?? '';
+  const [y, mo] = m.split('-');
+  const d = new Date(Number(y), Number(mo) - 1, 1);
+  return isNaN(d) ? m : d.toLocaleDateString('en-IN', { month: 'short', year: '2-digit' });
+};
+
+const withMonthLabel = (rows) => (rows ?? []).map(r => ({ ...r, month: fmtMonth(r.month) }));
+
+// Stat cards carry a factual sub-line (what the number is made of) instead of the
+// invented "+18% vs prev period" deltas this page used to print under every figure.
+const StatCards = ({ items }) => (
+  <div className="stats-grid" style={{ marginBottom:24 }}>
+    {items.map(s => (
+      <div key={s.label} className="stat-card">
+        <div className="stat-label">{s.label}</div>
+        <div className="stat-value" style={{ fontSize:22 }}>{s.value}</div>
+        {s.sub && (
+          <div style={{ fontSize:12, color:'var(--c-text-secondary)', fontWeight:500, marginTop:4 }}>{s.sub}</div>
+        )}
+      </div>
+    ))}
+  </div>
+);
 
 const CustomTooltip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null;
@@ -38,110 +77,116 @@ const CustomTooltip = ({ active, payload, label }) => {
   );
 };
 
+const EmptyChart = ({ label }) => (
+  <div style={{ height:280, display:'flex', alignItems:'center', justifyContent:'center', color:'var(--c-text-muted)', fontSize:13 }}>
+    {label}
+  </div>
+);
+
 export default function Reports() {
-  const { action } = useReports();
   const { cityParam } = useCityFilter();
   const [activeTab, setTab] = useState('Revenue');
   const [dateRange, setDR] = useState('12m');
-  const [revenueData, setRevenueData] = useState([]);
-  const [userGrowthData, setUserGrowthData] = useState([]);
-  const [partnerPerfData, setPartnerPerfData] = useState([]);
-  const [serviceRevData, setServiceRevData] = useState([]);
+  const [summary, setSummary] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  const loadReports = () => {
-    const params = cityParam ? { cityIds: cityParam } : {};
-    action('get', '/api/v1/admin/reports/revenue', null, params).then(res => {
-      const arr = res.data?.data?.data;
-      if (res.ok && Array.isArray(arr) && arr.length) setRevenueData(arr);
-    });
-    action('get', '/api/v1/admin/reports/users', null, params).then(res => {
-      const arr = res.data?.data?.users;
-      if (res.ok && Array.isArray(arr) && arr.length) setUserGrowthData(arr);
-    });
-    action('get', '/api/v1/admin/reports/bookings', null, params).then(res => {
-      const arr = res.data?.data?.topServices;
-      if (res.ok && Array.isArray(arr) && arr.length) setServiceRevData(arr);
-    });
-  };
+  // The whole page comes from one aggregate: every stat card and every chart series is
+  // measured server-side. Previously the cards were hardcoded literals and the booking
+  // chart was derived from revenue with invented ratios.
+  const load = useCallback((silent = false) => {
+    if (!silent) setLoading(true);
+    const params = { months: RANGE_MONTHS[dateRange] ?? 12, ...(cityParam ? { cityIds: cityParam } : {}) };
+    api.get('/api/v1/admin/reports/summary', { params })
+      .then(res => { if (res.data?.data) setSummary(res.data.data); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [dateRange, cityParam]);
 
-  useEffect(() => { loadReports(); }, [dateRange, cityParam]);
-  useAutoRefresh(loadReports);
+  useEffect(() => { load(); }, [load]);
+  useAutoRefresh(() => load(true));
 
-  const bookingsByMonth = revenueData.map(r => ({
-    month: r.month,
-    bookings: r.bookings ?? Math.round(r.revenue / 1200),
-    completed: r.completed ?? Math.round((r.bookings ?? r.revenue / 1200) * 0.85),
-    cancelled: r.cancelled ?? Math.round((r.bookings ?? r.revenue / 1200) * 0.1),
-  }));
+  const revenue  = summary?.revenue  ?? { total:0, platformEarnings:0, partnerPayouts:0, avgMonthly:0, series:[] };
+  const bookings = summary?.bookings ?? { total:0, completed:0, cancelled:0, completionRate:0, cancellationRate:0, avgPerDay:0, series:[] };
+  const users    = summary?.users    ?? { total:0, newThisMonth:0, retentionRate:0, avgBookingsPerUser:0, series:[] };
+  const partnerPerf = summary?.partnerPerformance ?? [];
+  const serviceRev  = summary?.topServices ?? [];
 
-  const partnerPerf = partnerPerfData;
-
-  const serviceRev = serviceRevData;
+  const revenueSeries  = withMonthLabel(revenue.series);
+  const bookingSeries  = withMonthLabel(bookings.series);
+  const userSeries     = withMonthLabel(users.series);
+  const rangeLabel     = `last ${RANGE_MONTHS[dateRange] ?? 12} months`;
+  // Bar widths scale to the largest service in the set rather than a fixed divisor.
+  const maxServiceCount = Math.max(1, ...serviceRev.map(s => s.count ?? 0));
 
   return (
     <div>
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:24, flexWrap:'wrap', gap:12 }}>
-        <div className="report-tabs" style={{ flex:1 }}>
-          {TABS.map(t => (
-            <div key={t} className={`report-tab ${activeTab===t?'active':''}`} onClick={() => setTab(t)}>{t}</div>
-          ))}
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Reports</h1>
+          <p className="page-subtitle">Business performance and analytics{summary ? ` · ${rangeLabel}` : ''}</p>
         </div>
-        <div style={{ display:'flex', gap:8 }}>
+        <div style={{ display:'flex', gap:10, alignItems:'center' }}>
           <select className="filter-select" value={dateRange} onChange={e => setDR(e.target.value)}>
-            <option value="3m">Last 3 Months</option>
-            <option value="6m">Last 6 Months</option>
-            <option value="12m">Last 12 Months</option>
+            <option value="12m">Last 12 months</option>
+            <option value="6m">Last 6 months</option>
+            <option value="3m">Last 3 months</option>
           </select>
           <button className="btn btn-outline btn-sm" style={{ display:'flex', alignItems:'center', gap:6 }} onClick={printReport}>
-            <Download size={14}/> Export PDF
+            Print
           </button>
-          <button className="btn btn-secondary btn-sm" style={{ display:'flex', alignItems:'center', gap:6 }} onClick={() => exportCSV(revenueData, ['month','revenue','commission','payout'], 'revenue-report.csv')}>
-            <Download size={14}/> Export CSV
+          <button className="btn btn-secondary btn-sm" style={{ display:'flex', alignItems:'center', gap:6 }}
+                  onClick={() => exportCSV(revenue.series, ['month','revenue','commission','payout'], 'revenue-report.csv')}>
+            <Download size={15}/> Export CSV
           </button>
         </div>
       </div>
 
+      <div className="report-tabs" style={{ marginBottom:24 }}>
+        {TABS.map(t => (
+          <div key={t} className={`report-tab ${activeTab===t?'active':''}`} onClick={() => setTab(t)}>{t}</div>
+        ))}
+      </div>
+
+      {loading && !summary && (
+        <div className="card"><div className="card-body"><EmptyChart label="Loading reports…"/></div></div>
+      )}
+
       {activeTab === 'Revenue' && (
         <div>
-          <div className="stats-grid" style={{ marginBottom:24 }}>
-            {[
-              { label:'Total Revenue (12M)',    value:'₹43.24L', change:'+18%' },
-              { label:'Platform Earnings',      value:'₹8.65L',  change:'+18%' },
-              { label:'Partner Payouts',        value:'₹34.59L', change:'+18%' },
-              { label:'Avg Monthly Revenue',    value:'₹3.60L',  change:'+5%' },
-            ].map(s => (
-              <div key={s.label} className="stat-card">
-                <div className="stat-label">{s.label}</div>
-                <div className="stat-value" style={{ fontSize:22 }}>{s.value}</div>
-                <div style={{ fontSize:12, color:'var(--c-success)', fontWeight:600, marginTop:4 }}>{s.change} vs prev period</div>
-              </div>
-            ))}
-          </div>
+          <StatCards items={[
+            { label:`Total Revenue (${rangeLabel})`, value: fmtCompact(revenue.total),            sub:'completed bookings, incl. GST' },
+            { label:'Platform Earnings',             value: fmtCompact(revenue.platformEarnings), sub:'admin share after partner cut' },
+            { label:'Partner Payouts',               value: fmtCompact(revenue.partnerPayouts),   sub:'partner share, pre-tax' },
+            { label:'Avg Monthly Revenue',           value: fmtCompact(revenue.avgMonthly),       sub:`over ${revenue.series.length || 0} month(s) with revenue` },
+          ]}/>
 
           <div className="card mb-24">
             <div className="card-header"><div className="card-title">Monthly Revenue Breakdown</div></div>
             <div className="card-body">
-              <ResponsiveContainer width="100%" height={320}>
-                <AreaChart data={revenueData} margin={{ top:4, right:8, left:8, bottom:0 }}>
-                  <defs>
-                    <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#064081" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#064081" stopOpacity={0}/>
-                    </linearGradient>
-                    <linearGradient id="commGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#02B0E8" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#02B0E8" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--c-border)"/>
-                  <XAxis dataKey="month" tick={{ fontSize:12 }}/>
-                  <YAxis tickFormatter={fmtRupee} tick={{ fontSize:12 }}/>
-                  <Tooltip content={<CustomTooltip/>}/>
-                  <Legend iconType="circle" iconSize={8}/>
-                  <Area type="monotone" dataKey="revenue"    name="Revenue"    stroke="#064081" fill="url(#revGrad)"  strokeWidth={2}/>
-                  <Area type="monotone" dataKey="commission" name="Commission" stroke="#02B0E8" fill="url(#commGrad)" strokeWidth={2}/>
-                </AreaChart>
-              </ResponsiveContainer>
+              {revenueSeries.length === 0 ? <EmptyChart label="No completed bookings in this period."/> : (
+                <ResponsiveContainer width="100%" height={320}>
+                  <AreaChart data={revenueSeries} margin={{ top:4, right:8, left:8, bottom:0 }}>
+                    <defs>
+                      <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#064081" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#064081" stopOpacity={0}/>
+                      </linearGradient>
+                      <linearGradient id="commGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#02B0E8" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#02B0E8" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--c-border)"/>
+                    <XAxis dataKey="month" tick={{ fontSize:12 }}/>
+                    <YAxis tickFormatter={fmtRupee} tick={{ fontSize:12 }}/>
+                    <Tooltip content={<CustomTooltip/>}/>
+                    <Legend iconType="circle" iconSize={8}/>
+                    <Area type="monotone" dataKey="revenue"    name="Revenue"    stroke="#064081" fill="url(#revGrad)"  strokeWidth={2}/>
+                    <Area type="monotone" dataKey="commission" name="Commission" stroke="#02B0E8" fill="url(#commGrad)" strokeWidth={2}/>
+                    <Area type="monotone" dataKey="payout"     name="Partner Payout" stroke="#FF9500" fill="none" strokeWidth={2}/>
+                  </AreaChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </div>
         </div>
@@ -149,34 +194,30 @@ export default function Reports() {
 
       {activeTab === 'Bookings' && (
         <div>
-          <div className="stats-grid" style={{ marginBottom:24 }}>
-            {[
-              { label:'Total Bookings (12M)', value:'3,842', change:'+22%' },
-              { label:'Completion Rate',      value:'84.2%',  change:'+3.1%' },
-              { label:'Cancellation Rate',    value:'9.6%',   change:'-1.2%' },
-              { label:'Avg Bookings/Day',     value:'10.5',   change:'+8%' },
-            ].map(s => (
-              <div key={s.label} className="stat-card">
-                <div className="stat-label">{s.label}</div>
-                <div className="stat-value" style={{ fontSize:22 }}>{s.value}</div>
-                <div style={{ fontSize:12, color:'var(--c-success)', fontWeight:600, marginTop:4 }}>{s.change}</div>
-              </div>
-            ))}
-          </div>
+          <StatCards items={[
+            { label:`Total Bookings (${rangeLabel})`, value: fmtNum(bookings.total),           sub:'all statuses' },
+            { label:'Completion Rate',                value: `${bookings.completionRate}%`,    sub:`${fmtNum(bookings.completed)} completed` },
+            { label:'Cancellation Rate',              value: `${bookings.cancellationRate}%`,  sub:`${fmtNum(bookings.cancelled)} cancelled` },
+            { label:'Avg Bookings/Day',               value: bookings.avgPerDay,               sub:`across ${summary?.period?.days ?? 0} days` },
+          ]}/>
+
           <div className="card">
             <div className="card-header"><div className="card-title">Monthly Booking Trends</div></div>
             <div className="card-body">
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={bookingsByMonth} margin={{ top:4, right:8, left:0, bottom:0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--c-border)"/>
-                  <XAxis dataKey="month" tick={{ fontSize:12 }}/>
-                  <YAxis tick={{ fontSize:12 }}/>
-                  <Tooltip content={<CustomTooltip/>}/>
-                  <Legend iconType="circle" iconSize={8}/>
-                  <Bar dataKey="completed" name="Completed" fill="#22C55E" radius={[3,3,0,0]}/>
-                  <Bar dataKey="cancelled" name="Cancelled" fill="#EF4444" radius={[3,3,0,0]}/>
-                </BarChart>
-              </ResponsiveContainer>
+              {bookingSeries.length === 0 ? <EmptyChart label="No bookings in this period."/> : (
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={bookingSeries} margin={{ top:4, right:8, left:0, bottom:0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--c-border)"/>
+                    <XAxis dataKey="month" tick={{ fontSize:12 }}/>
+                    <YAxis tick={{ fontSize:12 }}/>
+                    <Tooltip content={<CustomTooltip/>}/>
+                    <Legend iconType="circle" iconSize={8}/>
+                    <Bar dataKey="bookings"  name="Total"     fill="#064081" radius={[3,3,0,0]}/>
+                    <Bar dataKey="completed" name="Completed" fill="#22C55E" radius={[3,3,0,0]}/>
+                    <Bar dataKey="cancelled" name="Cancelled" fill="#EF4444" radius={[3,3,0,0]}/>
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </div>
         </div>
@@ -184,35 +225,30 @@ export default function Reports() {
 
       {activeTab === 'User Growth' && (
         <div>
-          <div className="stats-grid" style={{ marginBottom:24 }}>
-            {[
-              { label:'Total Users',       value:'2,847', change:'+12%' },
-              { label:'New This Month',    value:'145',   change:'+8 vs last' },
-              { label:'Retention Rate',    value:'78.4%', change:'+2.3%' },
-              { label:'Avg Bookings/User', value:'6.8',   change:'+0.4' },
-            ].map(s => (
-              <div key={s.label} className="stat-card">
-                <div className="stat-label">{s.label}</div>
-                <div className="stat-value" style={{ fontSize:22 }}>{s.value}</div>
-                <div style={{ fontSize:12, color:'var(--c-success)', fontWeight:600, marginTop:4 }}>{s.change}</div>
-              </div>
-            ))}
-          </div>
+          <StatCards items={[
+            { label:'Total Users',       value: fmtNum(users.total),           sub:'all registered users' },
+            { label:'New This Month',    value: fmtNum(users.newThisMonth),    sub:'signups since the 1st' },
+            { label:'Retention Rate',    value: `${users.retentionRate}%`,     sub:'customers with 2+ bookings' },
+            { label:'Avg Bookings/User', value: users.avgBookingsPerUser,      sub:'among users who booked' },
+          ]}/>
+
           <div className="card">
-            <div className="card-header"><div className="card-title">Weekly User & Partner Growth</div></div>
+            <div className="card-header"><div className="card-title">Monthly User &amp; Partner Growth</div></div>
             <div className="card-body">
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={userGrowthData} margin={{ top:4, right:8, left:0, bottom:0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--c-border)"/>
-                  <XAxis dataKey="week" tick={{ fontSize:11 }}/>
-                  <YAxis yAxisId="u" tick={{ fontSize:11 }}/>
-                  <YAxis yAxisId="p" orientation="right" tick={{ fontSize:11 }}/>
-                  <Tooltip content={<CustomTooltip/>}/>
-                  <Legend iconType="circle" iconSize={8}/>
-                  <Line yAxisId="u" type="monotone" dataKey="users"    name="Users"    stroke="#064081" strokeWidth={2.5} dot={{ r:4 }}/>
-                  <Line yAxisId="p" type="monotone" dataKey="partners" name="Partners" stroke="#FF9500" strokeWidth={2.5} dot={{ r:4 }}/>
-                </LineChart>
-              </ResponsiveContainer>
+              {userSeries.length === 0 ? <EmptyChart label="No signups in this period."/> : (
+                <ResponsiveContainer width="100%" height={300}>
+                  <LineChart data={userSeries} margin={{ top:4, right:8, left:0, bottom:0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--c-border)"/>
+                    <XAxis dataKey="month" tick={{ fontSize:11 }}/>
+                    <YAxis yAxisId="u" tick={{ fontSize:11 }}/>
+                    <YAxis yAxisId="p" orientation="right" tick={{ fontSize:11 }}/>
+                    <Tooltip content={<CustomTooltip/>}/>
+                    <Legend iconType="circle" iconSize={8}/>
+                    <Line yAxisId="u" type="monotone" dataKey="users"    name="Users"    stroke="#064081" strokeWidth={2.5} dot={{ r:4 }}/>
+                    <Line yAxisId="p" type="monotone" dataKey="partners" name="Partners" stroke="#FF9500" strokeWidth={2.5} dot={{ r:4 }}/>
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </div>
         </div>
@@ -223,28 +259,30 @@ export default function Reports() {
           <div className="card mb-24">
             <div className="card-header"><div className="card-title">Top Partner Performance</div></div>
             <div className="card-body">
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={partnerPerf} layout="vertical" margin={{ top:4, right:24, left:40, bottom:0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--c-border)" horizontal={false}/>
-                  <XAxis type="number" tick={{ fontSize:11 }}/>
-                  <YAxis type="category" dataKey="name" tick={{ fontSize:12 }} width={60}/>
-                  <Tooltip content={<CustomTooltip/>}/>
-                  <Legend iconType="circle" iconSize={8}/>
-                  <Bar dataKey="jobs" name="Total Jobs" fill="#064081" radius={[0,3,3,0]}/>
-                  <Bar dataKey="earnings" name="Monthly Earnings (₹)" fill="#02B0E8" radius={[0,3,3,0]}/>
-                </BarChart>
-              </ResponsiveContainer>
+              {partnerPerf.length === 0 ? <EmptyChart label="No completed jobs by any partner in this period."/> : (
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={partnerPerf} layout="vertical" margin={{ top:4, right:24, left:40, bottom:0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--c-border)" horizontal={false}/>
+                    <XAxis type="number" tick={{ fontSize:11 }}/>
+                    <YAxis type="category" dataKey="name" tick={{ fontSize:12 }} width={80}/>
+                    <Tooltip content={<CustomTooltip/>}/>
+                    <Legend iconType="circle" iconSize={8}/>
+                    <Bar dataKey="jobs"     name="Completed Jobs" fill="#064081" radius={[0,3,3,0]}/>
+                    <Bar dataKey="earnings" name="Earnings (₹)"   fill="#02B0E8" radius={[0,3,3,0]}/>
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </div>
           <div className="card">
-            <div className="card-header"><div className="card-title">Partner Ratings Distribution</div></div>
+            <div className="card-header"><div className="card-title">Partner Earnings Breakdown</div></div>
             <div className="table-container">
               <table className="table">
-                <thead><tr><th>Partner</th><th>Total Jobs</th><th>Rating</th><th>Monthly Earnings</th></tr></thead>
+                <thead><tr><th>Partner</th><th>Completed Jobs</th><th>Rating</th><th>Earnings ({rangeLabel})</th></tr></thead>
                 <tbody>
-                  {partnerPerfData.length === 0 ? (
+                  {partnerPerf.length === 0 ? (
                     <tr><td colSpan={4} className="table-empty"><p>No partner performance data available.</p></td></tr>
-                  ) : partnerPerfData.map((p, i) => (
+                  ) : partnerPerf.map((p, i) => (
                     <tr key={i}>
                       <td><div style={{ fontWeight:600 }}>{p.name}</div></td>
                       <td style={{ fontWeight:600 }}>{p.jobs ?? 0}</td>
@@ -265,28 +303,30 @@ export default function Reports() {
             <div className="card">
               <div className="card-header"><div className="card-title">Revenue by Service</div></div>
               <div className="card-body">
-                <ResponsiveContainer width="100%" height={280}>
-                  <PieChart>
-                    <Pie data={serviceRev.slice(0,7)} cx="50%" cy="50%" outerRadius={100} dataKey="revenue" nameKey="name">
-                      {serviceRev.slice(0,7).map((_,i) => <Cell key={i} fill={COLORS[i%COLORS.length]}/>)}
-                    </Pie>
-                    <Tooltip formatter={v => `₹${v.toLocaleString()}`}/>
-                    <Legend iconType="circle" iconSize={8} formatter={v => <span style={{ fontSize:12 }}>{v}</span>}/>
-                  </PieChart>
-                </ResponsiveContainer>
+                {serviceRev.length === 0 ? <EmptyChart label="No completed bookings in this period."/> : (
+                  <ResponsiveContainer width="100%" height={280}>
+                    <PieChart>
+                      <Pie data={serviceRev.slice(0,7)} cx="50%" cy="50%" outerRadius={100} dataKey="revenue" nameKey="name">
+                        {serviceRev.slice(0,7).map((_,i) => <Cell key={i} fill={COLORS[i%COLORS.length]}/>)}
+                      </Pie>
+                      <Tooltip formatter={v => `₹${v.toLocaleString()}`}/>
+                      <Legend iconType="circle" iconSize={8} formatter={v => <span style={{ fontSize:12 }}>{v}</span>}/>
+                    </PieChart>
+                  </ResponsiveContainer>
+                )}
               </div>
             </div>
             <div className="card">
               <div className="card-header"><div className="card-title">Bookings by Service</div></div>
               <div className="card-body">
-                {serviceRev.map((s,i) => (
+                {serviceRev.length === 0 ? <EmptyChart label="No completed bookings in this period."/> : serviceRev.map((s,i) => (
                   <div key={s.name} style={{ display:'flex', alignItems:'center', gap:12, marginBottom:10 }}>
                     <div style={{ width:8, height:8, borderRadius:'50%', background:COLORS[i%COLORS.length], flexShrink:0 }}/>
                     <span style={{ fontSize:13, width:100, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{s.name}</span>
                     <div style={{ flex:1, background:'var(--c-border)', borderRadius:'var(--r-full)', height:8 }}>
-                      <div style={{ height:'100%', borderRadius:'var(--r-full)', background:COLORS[i%COLORS.length], width:`${s.bookings/567*100}%` }}/>
+                      <div style={{ height:'100%', borderRadius:'var(--r-full)', background:COLORS[i%COLORS.length], width:`${((s.count ?? 0) / maxServiceCount) * 100}%` }}/>
                     </div>
-                    <span style={{ fontSize:12, fontWeight:700, width:40, textAlign:'right' }}>{s.bookings}</span>
+                    <span style={{ fontSize:12, fontWeight:700, width:40, textAlign:'right' }}>{s.count ?? 0}</span>
                   </div>
                 ))}
               </div>

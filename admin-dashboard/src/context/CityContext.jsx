@@ -56,8 +56,13 @@ export function CityProvider({ children }) {
   // cityParam: comma-separated IDs string for API calls, null = no filter
   const cityParam = selectedCities.length ? selectedCities.map(c => c.id).join(',') : null;
 
+  // cityId: the single selected city, or null when viewing All Cities / multiple.
+  // City-specific pricing only makes sense for exactly one city, so pages that show
+  // or edit a per-city rate key off this rather than cityParam.
+  const cityId = selectedCities.length === 1 ? selectedCities[0].id : null;
+
   return (
-    <CityContext.Provider value={{ cities, selectedCities, toggleCity, clearCities, cityParam, reloadCities: loadCities, userZones }}>
+    <CityContext.Provider value={{ cities, selectedCities, toggleCity, clearCities, cityParam, cityId, reloadCities: loadCities, userZones }}>
       {children}
     </CityContext.Provider>
   );

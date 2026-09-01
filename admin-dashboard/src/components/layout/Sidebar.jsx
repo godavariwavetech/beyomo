@@ -49,7 +49,7 @@ const NAV_SECTIONS = [
     label: 'Intelligence',
     items: [
       { path: '/reports',      label: 'Reports',      icon: BarChart2,      perm: 'reports'    },
-      { path: '/analytics',    label: 'Analytics',    icon: TrendingUp,     perm: 'analytics'  },
+      // { path: '/analytics',    label: 'Analytics',    icon: TrendingUp,     perm: 'analytics'  }, // Analytics hidden from nav for now — route/page stay intact, just not linked.
       { path: '/feedback',     label: 'App Feedback', icon: MessageCircle,  perm: 'feedback'   },
       { path: '/settings',     label: 'Settings',     icon: Settings,       perm: 'settings' },
       { path: '/permissions',  label: 'Permissions',  icon: ShieldCheck,    perm: 'permissions' },

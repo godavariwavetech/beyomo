@@ -26,6 +26,7 @@ const PartnerSkillCategory = require("../api/skills/models/PartnerSkillCategory"
 const ContactInquiry = require("../api/contacts/models/contact.model");
 const PartnerLedgerEntry = require("../api/settlements/models/partnerLedgerEntry.model");
 const PartnerSettlement = require("../api/settlements/models/partnerSettlement.model");
+const AdminSetting = require("../api/settings/models/adminSetting.model");
 
 // ---- User associations ----
 User.hasMany(UserAddress, { foreignKey: "userId", as: "addresses" });
@@ -107,4 +108,5 @@ module.exports = {
   SkillCategory, Skill, PartnerSkillCategory,
   ContactInquiry,
   PartnerLedgerEntry, PartnerSettlement,
+  AdminSetting,
 };

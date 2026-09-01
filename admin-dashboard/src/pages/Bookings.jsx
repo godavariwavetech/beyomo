@@ -183,6 +183,10 @@ export default function Bookings() {
           partnerPhone: fresh.partner?.phone ?? prev.partnerPhone,
           amount:      parseFloat(fresh.totalAmount ?? prev.amount),
           commission:  parseFloat(fresh.commissionAmount ?? prev.commission ?? 0),
+          recomputedAdminPercent:   fresh.recomputedAdminPercent,
+          recomputedPartnerPercent: fresh.recomputedPartnerPercent,
+          recomputedAdminCommission: fresh.recomputedAdminCommission,
+          recomputedPartnerEarning:  fresh.recomputedPartnerEarning,
           date:        fresh.scheduledAt ? new Date(fresh.scheduledAt).toLocaleDateString('en-IN', {day:'2-digit', month:'short', year:'numeric'}) : prev.date,
           slot:        fresh.scheduledAt ? new Date(fresh.scheduledAt).toLocaleTimeString('en-IN', {hour:'2-digit', minute:'2-digit'}) : prev.slot,
           fullAddress: [fresh.addressLine1, fresh.addressLine2, fresh.addressCity, fresh.addressState, fresh.addressPincode].filter(Boolean).join(', '),
@@ -479,12 +483,24 @@ export default function Bookings() {
   const tax             = parseFloat(selected?.taxAmount ?? 0);
   const totalAmt        = parseFloat(selected?.totalAmount ?? selected?.amount ?? 0);
   const taxableAmount   = Math.max(0, baseAmount - couponDiscount);
-  // Admin's cut is whatever's left after the partner's actual (category-weighted) share —
-  // GST is a pass-through to the government, not part of the admin/partner split.
-  const commission      = selected?.partnerEarning != null
-    ? Math.max(0, Math.round(taxableAmount - parseFloat(selected.partnerEarning)))
-    : Math.round(taxableAmount * 0.2);
+  // Preferred: the backend recomputes the split from the CURRENT category/package rates
+  // and returns it on the booking detail (recomputedAdminCommission/PartnerEarning). This
+  // keeps the UI accurate even when a category's adminPercent was raised after the booking
+  // was created but the stored partnerEarning is still the original frozen snapshot.
+  // Fallback: derive from the stored partnerEarning (base - partnerEarning), and as a last
+  // resort apply the recomputed admin percent against the taxable amount.
+  const recomputedAdminCommission = parseFloat(selected?.recomputedAdminCommission);
+  const recomputedPartnerEarning  = parseFloat(selected?.recomputedPartnerEarning);
+  const adminPercent = parseFloat(selected?.recomputedAdminPercent);
+  const commission = !Number.isNaN(recomputedAdminCommission) && selected?.recomputedAdminCommission != null
+    ? Math.round(recomputedAdminCommission)
+    : selected?.partnerEarning != null
+      ? Math.max(0, Math.round(taxableAmount - parseFloat(selected.partnerEarning)))
+      : Math.round(taxableAmount * ((!Number.isNaN(adminPercent) && selected?.recomputedAdminPercent != null ? adminPercent : 20) / 100));
   const gstPercentLabel = taxableAmount > 0 ? Math.round((tax / taxableAmount) * 100) : 5;
+  const adminPercentDisplay = !Number.isNaN(adminPercent) && selected?.recomputedAdminPercent != null
+    ? Math.round(adminPercent)
+    : (taxableAmount > 0 ? Math.round((commission / taxableAmount) * 100) : 20);
 
   // Edge case 8: for multi-partner bookings, compute per-partner payout from services JSON
   const partnerPayouts = (() => {
@@ -504,7 +520,9 @@ export default function Bookings() {
     // raw-price share by the booking's real (already-discounted) partnerEarning instead
     // of summing raw prices directly (that overstated payouts for combo bookings).
     const rawTotal = svcs.reduce((sum, s) => sum + (s.price ?? 0) * (s.qty || 1), 0);
-    const bookingEarning = parseFloat(selected?.partnerEarning ?? (totalAmt - commission));
+    const bookingEarning = !Number.isNaN(recomputedPartnerEarning) && selected?.recomputedPartnerEarning != null
+      ? recomputedPartnerEarning
+      : parseFloat(selected?.partnerEarning ?? (totalAmt - commission));
     const byPartner = {};
     svcs.forEach(s => {
       if (!s.assignedPartnerId) return;
@@ -521,7 +539,7 @@ export default function Bookings() {
     // Fallback: partner assigned at booking level (e.g. via "Assign / Change Partner")
     // but no service has been individually claimed/stamped with assignedPartnerId yet.
     if (selected?.partnerId) {
-      return [{ name: selected?.partnerName || 'Partner', amount: parseFloat(selected?.partnerEarning ?? (totalAmt - commission)) }];
+      return [{ name: selected?.partnerName || 'Partner', amount: !Number.isNaN(recomputedPartnerEarning) && selected?.recomputedPartnerEarning != null ? recomputedPartnerEarning : parseFloat(selected?.partnerEarning ?? (totalAmt - commission)) }];
     }
     return [];
   })();
@@ -964,7 +982,7 @@ export default function Bookings() {
                   <span style={{ fontSize:22, fontWeight:800 }}>₹{fmt(totalAmt)}</span>
                 </div>
                 <div style={{ display:'flex', justifyContent:'space-between', marginTop:4 }}>
-                  <span style={{ fontSize:12, opacity:0.75 }}>Platform Commission (20%)</span>
+                  <span style={{ fontSize:12, opacity:0.75 }}>Platform Commission ({adminPercentDisplay}%)</span>
                   <span style={{ fontSize:13, fontWeight:600 }}>₹{fmt(commission)}</span>
                 </div>
                 {partnerPayouts.length === 0 ? (

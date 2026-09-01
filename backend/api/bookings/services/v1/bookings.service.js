@@ -15,13 +15,14 @@ const AppError = require("../../../../utils/errorHandlers/appError");
 const { sendPushNotification } = require("../../../../utils/firebaseUtils");
 const { haversineKm } = require("../../../../utils/geoUtils");
 const { resolveRatesForBooking, resolveRatesForMultiPackageBooking } = require("../../../../utils/revenueSplit");
+const { cityPriceResolver } = require("../../../services/services/v1/cityPricing");
 
 const MIN_BOOKING_AMOUNT = 500;
 
 // Multi-package path: bookingData.packages = [{ packageId, qty, services: [{id, qty}] }, ...].
 // Each package keeps its own price/discount/revenue-split intact instead of collapsing
 // into one flat packageId (which can only ever represent a single package).
-const buildMultiPackageBooking = async (packagesInput, serviceMap) => {
+const buildMultiPackageBooking = async (packagesInput, serviceMap, priceOf = (svc) => parseFloat(svc.basePrice)) => {
   let enrichedServices = [];
   let packageBaseAmount = 0;
   const packagesSummary = [];
@@ -36,7 +37,7 @@ const buildMultiPackageBooking = async (packagesInput, serviceMap) => {
       return {
         serviceId: svc.id,
         name: svc.name,
-        price: parseFloat(svc.basePrice),
+        price: priceOf(svc),
         qty: itemQty,
         duration: svc.duration || null,
         image: svc.image || null,
@@ -85,15 +86,36 @@ const createBooking = async (userId, bookingData) => {
     if (!partner) throw new AppError("Partner not found or not available", 404);
   }
 
+  // Resolve cityId from the address BEFORE any pricing happens — the city decides
+  // which rate card applies, so resolving it afterwards would bill every booking at
+  // the global basePrice regardless of city. Also gates the service-radius check.
+  let cityId = null;
+  if (address.city) {
+    const city = await City.findOne({
+      where: { name: { [Op.like]: `%${address.city.trim()}%` }, isActive: true },
+    });
+    cityId = city ? city.id : null;
+
+    // Validate that address coordinates fall within the city's service radius
+    if (city && city.lat && city.lng && address.lat && address.lng) {
+      const dist = haversineKm(address.lat, address.lng, city.lat, city.lng);
+      const limit = city.radius ?? 30;
+      if (dist > limit) {
+        throw new AppError(`Your location is outside the ${city.name} service area (${Math.round(dist)} km from city center)`, 400);
+      }
+    }
+  }
+
   // Build enriched services list and calculate base amount
   const serviceMap = Object.fromEntries(foundServices.map(s => [s.id, s]));
+  const priceOf = await cityPriceResolver(uniqueServiceIds, cityId);
   const enrichItems = (items) => items.map(item => {
     const svc = serviceMap[parseInt(item.id)];
     const qty = item.qty || 1;
     return {
       serviceId: svc.id,
       name: svc.name,
-      price: parseFloat(svc.basePrice),
+      price: priceOf(svc),
       qty,
       duration: svc.duration || null,
       image: svc.image || null,
@@ -110,7 +132,7 @@ const createBooking = async (userId, bookingData) => {
   let multiPackageInfo = null; // { packagesSummary, ratePools } when isMultiPackage
 
   if (isMultiPackage) {
-    const built = await buildMultiPackageBooking(packagesInput, serviceMap);
+    const built = await buildMultiPackageBooking(packagesInput, serviceMap, priceOf);
     enrichedServices = built.enrichedServices;
     baseAmount = built.packageBaseAmount;
     multiPackageInfo = { packagesSummary: built.packagesSummary, ratePools: built.ratePools };
@@ -222,24 +244,6 @@ const createBooking = async (userId, bookingData) => {
     : enrichedServices.length === 1
       ? enrichedServices[0].name
       : `${enrichedServices.length} services`;
-
-  // Resolve cityId from address city name so admin dashboard city filter works
-  let cityId = null;
-  if (address.city) {
-    const city = await City.findOne({
-      where: { name: { [Op.like]: `%${address.city.trim()}%` }, isActive: true },
-    });
-    cityId = city ? city.id : null;
-
-    // Validate that address coordinates fall within the city's service radius
-    if (city && city.lat && city.lng && address.lat && address.lng) {
-      const dist = haversineKm(address.lat, address.lng, city.lat, city.lng);
-      const limit = city.radius ?? 30;
-      if (dist > limit) {
-        throw new AppError(`Your location is outside the ${city.name} service area (${Math.round(dist)} km from city center)`, 400);
-      }
-    }
-  }
 
   const booking = await Booking.create({
     userId,
@@ -549,9 +553,10 @@ const addUserServices = async (userId, bookingId, serviceItems) => {
     throw new AppError("One or more services not found or unavailable", 404);
 
   const serviceMap = Object.fromEntries(foundServices.map(s => [s.id, s]));
+  const priceOf = await cityPriceResolver(serviceIds, booking.cityId);
   const newEntries = serviceItems.map(item => {
     const svc = serviceMap[parseInt(item.id)];
-    return { serviceId: svc.id, name: svc.name, price: parseFloat(svc.basePrice), qty: item.qty || 1, duration: svc.duration || null, image: svc.image || null, addedByUser: true };
+    return { serviceId: svc.id, name: svc.name, price: priceOf(svc), qty: item.qty || 1, duration: svc.duration || null, image: svc.image || null, addedByUser: true };
   });
 
   const existing = parseServicesField(booking.services);
@@ -696,11 +701,12 @@ const buildPackageAddition = async (booking, packageId, qty, serviceItems) => {
   const foundServices = await Service.findAll({ where: { id: serviceIds, isActive: true } });
   if (foundServices.length !== serviceIds.length) throw new AppError("One or more services not found or unavailable", 404);
   const serviceMap = Object.fromEntries(foundServices.map(s => [s.id, s]));
+  const priceOf = await cityPriceResolver(serviceIds, booking.cityId);
 
   const newItems = serviceItems.map(item => {
     const svc = serviceMap[parseInt(item.id)];
     return {
-      serviceId: svc.id, name: svc.name, price: parseFloat(svc.basePrice), qty: item.qty || 1,
+      serviceId: svc.id, name: svc.name, price: priceOf(svc), qty: item.qty || 1,
       duration: svc.duration || null, image: svc.image || null,
       serviceStatus: 'unassigned', assignedPartnerId: null, assignedPartnerName: null,
       addedByPackage: true, packageId: appliedPackage.id,

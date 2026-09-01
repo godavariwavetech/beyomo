@@ -148,8 +148,9 @@ const CityMultiSelect = ({ selected, onChange, cities, hint }) => (
 );
 
 // Per-city editor used in the Edit modal.
-// Shows mapped cities as pills with live toggle + remove; unmapped as "+ add" chips.
-const ServiceCityEditor = ({ mappings, cities, onToggle, onAdd, onRemove }) => {
+// Shows mapped cities as rows with live toggle, a per-city price override and remove;
+// unmapped as "+ add" chips. A blank price means "charge the global base price here".
+const ServiceCityEditor = ({ mappings, cities, basePrice, onToggle, onAdd, onRemove, onPriceChange }) => {
   const mappedIds = mappings.map(m => m.cityId);
   const unmapped  = cities.filter(c => !mappedIds.includes(c.id));
 
@@ -162,31 +163,53 @@ const ServiceCityEditor = ({ mappings, cities, onToggle, onAdd, onRemove }) => {
         </span>
       </label>
 
-      {/* Mapped cities */}
+      {/* Mapped cities — one row each, with its own optional price */}
       {mappings.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
           {mappings.map(m => {
             const city = cities.find(c => c.id === m.cityId);
             if (!city) return null;
             const active = m.isActive ?? true;
+            const overridden = m.customPrice !== null && m.customPrice !== undefined && m.customPrice !== '';
             return (
               <div key={m.cityId} style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                padding: '4px 8px 4px 10px', borderRadius: 20, fontSize: 12,
+                display: 'flex', alignItems: 'center', gap: 8,
+                padding: '6px 8px 6px 10px', borderRadius: 8, fontSize: 12,
                 border: `1.5px solid ${active ? 'var(--c-brand-primary)' : 'var(--c-border)'}`,
-                background: active ? 'var(--c-brand-primary)' : '#f3f4f6',
-                color: active ? '#fff' : 'var(--c-text-muted)',
+                background: active ? 'rgba(0,0,0,0.02)' : '#f3f4f6',
+                color: active ? 'var(--c-text)' : 'var(--c-text-muted)',
               }}>
-                <MapPin size={10} />
-                <span style={{ fontWeight: 600 }}>{city.name}</span>
+                <MapPin size={11} style={{ flexShrink: 0, color: active ? 'var(--c-brand-primary)' : 'var(--c-text-muted)' }} />
+                <span style={{ fontWeight: 600, flex: 1, minWidth: 0 }}>{city.name}</span>
+
+                {/* Per-city price — blank inherits the global base price */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
+                  <span style={{ color: 'var(--c-text-muted)' }}>₹</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={m.customPrice ?? ''}
+                    placeholder={basePrice ? String(basePrice) : 'base'}
+                    onChange={e => onPriceChange(m.cityId, e.target.value)}
+                    title={overridden ? `This city charges ₹${m.customPrice}` : 'Using the global base price — type a number to override it here'}
+                    style={{
+                      width: 74, padding: '3px 6px', fontSize: 12, borderRadius: 5,
+                      border: `1px solid ${overridden ? 'var(--c-brand-primary)' : 'var(--c-border)'}`,
+                      fontWeight: overridden ? 600 : 400,
+                      background: '#fff', color: 'inherit',
+                    }}
+                  />
+                </div>
+
                 {/* Active/paused toggle */}
                 <button
                   type="button"
                   title={active ? 'Pause in this city' : 'Resume in this city'}
                   onClick={() => onToggle(m.cityId, !active)}
                   style={{
-                    width: 16, height: 16, borderRadius: '50%', border: 'none', cursor: 'pointer',
-                    background: active ? 'rgba(255,255,255,0.3)' : 'var(--c-border)',
+                    width: 18, height: 18, borderRadius: '50%', cursor: 'pointer',
+                    border: `1px solid ${active ? 'var(--c-brand-primary)' : 'var(--c-border)'}`,
+                    background: active ? 'var(--c-brand-primary)' : 'transparent',
                     display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
                     flexShrink: 0,
                   }}
@@ -195,16 +218,17 @@ const ServiceCityEditor = ({ mappings, cities, onToggle, onAdd, onRemove }) => {
                     {active ? '●' : '○'}
                   </span>
                 </button>
+
                 {/* Remove */}
                 <button
                   type="button"
                   title="Remove from this city"
                   onClick={() => onRemove(m.cityId)}
                   style={{
-                    width: 16, height: 16, borderRadius: '50%', border: 'none', cursor: 'pointer',
-                    background: active ? 'rgba(255,255,255,0.25)' : 'var(--c-border)',
+                    width: 18, height: 18, borderRadius: '50%', border: 'none', cursor: 'pointer',
+                    background: 'var(--c-border-light)',
                     display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
-                    fontSize: 11, color: active ? '#fff' : 'var(--c-text-muted)', flexShrink: 0,
+                    fontSize: 12, color: 'var(--c-text-muted)', flexShrink: 0,
                   }}
                 >×</button>
               </div>
@@ -236,6 +260,8 @@ const ServiceCityEditor = ({ mappings, cities, onToggle, onAdd, onRemove }) => {
 
       <div style={{ marginTop: 6, fontSize: 11, color: 'var(--c-text-muted)' }}>
         <strong>●</strong> active &nbsp;·&nbsp; <strong>○</strong> paused (service won't appear in that city) &nbsp;·&nbsp; <strong>×</strong> remove
+        <br />
+        Leave a city's <strong>₹</strong> blank to charge the base price above; enter a number to set that city's own price.
       </div>
     </div>
   );
@@ -267,7 +293,11 @@ export default function Services() {
         ...s,
         id: String(s.id),
         status: s.status ?? (s.isActive !== false ? 'active' : 'inactive'),
+        // basePrice is the effective price for the selected city (the API applies the
+        // per-city override); baseServicePrice is always the global figure.
         basePrice: parseFloat(s.basePrice ?? 0),
+        baseServicePrice: parseFloat(s.baseServicePrice ?? s.basePrice ?? 0),
+        cityMappings: Array.isArray(s.cityMappings) ? s.cityMappings : [],
         partners: s.partners ?? 0,
         revenue: s.revenue ?? 0,
         totalBookings: s.totalBookings ?? 0,
@@ -427,13 +457,20 @@ export default function Services() {
     setEditing(svc);
     // Build editMappings from cityMappings (has isActive per city) or fall back to cityIds (all active)
     const mappings = Array.isArray(svc.cityMappings) && svc.cityMappings.length > 0
-      ? svc.cityMappings.map(m => ({ cityId: Number(m.cityId), isActive: m.isActive ?? true }))
-      : (svc.cityIds ?? []).map(id => ({ cityId: Number(id), isActive: true }));
+      ? svc.cityMappings.map(m => ({
+          cityId: Number(m.cityId),
+          isActive: m.isActive ?? true,
+          customPrice: m.customPrice == null ? '' : String(m.customPrice),
+        }))
+      : (svc.cityIds ?? []).map(id => ({ cityId: Number(id), isActive: true, customPrice: '' }));
     setEditMappings(mappings);
     setForm({
       name: svc.name,
       categoryId: String(svc.categoryId ?? ''),
-      basePrice: svc.basePrice,
+      // The global base price, never the selected city's overridden one — otherwise
+      // saving from a city view would write that city's rate onto every other city.
+      basePrice: svc.baseServicePrice ?? svc.basePrice,
+      duration: svc.duration ?? 60,
       description: svc.description ?? '',
       image: svc.image ?? '',
       priceStartsFrom: svc.priceStartsFrom ?? false,
@@ -460,7 +497,11 @@ export default function Services() {
   };
 
   const handleCityAdd = (cityId) =>
-    setEditMappings(prev => [...prev, { cityId, isActive: true }]);
+    setEditMappings(prev => [...prev, { cityId, isActive: true, customPrice: '' }]);
+
+  // Empty string = no override for this city (falls back to the global base price).
+  const handleCityPriceChange = (cityId, value) =>
+    setEditMappings(prev => prev.map(m => m.cityId === cityId ? { ...m, customPrice: value } : m));
 
   const handleCityRemove = (cityId) =>
     setEditMappings(prev => prev.filter(m => m.cityId !== cityId));
@@ -470,22 +511,25 @@ export default function Services() {
       name: form.name,
       categoryId: form.categoryId || String(editing.categoryId ?? ''),
       basePrice: +form.basePrice,
+      duration: +form.duration,
       description: form.description ?? '',
       priceStartsFrom: !!form.priceStartsFrom,
       isPopular: !!form.isPopular,
       showOnHome: !!form.showOnHome,
-      cityMappings: editMappings,
+      // A blank per-city box means "no override" — send null so the backend clears it,
+      // rather than dropping the key (which would keep the old override).
+      cityMappings: editMappings.map(m => ({
+        cityId: m.cityId,
+        isActive: m.isActive,
+        customPrice: m.customPrice === '' || m.customPrice == null ? null : +m.customPrice,
+      })),
       ...(form.image ? { image: form.image } : {}),
     };
     const res = await svcAction('put', `/api/v1/admin/services/${editing.id}`, payload);
     if (res.ok) {
-      const catName = cats.find(c => String(c.id) === String(payload.categoryId))?.name ?? editing.category;
-      setServices(prev => prev.map(s => s.id === editing.id
-        ? { ...s, ...form, basePrice: +form.basePrice, category: catName,
-            cityIds: editMappings.filter(m => m.isActive).map(m => m.cityId),
-            cityMappings: editMappings }
-        : s
-      ));
+      // Reload rather than patching locally: the row's displayed price depends on the
+      // selected city's override, which only the server resolves.
+      loadServices();
       showToast('Service updated successfully!', 'success');
       setEditing(null);
     } else {
@@ -502,6 +546,7 @@ export default function Services() {
       name: form.name,
       categoryId: String(form.categoryId),
       basePrice: +form.basePrice,
+      duration: +form.duration,
       description: form.description ?? '',
       priceStartsFrom: !!form.priceStartsFrom,
       isPopular: !!form.isPopular,
@@ -525,6 +570,7 @@ export default function Services() {
         color: 'var(--c-border-light)',
         image: form.image ?? null,
         description: form.description ?? '',
+        duration: payload.duration,
         priceStartsFrom: payload.priceStartsFrom,
         isPopular: payload.isPopular,
         showOnHome: payload.showOnHome,
@@ -544,6 +590,14 @@ export default function Services() {
     partners: safeServices.reduce((a, s) => a + (s.partners ?? 0), 0),
     revenue:  safeServices.reduce((a, s) => a + (s.revenue ?? 0), 0),
   };
+
+  // True when the displayed price is the selected city's own rate, not the global base.
+  const hasCityPrice = (svc) =>
+    !!cityId && (svc.cityMappings ?? []).some(
+      m => Number(m.cityId) === Number(cityId) && m.isActive && m.customPrice != null
+    );
+
+  const selectedCityName = cities.find(c => c.id === cityId)?.name ?? '';
 
   const getCityNames = (cityIds = []) =>
     cityIds.map(id => cities.find(c => c.id === id)?.name ?? `City ${id}`).join(', ');
@@ -593,7 +647,7 @@ export default function Services() {
             <button className="btn btn-outline btn-sm" onClick={() => { setMngCats(true); setEditingCat(null); setCatForm({ cityIds: [], adminPercent: 20, partnerPercent: 80, gstPercent: 5 }); }} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <FolderOpen size={14}/> Categories
             </button>
-            <button className="btn btn-primary btn-sm" onClick={() => { setAdding(true); setForm({ name: '', basePrice: '', description: '', image: '', cityIds: [] }); }} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <button className="btn btn-primary btn-sm" onClick={() => { setAdding(true); setForm({ name: '', basePrice: '', duration: 60, description: '', image: '', cityIds: [] }); }} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <Plus size={14}/> Add Service
             </button>
           </div>
@@ -630,8 +684,21 @@ export default function Services() {
                               <span style={{ fontSize: 20, flexShrink: 0 }}>{svc.icon}</span>
                             )}
                             <div style={{ flex: 1, minWidth: 0, fontWeight: 600, fontSize: 13 }}>{svc.name}</div>
+                            <div style={{ marginRight: 12, fontSize: 11, color: 'var(--c-text-muted)', fontWeight: 600 }}>
+                              {svc.duration ? `${svc.duration} min` : ''}
+                            </div>
                             <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--c-text-secondary)' }}>
                               {svc.priceStartsFrom && <span style={{ fontWeight: 400 }}>Starts from </span>}₹{svc.basePrice.toLocaleString()}
+                              {hasCityPrice(svc) && (
+                                <span
+                                  title={`${selectedCityName} has its own price (base is ₹${(svc.baseServicePrice ?? 0).toLocaleString()})`}
+                                  style={{
+                                    marginLeft: 5, fontSize: 9, fontWeight: 700, padding: '1px 5px',
+                                    borderRadius: 4, background: 'var(--c-brand-primary)', color: '#fff',
+                                    verticalAlign: 'middle', letterSpacing: 0.3,
+                                  }}
+                                >{selectedCityName.toUpperCase()}</span>
+                              )}
                             </div>
                           </div>
                         )}
@@ -719,11 +786,25 @@ export default function Services() {
                   <div style={{ fontWeight: 700, fontSize: 14 }}>
                     {svc.priceStartsFrom && <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--c-text-muted)', display: 'block' }}>Starts from</span>}
                     ₹{svc.basePrice.toLocaleString()}
+                    {hasCityPrice(svc) && (
+                    <span
+                      title={`${selectedCityName} has its own price (base is ₹${(svc.baseServicePrice ?? 0).toLocaleString()})`}
+                      style={{
+                        marginLeft: 5, fontSize: 9, fontWeight: 700, padding: '1px 5px',
+                        borderRadius: 4, background: 'var(--c-brand-primary)', color: '#fff',
+                        verticalAlign: 'middle', letterSpacing: 0.3,
+                      }}
+                    >{selectedCityName.toUpperCase()}</span>
+                    )}
                   </div>
                 </div>
                 <div>
                   <div style={{ fontSize: 11, color: 'var(--c-text-secondary)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Rating</div>
                   <StarRating rating={svc.rating} size={13} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--c-text-secondary)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Duration</div>
+                  <div style={{ fontWeight: 600 }}>{svc.duration ? `${svc.duration} min` : '—'}</div>
                 </div>
                 <div>
                   <div style={{ fontSize: 11, color: 'var(--c-text-secondary)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Active Partners</div>
@@ -781,17 +862,30 @@ export default function Services() {
                 {cats.map(c => <option key={c.id} value={String(c.id)}>{c.name ?? c}</option>)}
               </select>
             </div>
-            <ServiceCityEditor
-              mappings={editMappings}
-              cities={cities}
-              onToggle={handleCityToggle}
-              onAdd={handleCityAdd}
-              onRemove={handleCityRemove}
-            />
             <div className="form-group">
               <label className="form-label">Base Price (₹)</label>
               <input className="form-input" type="number" value={form.basePrice || ''} onChange={e => setForm(f => ({ ...f, basePrice: e.target.value }))} />
+              <div style={{ fontSize: 11, color: 'var(--c-text-muted)', marginTop: 4 }}>
+                The default price in every city. Set a different price for an individual
+                city below — that city only.
+              </div>
             </div>
+            <div className="form-group">
+              <label className="form-label">Duration (minutes)</label>
+              <input className="form-input" type="number" min="1" value={form.duration || ''} onChange={e => setForm(f => ({ ...f, duration: e.target.value }))} />
+              <div style={{ fontSize: 11, color: 'var(--c-text-muted)', marginTop: 4 }}>
+                How long this service takes, in minutes. Shown on the app, partner app and website.
+              </div>
+            </div>
+            <ServiceCityEditor
+              mappings={editMappings}
+              cities={cities}
+              basePrice={form.basePrice}
+              onToggle={handleCityToggle}
+              onAdd={handleCityAdd}
+              onRemove={handleCityRemove}
+              onPriceChange={handleCityPriceChange}
+            />
             <label style={{
               display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
               background: form.priceStartsFrom ? 'rgba(6,64,129,0.06)' : 'var(--c-border-light)',
@@ -870,6 +964,13 @@ export default function Services() {
           <div className="form-group">
             <label className="form-label">Base Price (₹) *</label>
             <input className="form-input" type="number" placeholder="500" value={form.basePrice || ''} onChange={e => setForm(f => ({ ...f, basePrice: e.target.value }))} />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Duration (minutes)</label>
+            <input className="form-input" type="number" min="1" placeholder="60" value={form.duration || ''} onChange={e => setForm(f => ({ ...f, duration: e.target.value }))} />
+            <div style={{ fontSize: 11, color: 'var(--c-text-muted)', marginTop: 4 }}>
+              How long this service takes, in minutes. Shown on the app, partner app and website.
+            </div>
           </div>
           <label style={{
             display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
