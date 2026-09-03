@@ -40,8 +40,12 @@ const createOrder = async (amount, currency = "INR", receipt, notes = {}) => {
     logger.info(`Razorpay order created: ${order.id}`);
     return order;
   } catch (error) {
-    logger.error(`Razorpay order creation error: ${error.message}`);
-    throw error;
+    // Razorpay SDK sometimes throws non-Error shapes (statusCode + error.description).
+    // Log everything we can so undefined stops hiding the real cause.
+    const desc = error?.error?.description ?? error?.description;
+    const code = error?.statusCode ?? error?.error?.code;
+    logger.error(`Razorpay order creation error: ${error?.message ?? desc ?? 'unknown'} | code=${code} | raw=${JSON.stringify(error)}`);
+    throw new Error(desc || error?.message || 'Razorpay order creation failed');
   }
 };
 

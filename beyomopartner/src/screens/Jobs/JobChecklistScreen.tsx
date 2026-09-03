@@ -14,6 +14,7 @@ import {endpoints} from '../../config/config';
 import {resolveImageUrl} from '../../utils/utils';
 import {useAppAlert} from '../../hooks/useAppAlert';
 import AppAlertModal from '../../components/AppAlertModal/AppAlertModal';
+import SwipeToConfirm from '../../components/SwipeToConfirm/SwipeToConfirm';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
@@ -575,20 +576,12 @@ const JobChecklistScreen = ({navigation, route}: any) => {
             )}
           </TouchableOpacity>
         ) : (
-          <TouchableOpacity style={styles.btn}
-            onPress={handleStartService}
+          <SwipeToConfirm
+            label="Start Service"
+            onConfirm={handleStartService}
             disabled={starting}
-            activeOpacity={0.88}>
-            <LinearGradient colors={['#0E5843', '#022723']} style={styles.btnGradient}
-              start={{x: 0, y: 0}} end={{x: 1, y: 0}}>
-              {starting ? <ActivityIndicator color="#FFFFFF" /> : (
-                <>
-                  <Ionicons name="play-circle-outline" size={sw(22)} color="#FDD77A" />
-                  <Text style={styles.btnText}>Start Service</Text>
-                </>
-              )}
-            </LinearGradient>
-          </TouchableOpacity>
+            loading={starting}
+          />
         )}
       </View>
 

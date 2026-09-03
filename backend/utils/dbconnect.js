@@ -81,6 +81,9 @@ const ADDITIVE_SCHEMA = [
   "ALTER TABLE services ADD COLUMN IF NOT EXISTS sortOrder INT NOT NULL DEFAULT 0",
   // How many copies of a package/combo were booked (mirrors per-service qty)
   "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS packageQty INT NOT NULL DEFAULT 1",
+  // Multi-package bookings — each entry keeps its own price/discount/revenue split
+  // instead of collapsing into a single packageId (see buildMultiPackageBooking).
+  "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS packages JSON NULL",
   // Additional banner image slots (image2, image3) for extra images per banner
   "ALTER TABLE banners ADD COLUMN IF NOT EXISTS image2 TEXT NULL",
   "ALTER TABLE banners ADD COLUMN IF NOT EXISTS image3 TEXT NULL",
@@ -268,7 +271,11 @@ const connectDB = async () => {
     logger.info("Database tables synced");
 
     for (const sql of ADDITIVE_SCHEMA) {
-      await sequelize.query(sql).catch(() => {});
+      await sequelize.query(sql).catch(err => {
+        // Older MySQL (<8.0.29) rejects "ADD COLUMN IF NOT EXISTS" — log so we
+        // don't silently ship an unmigrated schema, but keep going.
+        logger.warn(`Migration skipped/failed: ${sql} — ${err.message}`);
+      });
     }
     logger.info("Column migrations applied");
 

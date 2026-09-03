@@ -18,6 +18,7 @@ import LinearGradient from 'react-native-linear-gradient';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {fonts} from '../../config/theme';
+import SwipeToConfirm from '../../components/SwipeToConfirm/SwipeToConfirm';
 import {resolveImageUrl} from '../../utils/utils';
 import networkCall from '../../utils/networkCall';
 import {endpoints} from '../../config/config';
@@ -413,37 +414,33 @@ const ActiveJobScreen = ({navigation, route}: any) => {
           </View>
         </View>
 
+        {/* UPI QR — shown once service is marked completed so the customer can
+            scan and pay directly via any UPI app (GPay/PhonePe/Paytm/etc.). */}
+        {status === 'completed' && (
+          <View style={styles.qrCard}>
+            <Text style={styles.qrHeading}>Scan &amp; Pay with any UPI App</Text>
+            <Image
+              source={require('../../assets/upi_qr.jpeg')}
+              style={styles.qrImage}
+              resizeMode="contain"
+            />
+            <Text style={styles.qrSub}>Show this to the customer to collect payment.</Text>
+          </View>
+        )}
+
       </ScrollView>
 
       {/* Footer actions */}
       <View style={[styles.footer, {paddingBottom: insets.bottom + sw(12)}]}>
         {status === 'started' ? (
-          <TouchableOpacity
-            style={styles.completeBtn}
-            activeOpacity={0.85}
-            onPress={handleMarkComplete}
-            disabled={completing}>
-            <LinearGradient
-              colors={['#0E5843', '#022723']}
-              style={styles.completeBtnGradient}
-              start={{x: 0, y: 0}}
-              end={{x: 1, y: 0}}>
-              {completing ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
-              ) : (
-                <>
-                  <Ionicons
-                    name="checkmark-done-outline"
-                    size={sw(20)}
-                    color="#FFFFFF"
-                  />
-                  <Text style={styles.completeBtnText}>
-                    Mark as Completed
-                  </Text>
-                </>
-              )}
-            </LinearGradient>
-          </TouchableOpacity>
+          <SwipeToConfirm
+            label="Service Completed"
+            onConfirm={handleMarkComplete}
+            disabled={completing}
+            loading={completing}
+            trackColor="#C89848"
+            iconColor="#8B6820"
+          />
         ) : (
           <TouchableOpacity activeOpacity={0.85} onPress={handleDone}>
             <LinearGradient
@@ -799,6 +796,38 @@ const styles = StyleSheet.create({
     fontSize: sw(15),
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+
+  // ── UPI QR (shown on completion) ──
+  qrCard: {
+    marginTop: sw(16),
+    padding: sw(16),
+    backgroundColor: '#FFFFFF',
+    borderRadius: sw(16),
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  qrHeading: {
+    fontFamily: fonts.title,
+    fontSize: sw(15),
+    fontWeight: '700',
+    color: '#012823',
+    marginBottom: sw(12),
+  },
+  qrImage: {
+    width: sw(280),
+    height: sw(360),
+  },
+  qrSub: {
+    fontFamily: fonts.textFont,
+    fontSize: sw(12),
+    color: '#5C5C5C',
+    marginTop: sw(8),
+    textAlign: 'center',
   },
 
   // ── Modal styles ──

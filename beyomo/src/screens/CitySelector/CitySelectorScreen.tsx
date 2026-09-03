@@ -32,10 +32,13 @@ const CitySelectorScreen = ({navigation, route}: Props) => {
   const dispatch = useDispatch();
   const insets = useSafeAreaInsets();
   const token = useSelector((state: RootState) => state.Auth?.token);
+  const currentCity = useSelector((state: RootState) => (state as any).City?.selectedCity);
 
   const [cities, setCities] = useState<CityGeo[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selected, setSelected] = useState<CityGeo | null>(null);
+  // Pre-select whatever city is currently active so the user sees it highlighted
+  // (radio filled + card outlined) instead of an empty selection.
+  const [selected, setSelected] = useState<CityGeo | null>(currentCity ?? null);
 
   // nextRoute lets SplashScreen tell us where to go after city selection
   const nextRoute: string = route?.params?.nextRoute ?? (token ? 'Main' : 'Login');

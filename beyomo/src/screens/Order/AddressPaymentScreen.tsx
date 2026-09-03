@@ -28,7 +28,7 @@ import {
   addServicesToCart, incrementServiceQty, decrementServiceQty, removeServiceFromCart, removeFreeService,
   clearCart,
 } from '../../redux/reducers/cart';
-import {payWithRazorpay} from '../../utils/payments';
+import {payWithRazorpay, openQuoteCheckout} from '../../utils/payments';
 import type {RootState} from '../../redux/store';
 
 const {width} = Dimensions.get('window');
@@ -77,6 +77,7 @@ const getDefaultDate = () => {
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
 const ONE_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
+// Lowered from 500 → 1 for pay-first flow testing. Bump back before release.
 const MIN_BOOKING_AMOUNT = 500;
 const MAX_SERVICE_QTY = 5;
 const formatDate = (d: Date) =>
@@ -500,7 +501,9 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
         services: item.services.map((s: any) => ({id: String(s.id), qty: item.qty})),
       }));
 
-      const result = await api.post(endpoints.BOOKINGS, isCartMode
+      // Build the booking payload once — reused for both quote-order and the
+      // eventual /bookings POST.
+      const bookingPayload = isCartMode
         ? {
             // Backend requires `services` (not `extraServices`) whenever there's no
             // package in the booking — only send `packages`/`extraServices` when the
@@ -553,64 +556,74 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
             packageId: routePackageId || undefined,
             packageQty: routePackageId ? currentPackageQty : undefined,
             paymentMode,
+          };
+
+      let bk: any = null;
+
+      if (paymentMode === 'online') {
+        // Pay-first flow: create a Razorpay order tied to a temp quote on the
+        // backend (server prices the cart). No Booking row exists yet — it will
+        // only be created after the payment actually succeeds.
+        const quoteRes = await api.post(endpoints.PAYMENT_QUOTE_ORDER, bookingPayload);
+        const quote = quoteRes.data?.data;
+
+        const attemptOnlinePayment = async (): Promise<boolean> => {
+          const payResult = await openQuoteCheckout({
+            keyId: quote.keyId,
+            amount: quote.amount,
+            currency: quote.currency,
+            orderId: quote.orderId,
+            description: 'Beyomo booking',
+            contact: profile?.phone,
+            name: profile?.name,
+            email: profile?.email,
           });
-      const bk = result.data?.data;
-
-      // Retries payment for the booking that's already been created (never creates a
-      // second one) — resolves true only once Razorpay + the backend's signature check
-      // both confirm the payment actually went through.
-      const attemptOnlinePayment = async (): Promise<boolean> => {
-        const payResult = await payWithRazorpay({
-          bookingId: bk?.id,
-          bookingCode: bk?.bookingCode,
-          contact: profile?.phone,
-          name: profile?.name,
-          email: profile?.email,
-        });
-        if (payResult.success) return true;
-        return new Promise<boolean>(resolve => {
-          Alert.alert(
-            'Payment Not Completed',
-            `${payResult.message} Your booking ${bk?.bookingCode} is saved as pending — you can retry now or pay later from My Bookings.`,
-            [
-              {text: 'Pay Later', style: 'cancel', onPress: () => resolve(false)},
-              {text: 'Retry Payment', onPress: () => attemptOnlinePayment().then(resolve)},
-            ],
-          );
-        });
-      };
-
-      // Only the OrderPlaced/success flow means payment is actually confirmed — a
-      // pending online payment sends the user to the booking's own detail screen (where
-      // "Pay Now" already lives) instead of a success screen that hasn't been earned yet.
-      const paid = paymentMode === 'online' ? await attemptOnlinePayment() : true;
-
-      // Only clear the cart once the booking is actually done (paid online, or COD which
-      // has no payment step) — clearing it right after creation emptied this screen's
-      // bill/service list on screen before Razorpay even opened, looking like an already
-      // -placed order.
-      if (isCartMode && paid) dispatch(clearCart());
-
-      // Reset (not navigate/push) so the cart/service-selection/checkout screens are
-      // dropped from history entirely — otherwise the back button would land back on
-      // stale checkout.
-      navigation?.reset(
-        paid
-          ? {
-              index: 1,
-              routes: [
-                {name: 'Main'},
-                {name: 'OrderPlaced', params: {bookingCode: bk?.bookingCode, bookingId: bk?.id}},
+          if (payResult.success) {
+            // Verified on server + booking created atomically.
+            const created = await api.post(endpoints.BOOKINGS, {
+              ...bookingPayload,
+              quoteId: quote.quoteId,
+              razorpayOrderId: payResult.razorpayOrderId,
+              razorpayPaymentId: payResult.razorpayPaymentId,
+              razorpaySignature: payResult.razorpaySignature,
+            });
+            bk = created.data?.data;
+            return true;
+          }
+          return new Promise<boolean>(resolve => {
+            Alert.alert(
+              'Payment Not Completed',
+              `${payResult.message} No booking has been created. You can retry the payment now or cancel.`,
+              [
+                {text: 'Cancel', style: 'cancel', onPress: () => resolve(false)},
+                {text: 'Retry Payment', onPress: () => attemptOnlinePayment().then(resolve)},
               ],
-            }
-          : {
-              index: 1,
-              routes: [
-                {name: 'Main'},
-                {name: 'BookingDetail', params: {bookingId: bk?.id}},
-              ],
-            },
-      );
+            );
+          });
+        };
+
+        const paid = await attemptOnlinePayment();
+        if (!paid) {
+          // Nothing to clean up — no booking was created. Just stay on checkout.
+          return;
+        }
+      } else {
+        // COD flow unchanged — booking is created immediately.
+        const result = await api.post(endpoints.BOOKINGS, bookingPayload);
+        bk = result.data?.data;
+      }
+
+      // At this point bk exists (COD created, or online payment verified). Safe
+      // to clear the cart and navigate to the success screen.
+      if (isCartMode) dispatch(clearCart());
+
+      navigation?.reset({
+        index: 1,
+        routes: [
+          {name: 'Main'},
+          {name: 'OrderPlaced', params: {bookingCode: bk?.bookingCode, bookingId: bk?.id}},
+        ],
+      });
     } catch (err: any) {
       Alert.alert(
         'Booking failed',
@@ -973,7 +986,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
               />
               <View style={{flex: 1}}>
                 <Text style={[styles.paymentModeLabel, paymentMode === 'cod' && styles.paymentModeLabelActive]}>
-                  Cash on Delivery
+                  Pay after Service
                 </Text>
                 <Text style={styles.paymentModeSub}>Pay the expert after service</Text>
               </View>
@@ -1132,6 +1145,18 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
                   </Text>
                 </View>
               )}
+              <View style={styles.billRow}>
+                <Text style={styles.billLabel}>Platform Fee</Text>
+                <Text style={styles.billValue}>₹0</Text>
+              </View>
+              <View style={styles.billRow}>
+                <Text style={styles.billLabel}>Disposable Charges</Text>
+                <Text style={styles.billValue}>₹0</Text>
+              </View>
+              <View style={styles.billRow}>
+                <Text style={styles.billLabel}>Travelling Charges</Text>
+                <Text style={styles.billValue}>₹0</Text>
+              </View>
               <View style={styles.billRow}>
                 <Text style={styles.billLabel}>Taxes & GST (5%)</Text>
                 <Text style={styles.billValue}>₹{tax}</Text>

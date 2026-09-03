@@ -63,7 +63,7 @@ function AppContent() {
         console.log('[FCM] Firebase authorization status:', authStatus);
 
         const fcmToken = await getFCMToken();
-        console.log('[FCM] Got FCM token:', fcmToken ? fcmToken.substring(0, 20) + '...' : 'null');
+        console.log('[FCM] Got FCM token (FULL):', fcmToken ?? 'null');
 
         if (fcmToken) {
           console.log('[FCM] Registering device token with backend...');

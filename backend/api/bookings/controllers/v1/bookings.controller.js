@@ -1,6 +1,7 @@
 const catchAsync = require("../../../../utils/errorHandlers/catchAsync");
 const AppError = require("../../../../utils/errorHandlers/appError");
 const bookingsService = require("../../services/v1/bookings.service");
+const paymentsService = require("../../../payments/services/v1/payments.service");
 const Joi = require("joi");
 
 const MAX_SERVICE_QTY = 5;
@@ -46,6 +47,13 @@ const createBookingSchema = Joi.object({
   packageQty: Joi.number().integer().min(1).max(MAX_SERVICE_QTY).default(1),
   paymentMode: Joi.string().valid("online", "cod").default("online"),
   notes: Joi.string().trim().max(500).allow("", null),
+  // Pay-first flow: when these are all present, the server ignores the payload
+  // above and consumes the stored quote instead — guaranteeing amount + services
+  // match exactly what Razorpay charged for. See paymentsService.consumeQuote.
+  quoteId: Joi.number().integer().optional(),
+  razorpayOrderId: Joi.string().optional(),
+  razorpayPaymentId: Joi.string().optional(),
+  razorpaySignature: Joi.string().optional(),
 }).unknown(true);
 
 const reviewSchema = Joi.object({
@@ -75,6 +83,20 @@ const createBooking = catchAsync(async (req, res, next) => {
   const istMinutesOfDay = istDate.getUTCHours() * 60 + istDate.getUTCMinutes();
   if (istMinutesOfDay < 8 * 60 || istMinutesOfDay > 20 * 60) {
     return next(new AppError("Bookings are only available between 8 AM and 8 PM. Please choose a slot in that window.", 400));
+  }
+
+  // Pay-first flow: if the client has already completed Razorpay and is coming
+  // back with a signed payment, we consume the stored quote (which already holds
+  // the validated payload + amount) instead of running createBooking on the
+  // request body. This is the "booking only exists if payment succeeded" path.
+  if (value.quoteId && value.razorpayOrderId && value.razorpayPaymentId && value.razorpaySignature) {
+    const booking = await paymentsService.consumeQuote(req.user.userId, {
+      quoteId: value.quoteId,
+      razorpayOrderId: value.razorpayOrderId,
+      razorpayPaymentId: value.razorpayPaymentId,
+      razorpaySignature: value.razorpaySignature,
+    });
+    return res.status(201).json({ status: true, message: "Booking created successfully", data: booking });
   }
 
   const booking = await bookingsService.createBooking(req.user.userId, value);

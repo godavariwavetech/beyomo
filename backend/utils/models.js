@@ -10,6 +10,7 @@ const Booking = require("../api/bookings/models/booking.model");
 const Otp = require("../api/auth/models/otp.model");
 const Review = require("../api/reviews/models/review.model");
 const Payment = require("../api/payments/models/payment.model");
+const PaymentQuote = require("../api/payments/models/paymentQuote.model");
 const Notification = require("../api/notifications/models/notification.model");
 const Coupon = require("../api/coupons/models/coupon.model");
 const ReferralProgram = require("../api/coupons/models/referralProgram.model");
@@ -59,6 +60,7 @@ Partner.hasMany(Booking, { foreignKey: "partnerId", as: "bookings" });
 Payment.belongsTo(Booking, { foreignKey: "bookingId", as: "booking" });
 Payment.belongsTo(User, { foreignKey: "userId", as: "user" });
 Booking.hasOne(Payment, { foreignKey: "bookingId", as: "payment" });
+PaymentQuote.belongsTo(User, { foreignKey: "userId", as: "user" });
 
 // ---- Review associations ----
 Booking.hasOne(Review, { foreignKey: "bookingId", as: "review" });
@@ -101,7 +103,7 @@ Partner.hasMany(PartnerSettlement, { foreignKey: "partnerId", as: "settlements" 
 module.exports = {
   User, UserAddress, Partner, PartnerService,
   ServiceCategory, Service, ServiceCityMap,
-  Booking, Otp, Review, Payment, Notification,
+  Booking, Otp, Review, Payment, PaymentQuote, Notification,
   Coupon, ReferralProgram, AdminUser, AppFeedback,
   Banner, ServiceZone, Offer,
   City, ServicePackage,

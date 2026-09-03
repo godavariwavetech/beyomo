@@ -63,7 +63,12 @@ const buildMultiPackageBooking = async (packagesInput, serviceMap, priceOf = (sv
   return { enrichedServices, packageBaseAmount, packagesSummary, ratePools };
 };
 
-const createBooking = async (userId, bookingData) => {
+// Validates + prices a booking without any DB writes/side effects — extracted so the
+// pay-first flow (POST /payments/quote-order) can compute an accurate Razorpay amount
+// from the same code that createBooking uses. Returns everything persistBooking needs
+// to actually create the Booking row.
+//   No side effects: coupon.increment happens in persistBooking, not here.
+const prepareBooking = async (userId, bookingData) => {
   const { services: serviceItems = [], extraServices = [], packages: packagesInput = [], partnerId, address, scheduledAt, couponCode, offerId, packageId, packageQty = 1, paymentMode, notes } = bookingData;
   const isMultiPackage = Array.isArray(packagesInput) && packagesInput.length > 0;
 
@@ -198,7 +203,8 @@ const createBooking = async (userId, bookingData) => {
 
     couponId = coupon.id;
     appliedCouponCode = coupon.code;
-    await coupon.increment("usedCount");
+    // NOTE: coupon.increment("usedCount") is deferred to persistBooking so that a
+    // quote which never gets paid doesn't burn a coupon slot.
   }
 
   // Apply offer — adds free service with price=0
@@ -245,37 +251,61 @@ const createBooking = async (userId, bookingData) => {
       ? enrichedServices[0].name
       : `${enrichedServices.length} services`;
 
-  const booking = await Booking.create({
+  // Return the fully-priced, fully-validated payload. persistBooking (or the pay-first
+  // flow) turns this into a real Booking row + side effects.
+  return {
     userId,
-    serviceId: primaryServiceId,
-    services: enrichedServices,
-    partnerId: partnerId || null,
-    addressLabel: address.label || "Home",
-    addressLine1: address.line1,
-    addressLine2: address.line2 || null,
-    addressCity: address.city || "",
-    addressState: address.state || "",
-    addressPincode: address.pincode || "",
-    addressLat: address.lat || null,
-    addressLng: address.lng || null,
-    scheduledAt: new Date(scheduledAt),
-    status: "pending",
-    paymentMode: paymentMode === "cod" ? "cod" : "online",
-    baseAmount,
-    discountAmount: 0,
-    couponDiscountAmount: couponDiscount,
-    taxAmount: tax,
-    totalAmount: total,
-    partnerEarning,
-    couponCode: appliedCouponCode,
+    bookingRow: {
+      userId,
+      serviceId: primaryServiceId,
+      services: enrichedServices,
+      partnerId: partnerId || null,
+      addressLabel: address.label || "Home",
+      addressLine1: address.line1,
+      addressLine2: address.line2 || null,
+      addressCity: address.city || "",
+      addressState: address.state || "",
+      addressPincode: address.pincode || "",
+      addressLat: address.lat || null,
+      addressLng: address.lng || null,
+      scheduledAt: new Date(scheduledAt),
+      status: "pending",
+      paymentMode: paymentMode === "cod" ? "cod" : "online",
+      baseAmount,
+      discountAmount: 0,
+      couponDiscountAmount: couponDiscount,
+      taxAmount: tax,
+      totalAmount: total,
+      partnerEarning,
+      couponCode: appliedCouponCode,
+      couponId,
+      offerId: appliedOfferId,
+      packageId: appliedPackageId,
+      packageQty: appliedPackageId ? packageQty : 1,
+      packages: isMultiPackage ? multiPackageInfo.packagesSummary : null,
+      cityId,
+      notes,
+    },
     couponId,
-    offerId: appliedOfferId,
-    packageId: appliedPackageId,
-    packageQty: appliedPackageId ? packageQty : 1,
-    packages: isMultiPackage ? multiPackageInfo.packagesSummary : null,
-    cityId,
-    notes,
-  });
+    primaryServiceName,
+    partnerId: partnerId || null,
+  };
+};
+
+// Persists the prepared booking + fires side effects (coupon.increment, notifications,
+// partner alerts). `overrides` lets the pay-first flow set status/paymentStatus/paymentId
+// atomically — for the classic COD flow, pass no overrides.
+const persistBooking = async (prepared, overrides = {}) => {
+  const { userId, bookingRow, couponId, primaryServiceName, partnerId } = prepared;
+
+  // Coupon slot is only consumed at the moment we actually create the booking — an
+  // abandoned quote will not have called increment.
+  if (couponId) {
+    const coupon = await Coupon.findByPk(couponId);
+    if (coupon) await coupon.increment("usedCount");
+  }
+
+  const booking = await Booking.create({ ...bookingRow, ...overrides });
 
   const user = await User.findByPk(userId);
   if (user?.fcmToken) {
@@ -319,6 +349,12 @@ const createBooking = async (userId, bookingData) => {
       { model: ServicePackage, as: "package", attributes: ["id", "title", "price", "image"] },
     ],
   });
+};
+
+// Classic entry point — same signature as before. Prepare then persist in one call.
+const createBooking = async (userId, bookingData) => {
+  const prepared = await prepareBooking(userId, bookingData);
+  return persistBooking(prepared);
 };
 
 const BOOKING_DETAIL_INCLUDES = [
@@ -755,4 +791,4 @@ const addPackage = async (userId, bookingId, packageId, qty, serviceItems) => {
   return booking;
 };
 
-module.exports = { createBooking, getBookingById, cancelBooking, rescheduleBooking, submitReview, addUserServices, updateServiceQty, removeService, removePackage, buildPackageRemoval, addPackage, buildPackageAddition };
+module.exports = { createBooking, prepareBooking, persistBooking, getBookingById, cancelBooking, rescheduleBooking, submitReview, addUserServices, updateServiceQty, removeService, removePackage, buildPackageRemoval, addPackage, buildPackageAddition };

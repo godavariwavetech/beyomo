@@ -1,5 +1,4 @@
-// Android emulator: 10.0.2.2 | iOS simulator: localhost | Physical device: your machine IP
-export const BASE_URL = 'http://10.0.2.2:3000';
+export const BASE_URL = 'https://beyomo.com:3099';
 
 export const baseURL = BASE_URL;
 
@@ -32,6 +31,7 @@ export const endpoints = {
 
   // Payments
   PAYMENT_CREATE_ORDER: '/api/v1/payments/create-order',
+  PAYMENT_QUOTE_ORDER: '/api/v1/payments/quote-order',
   PAYMENT_VERIFY: '/api/v1/payments/verify',
   PAYMENT_HISTORY: '/api/v1/payments/history',
 

@@ -8,51 +8,48 @@ const CH_PAYMENT     = 'beyomo_partner_payment';
 const CH_DEFAULT     = 'beyomo_partner_default';
 
 export const createNotificationChannels = async () => {
-  // New booking request — long alarm sound (4s), heavy vibration, highest importance
-  await notifee.createChannel({
-    id: CH_NEW_BOOKING,
-    name: 'New Booking Requests',
-    importance: AndroidImportance.HIGH,
-    sound: 'booking_alarm',
-    vibrationPattern: [0, 500, 200, 500, 200, 500, 200, 500, 200, 500],
-    visibility: AndroidVisibility.PUBLIC,
-    lights: true,
-    lightColor: '#FDD77A',
-  });
+  await Promise.allSettled([
+    notifee.deleteChannel(CH_NEW_BOOKING),
+    notifee.deleteChannel(CH_BOOKING_UPD),
+    notifee.deleteChannel(CH_PAYMENT),
+    notifee.deleteChannel(CH_DEFAULT),
+  ]);
 
-  // Booking updates (confirmed, cancelled, etc.) — chime
-  await notifee.createChannel({
-    id: CH_BOOKING_UPD,
-    name: 'Booking Updates',
-    importance: AndroidImportance.HIGH,
-    sound: 'notification_chime',
-    vibrationPattern: [0, 300, 150, 300],
-    visibility: AndroidVisibility.PUBLIC,
-    lights: true,
-    lightColor: '#065E2C',
-  });
+  const channels = [
+    {
+      id: CH_NEW_BOOKING, name: 'New Booking Requests',
+      importance: AndroidImportance.HIGH, sound: 'beyomo_notification',
+      vibrationPattern: [500, 200, 500, 200, 500, 200, 500, 200, 500, 200],
+      visibility: AndroidVisibility.PUBLIC, lights: true, lightColor: '#FDD77A',
+    },
+    {
+      id: CH_BOOKING_UPD, name: 'Booking Updates',
+      importance: AndroidImportance.HIGH, sound: 'beyomo_notification',
+      vibrationPattern: [300, 150, 300, 150],
+      visibility: AndroidVisibility.PUBLIC, lights: true, lightColor: '#065E2C',
+    },
+    {
+      id: CH_PAYMENT, name: 'Earnings & Payments',
+      importance: AndroidImportance.HIGH, sound: 'beyomo_notification',
+      vibrationPattern: [400, 100, 200, 100],
+      visibility: AndroidVisibility.PUBLIC, lights: true, lightColor: '#F5C842',
+    },
+    {
+      id: CH_DEFAULT, name: 'General Notifications',
+      importance: AndroidImportance.HIGH, sound: 'beyomo_notification',
+      vibrationPattern: [300, 200, 300, 200],
+      visibility: AndroidVisibility.PUBLIC,
+    },
+  ];
 
-  // Payment / earnings — alert
-  await notifee.createChannel({
-    id: CH_PAYMENT,
-    name: 'Earnings & Payments',
-    importance: AndroidImportance.HIGH,
-    sound: 'notification_alert',
-    vibrationPattern: [0, 400, 100, 200],
-    visibility: AndroidVisibility.PUBLIC,
-    lights: true,
-    lightColor: '#F5C842',
-  });
-
-  // General fallback
-  await notifee.createChannel({
-    id: CH_DEFAULT,
-    name: 'General Notifications',
-    importance: AndroidImportance.DEFAULT,
-    sound: 'notification_chime',
-    vibrationPattern: [0, 200],
-    visibility: AndroidVisibility.PUBLIC,
-  });
+  for (const ch of channels) {
+    try {
+      const created = await notifee.createChannel(ch);
+      console.log(`[NOTIF] Channel created: id=${ch.id} → notifee returned "${created}"`);
+    } catch (err) {
+      console.error(`[NOTIF] createChannel FAILED for ${ch.id}:`, err?.message ?? err);
+    }
+  }
 };
 
 export const getFCMToken = async () => {
@@ -67,9 +64,17 @@ export const getFCMToken = async () => {
 
 export const setupForegroundHandler = () => {
   return messaging().onMessage(async remoteMessage => {
-    if (remoteMessage.notification) {
-      await displayNotification(remoteMessage.notification, remoteMessage.data);
-    }
+    // Fall back to data payload if the standard notification field is missing
+    // (data-only messages use `data` for title/body). Either way, Notifee displays
+    // the notification — the OS suppresses the built-in heads-up while the app is
+    // in the foreground, so we always route through Notifee to guarantee sound +
+    // tray + heads-up (via the HIGH-importance channel).
+    const notif = remoteMessage.notification ?? {
+      title: remoteMessage.data?.title ?? 'Notification',
+      body: remoteMessage.data?.body ?? '',
+    };
+    if (!notif.title && !notif.body) return;
+    await displayNotification(notif, remoteMessage.data);
   });
 };
 
@@ -81,11 +86,9 @@ const pickChannel = (data = {}) => {
   return CH_DEFAULT;
 };
 
-const pickSound = (data = {}) => {
-  const type = data?.type ?? '';
-  if (type === 'new_booking')                                  return 'booking_alarm';
-  if (type.includes('payment') || type.includes('earning'))   return 'notification_alert';
-  return 'notification_chime';
+const pickSound = (_data = {}) => {
+  // Single custom sound for all notification types.
+  return 'beyomo_notification';
 };
 
 const displayNotification = async (notification, data = {}) => {
@@ -93,6 +96,7 @@ const displayNotification = async (notification, data = {}) => {
     const channelId = pickChannel(data);
     const sound = pickSound(data);
     const isNewBooking = (data?.type ?? '') === 'new_booking';
+    console.log(`[NOTIF] displayNotification called — channel=${channelId} sound=${sound} title="${notification.title}" body="${notification.body}"`);
 
     await notifee.displayNotification({
       title: notification.title,
@@ -105,7 +109,11 @@ const displayNotification = async (notification, data = {}) => {
         colorized: true,
         style: {type: AndroidStyle.BIGTEXT, text: notification.body},
         pressAction: {id: 'default', launchActivity: 'default'},
-        vibrationPattern: isNewBooking ? [0, 500, 200, 500, 200, 500, 200, 500, 200, 500] : [0, 300, 150, 300],
+        // Vibration is already configured on the channel (see createNotificationChannels).
+        // Duplicating it here as a notification-level pattern trips Notifee's validator
+        // ("expected an array containing an even number of positive values") because 0
+        // isn't positive at the notification level, even though it's the standard first
+        // value in Android's channel-level pattern.
         lights: [isNewBooking ? '#FDD77A' : '#065E2C', 500, 500],
         showTimestamp: true,
         ongoing: false,

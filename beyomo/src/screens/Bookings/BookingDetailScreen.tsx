@@ -411,7 +411,7 @@ const BookingDetailScreen = ({navigation, route}: any) => {
   const partnerRating = partner.ratingsAverage ?? partner.averageRating ?? partner.rating ?? '';
   const partnerExp = partner.experience ? `${partner.experience}+ yrs experience` : '';
   const address = booking.address?.formatted ?? booking.address?.line1 ?? booking.address ?? '';
-  const paymentModeLabel = booking.paymentMode === 'cod' ? 'Cash on Delivery' : 'Paid Online';
+  const paymentModeLabel = booking.paymentMode === 'cod' ? 'Pay after Service' : 'Paid Online';
   const paymentStatusLabel = booking.paymentStatus === 'paid' ? 'Paid' : booking.paymentMode === 'cod' ? 'Due on completion' : 'Unpaid';
 
   const dt = booking.scheduledAt ? formatDateTime(booking.scheduledAt) : null;
@@ -1076,13 +1076,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  cardHeaderRow: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'},
+  cardHeaderRow: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: sw(8)},
   addServiceBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: sw(4),
-    borderWidth: 1, borderColor: '#105641', borderRadius: sw(20),
-    paddingHorizontal: sw(10), paddingVertical: sw(4),
+    flexDirection: 'row', alignItems: 'center', gap: sw(3),
+    borderWidth: 1, borderColor: '#105641', borderRadius: sw(16),
+    paddingHorizontal: sw(8), paddingVertical: sw(4),
   },
-  addServiceBtnText: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#105641', fontWeight: '600'},
+  addServiceBtnText: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#105641', fontWeight: '600'},
 
   serviceRow: {flexDirection: 'row', alignItems: 'center', paddingVertical: sw(8), gap: sw(10)},
   serviceRowBorder: {borderTopWidth: 1, borderTopColor: '#F0F0F0'},
