@@ -50,3 +50,9 @@ local.properties
 
 # Separate repo nested in this working tree, has its own git history
 /beyomo_website/
+
+# Database dumps -- these carry real customer and partner PII (phone numbers,
+# emails, bank account numbers, Aadhaar document URLs). Share them out of band,
+# never through the repo. backend/db_export/ is the historical exception that is
+# already tracked; do not add more.
+/backend/*.sql

@@ -21,6 +21,7 @@ export const endpoints = {
   PARTNER_BOOKINGS: '/api/v1/partners/bookings',
   PARTNER_AVAILABLE_BOOKINGS: '/api/v1/partners/bookings/available',
   PARTNER_DEVICE_TOKEN: '/api/v1/partners/device-token',
+  PARTNER_ONLINE_STATUS: '/api/v1/partners/online-status',
 
   // Partner booking actions
   PARTNER_BOOKING_DETAIL: (id: string) => `/api/v1/partners/bookings/${id}`,

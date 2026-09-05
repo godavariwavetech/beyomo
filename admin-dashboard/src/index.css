@@ -206,13 +206,6 @@ img { max-width: 100%; }
   position: relative;
 }
 .header-icon-btn:hover { background: var(--c-border); color: var(--c-text-primary); }
-.header-icon-btn .notif-dot {
-  position: absolute; top: 7px; right: 7px;
-  width: 8px; height: 8px;
-  background: var(--c-danger);
-  border-radius: var(--r-full);
-  border: 2px solid white;
-}
 .header-user {
   display: flex; align-items: center; gap: 10px;
   padding: 6px 12px;

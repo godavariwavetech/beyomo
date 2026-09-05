@@ -128,9 +128,7 @@ export const updatePartnerDeviceToken = createAsyncThunk(
   },
 );
 
-const partnerSlice = createSlice({
-  name: 'partner',
-  initialState: {
+const initialState = {
     profile: null,
     dashboard: null,
     earnings: null,
@@ -144,9 +142,13 @@ const partnerSlice = createSlice({
     availableBookings: [],
     selectedBooking: null,
     loading: false,
-    actionLoading: false,
-    error: null,
-  },
+  actionLoading: false,
+  error: null,
+};
+
+const partnerSlice = createSlice({
+  name: 'partner',
+  initialState,
   reducers: {
     clearPartnerError: state => {
       state.error = null;
@@ -157,6 +159,10 @@ const partnerSlice = createSlice({
   },
   extraReducers: builder => {
     builder
+      // Wipe every trace of the signed-out partner. Without this, profile/dashboard/
+      // bookings survive logout in memory and the next screen to mount renders the
+      // previous partner's data.
+      .addCase('auth/actionLogout', () => initialState)
       .addCase(fetchPartnerProfile.pending, state => {
         state.loading = true;
         state.error = null;

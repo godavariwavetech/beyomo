@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Menu, Bell, LogOut, ChevronDown, MapPin, Check, Globe } from 'lucide-react';
+import { Menu, LogOut, ChevronDown, MapPin, Check, Globe } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useCityFilter } from '../../context/CityContext';
 import { ROLE_LABELS, ROLE_COLORS } from '../../data/mockData';
@@ -193,11 +193,6 @@ export default function Header({ onMenuClick }) {
             )}
           </div>
         )}
-
-        <button className="header-icon-btn">
-          <Bell size={18} />
-          <span className="notif-dot" />
-        </button>
 
         <div style={{ position: 'relative' }}>
           <div className="header-user" onClick={() => setShowDropdown(!showDropdown)}>

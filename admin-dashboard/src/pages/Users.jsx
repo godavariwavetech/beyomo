@@ -108,7 +108,36 @@ export default function Users() {
     }).length,
   };
 
-  const userBookings = selected?.bookings ?? [];
+  // `selected.bookings` is the booking COUNT from the list endpoint, not the rows.
+  // The detail panel needs the actual bookings, so fetch them when the tab is opened.
+  const [userBookings, setUserBookings] = useState([]);
+  const [bookingsLoading, setBookingsLoading] = useState(false);
+
+  useEffect(() => {
+    if (tab !== 'bookings' || !selected?.id) return;
+    let cancelled = false;
+    setBookingsLoading(true);
+    action('get', '/api/v1/admin/bookings', null, { userId: selected.id, limit: 100 }).then(res => {
+      if (cancelled) return;
+      const raw = res.ok ? (res.data?.data?.data ?? res.data?.data ?? []) : [];
+      setUserBookings(raw.map(b => ({
+        ...b,
+        id: String(b.id ?? ''),
+        code: b.bookingCode ?? String(b.id ?? ''),
+        service: b.service?.name ?? b.services?.[0]?.name ?? '—',
+        partnerName: b.partner?.name ?? b.partnerName ?? 'Unassigned',
+        amount: parseFloat(b.totalAmount ?? b.amount ?? 0),
+        date: b.scheduledAt
+          ? new Date(b.scheduledAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+          : '',
+      })));
+      setBookingsLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [tab, selected?.id, action]);
+
+  // Drop stale rows when switching to a different user.
+  useEffect(() => { setUserBookings([]); }, [selected?.id]);
 
   return (
     <div>
@@ -304,7 +333,11 @@ export default function Users() {
             )}
 
             {tab === 'bookings' && (
-              userBookings.length === 0 ? (
+              bookingsLoading ? (
+                <div style={{ textAlign:'center', padding: '40px 0', color:'var(--c-text-secondary)' }}>
+                  <p>Loading bookings…</p>
+                </div>
+              ) : userBookings.length === 0 ? (
                 <div style={{ textAlign:'center', padding: '40px 0', color:'var(--c-text-secondary)' }}>
                   <ShoppingBag size={32} style={{ margin: '0 auto 12px', opacity: 0.4 }} />
                   <p>No bookings yet for this user.</p>
@@ -316,10 +349,10 @@ export default function Users() {
                     <tbody>
                       {userBookings.map(b => (
                         <tr key={b.id}>
-                          <td style={{ fontSize:12, color:'var(--c-text-secondary)' }}>{b.id}</td>
+                          <td style={{ fontSize:12, color:'var(--c-text-secondary)' }}>{b.code}</td>
                           <td>{b.service}</td>
                           <td style={{ fontSize:13 }}>{b.partnerName}</td>
-                          <td style={{ fontWeight:600 }}>₹{b.amount.toLocaleString('en-IN')}</td>
+                          <td style={{ fontWeight:600 }}>₹{Number(b.amount ?? 0).toLocaleString('en-IN')}</td>
                           <td><Badge status={b.status} /></td>
                           <td style={{ fontSize:13 }}>{b.date}</td>
                         </tr>

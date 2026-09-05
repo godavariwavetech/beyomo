@@ -11,6 +11,7 @@ import {
   Switch,
   RefreshControl,
   AppState,
+  Alert,
 } from 'react-native';
 import {useFocusEffect} from '@react-navigation/native';
 import {HomeScreenSkeleton} from '../../components/Skeleton/Skeleton';
@@ -84,7 +85,13 @@ const QUICK_LINKS = [
 const HomeScreen = ({navigation}: {navigation: any}) => {
   const insets = useSafeAreaInsets();
   const partner = useSelector((state: RootState) => state.Auth?.partner);
-  const [isOnline, setIsOnline] = useState(true);
+  // Starts false and is corrected by the server on first dashboard fetch. It used to
+  // default to true, which told every partner "You are Online" on every launch even
+  // though the backend had never heard from them.
+  const [isOnline, setIsOnline] = useState(false);
+  const [onlineSaving, setOnlineSaving] = useState(false);
+  const heartbeatRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
+  const heartbeatMinsRef = React.useRef(2);
   const [ready, setReady] = useState(false);
   const [dashboardData, setDashboardData] = useState<any>(null);
   const [availableCount, setAvailableCount] = useState(0);
@@ -93,6 +100,67 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
   const refreshAll = async () => {
     await Promise.all([fetchDashboardData(), fetchAvailableCount()]);
   };
+
+  // Tells the backend the partner's availability. Also doubles as the heartbeat:
+  // the backend stamps lastSeenAt on every call, and treats a partner whose last
+  // heartbeat is older than its timeout as offline - so an app that is force-quit
+  // or loses signal ages out instead of appearing available forever.
+  const pushOnlineStatus = async (next: boolean) => {
+    const res = await api.patch(endpoints.PARTNER_ONLINE_STATUS, {isOnline: next});
+    const mins = res.data?.data?.heartbeatMinutes;
+    if (typeof mins === 'number') {
+      heartbeatMinsRef.current = mins;
+    }
+  };
+
+  const stopHeartbeat = () => {
+    if (heartbeatRef.current) {
+      clearInterval(heartbeatRef.current);
+      heartbeatRef.current = null;
+    }
+  };
+
+  const startHeartbeat = () => {
+    stopHeartbeat();
+    heartbeatRef.current = setInterval(() => {
+      pushOnlineStatus(true).catch(() => {
+        // A dropped beat is fine - the server's timeout is deliberately longer than
+        // the interval, so one failure does not flip a working partner offline.
+      });
+    }, heartbeatMinsRef.current * 60 * 1000);
+  };
+
+  const handleToggleOnline = async (next: boolean) => {
+    setIsOnline(next); // optimistic, so the switch never feels laggy
+    setOnlineSaving(true);
+    try {
+      await pushOnlineStatus(next);
+      if (next) {
+        startHeartbeat();
+      } else {
+        stopHeartbeat();
+      }
+    } catch (error) {
+      setIsOnline(!next); // revert - the server never recorded it
+      stopHeartbeat();
+      Alert.alert(
+        'Could not update availability',
+        'We could not reach the server, so your status was not changed. Check your connection and try again.',
+      );
+    } finally {
+      setOnlineSaving(false);
+    }
+  };
+
+  // Keep the heartbeat running only while online, and never leak the timer.
+  useEffect(() => {
+    if (isOnline) {
+      startHeartbeat();
+    } else {
+      stopHeartbeat();
+    }
+    return stopHeartbeat;
+  }, [isOnline]);
 
   useEffect(() => {
     refreshAll();
@@ -135,7 +203,16 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
   const fetchDashboardData = async () => {
     try {
       const response = await api.get(endpoints.PARTNER_DASHBOARD);
-      setDashboardData(response.data?.data);
+      const data = response.data?.data;
+      setDashboardData(data);
+      // Trust the server over local state, except while a toggle is still in flight
+      // (otherwise a refresh landing mid-request would snap the switch back).
+      if (typeof data?.isOnline === 'boolean' && !onlineSaving) {
+        setIsOnline(data.isOnline);
+      }
+      if (typeof data?.heartbeatMinutes === 'number') {
+        heartbeatMinsRef.current = data.heartbeatMinutes;
+      }
     } catch (error) {
       console.log('Failed to fetch dashboard data:', error);
     }
@@ -215,7 +292,8 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
             </Text>
             <Switch
               value={isOnline}
-              onValueChange={setIsOnline}
+              onValueChange={handleToggleOnline}
+              disabled={onlineSaving}
               trackColor={{false: '#D0D0D0', true: '#1B6B3A'}}
               thumbColor="#FFFFFF"
               style={{transform: [{scaleX: 0.9}, {scaleY: 0.9}]}}

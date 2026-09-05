@@ -49,6 +49,13 @@ const Partner = sequelize.define("Partner", {
   source: { type: DataTypes.ENUM("app", "website"), allowNull: false, defaultValue: "app" },
   deviceTokens: { type: DataTypes.JSON, defaultValue: [] },
   fcmToken: { type: DataTypes.TEXT, allowNull: true, defaultValue: null },
+  // Availability: isOnline is what the partner last toggled in the app; lastSeenAt is when
+  // they last told us. Both are needed - a partner who force-quits the app, loses signal or
+  // whose battery dies never sends "offline", so isOnline alone would stay true forever.
+  // Readers treat a partner as online only if isOnline AND lastSeenAt is recent
+  // (see isPartnerOnline in utils/partnerPresence).
+  isOnline: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+  lastSeenAt: { type: DataTypes.DATE, allowNull: true, defaultValue: null },
 }, {
   timestamps: true,
   tableName: "partners",

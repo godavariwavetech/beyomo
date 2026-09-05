@@ -1,7 +1,6 @@
 import React, {createContext, useContext, useState, useCallback, useEffect} from 'react';
 import api from '../services/api';
 import {ROLE_PERMISSIONS} from '../data/mockData';
-import {playNotificationChime} from '../utils/notificationSound';
 
 const AuthContext = createContext(null);
 
@@ -17,7 +16,6 @@ export function AuthProvider({children}) {
   const [toast, setToast] = useState(null);
 
   const showToast = useCallback((message, type = 'success') => {
-    playNotificationChime(type);
     setToast({message, type});
     setTimeout(() => setToast(null), 3000);
   }, []);

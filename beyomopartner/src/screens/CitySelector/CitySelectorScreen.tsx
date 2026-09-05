@@ -42,6 +42,11 @@ const CitySelectorScreen = ({navigation, route}: Props) => {
   const insets = useSafeAreaInsets();
   const token = useSelector((state: RootState) => state.Auth.token);
   const partner = useSelector((state: RootState) => state.Auth.partner);
+  // Where the previously chosen city lives: the persisted City slice (written by
+  // confirm() below) and the partner's own cityId on the server (written by the
+  // same confirm() via updatePartnerProfile). Either is enough to pre-tick a row.
+  const savedCity = useSelector((state: RootState) => (state as any).City?.selectedCity);
+  const partnerProfile = useSelector((state: RootState) => (state as any).Partner?.profile);
 
   const [cities, setCities] = useState<CityGeo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -59,6 +64,25 @@ const CitySelectorScreen = ({navigation, route}: Props) => {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
+
+  // Re-opening the screen used to start with nothing ticked, because `selected` began
+  // as null and nothing ever read the saved city back. Match the stored city against
+  // the freshly loaded list once it arrives.
+  useEffect(() => {
+    if (!cities.length || selected) return; // never clobber an in-progress choice
+
+    // The partner's own cityId wins over the device-level savedCity: savedCity survives
+    // logout (it's a device preference, not partner data), so after a different partner
+    // signs in on the same phone it would otherwise pre-tick the previous partner's city.
+    // savedCity is still the right fallback for the pre-login flow, where there is no partner.
+    const savedId = partnerProfile?.cityId ?? (partner as any)?.cityId ?? savedCity?.id;
+    if (savedId === null || savedId === undefined) return;
+
+    // Compared as strings: the id is a number in the cities response but can come back
+    // as a string from persisted storage, and === would quietly never match.
+    const match = cities.find(c => String(c.id) === String(savedId));
+    if (match) setSelected(match);
+  }, [cities, savedCity, partnerProfile, partner, selected]);
 
   const confirm = async () => {
     if (!selected) {

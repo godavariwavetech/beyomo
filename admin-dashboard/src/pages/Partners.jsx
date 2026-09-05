@@ -17,15 +17,31 @@ const exportCSV = (data, filename) => {
   a.click(); URL.revokeObjectURL(a.href);
 };
 
+// The API already downgrades a stale isOnline to false, so an offline partner with a
+// lastSeenAt tells us when they dropped off rather than just "Offline".
+const lastSeenLabel = (iso) => {
+  if (!iso) return 'Never connected';
+  const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  if (Number.isNaN(mins) || mins < 0) return 'Offline';
+  if (mins < 60) return 'Offline · seen ' + (mins || 1) + 'm ago';
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return 'Offline · seen ' + hrs + 'h ago';
+  return 'Offline · seen ' + Math.floor(hrs / 24) + 'd ago';
+};
+
 const normalizePartner = (p) => ({
   ...p,
   id: String(p.id ?? ''),
+  name: p.name ?? '',
+  phone: p.phone ?? '',
+  email: p.email ?? '',
   city: p.city ?? p.locationCity ?? '—',
   rating: parseFloat(p.rating ?? p.ratingsAverage ?? 0),
   totalJobs: p.totalJobs ?? p.ratingsCount ?? 0,
   monthlyEarnings: parseFloat(p.monthlyEarnings ?? 0),
   totalEarnings: parseFloat(p.totalEarnings ?? 0),
-  isOnline: p.isOnline ?? false,
+  isOnline: Boolean(p.isOnline),
+  lastSeenAt: p.lastSeenAt ?? null,
   services: Array.isArray(p.services) ? p.services : [],
   avatar: p.avatar ?? (p.name?.[0]?.toUpperCase() ?? 'P'),
   experience: typeof p.experience === 'number' ? `${p.experience} yrs` : (p.experience ?? '—'),
@@ -122,7 +138,10 @@ export default function Partners() {
   };
 
   useEffect(() => { loadPartners(); }, [cityParam]);
-  useAutoRefresh(loadPartners);
+  // 30s rather than the 5-minute default: online/offline is live state, and the
+  // backend ages a partner out after 5 minutes, so a 5-minute poll could show
+  // presence that is already a full timeout window out of date.
+  useAutoRefresh(loadPartners, 30_000);
 
   // Load service categories (for the optional Skills step) when the wizard opens
   useEffect(() => {
@@ -214,7 +233,9 @@ export default function Partners() {
   const filtered = useMemo(() => {
     return partners.filter(p => {
       const q = search.toLowerCase();
-      return (!q || p.name.toLowerCase().includes(q) || p.phone.includes(q) || p.id.toLowerCase().includes(q) || p.services.some(s => s.toLowerCase().includes(q)))
+      const matchesQuery = !q || [p.name, p.phone, p.id, p.email, ...(p.services ?? [])]
+        .some(field => String(field ?? '').toLowerCase().includes(q));
+      return matchesQuery
           && (statusFilter === 'all' || p.status === statusFilter)
           && (onlineFilter === 'all' || (onlineFilter === 'online' ? p.isOnline : !p.isOnline));
     });
@@ -460,7 +481,9 @@ export default function Partners() {
                   <td>
                     <span style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize:12, fontWeight:600, color: p.isOnline ? 'var(--c-success)' : 'var(--c-text-muted)' }}>
                       <span style={{ width:8, height:8, borderRadius:'50%', background: p.isOnline ? 'var(--c-success)' : 'var(--c-border)', display:'inline-block' }} />
-                      {p.isOnline ? 'Online' : 'Offline'}
+                      <span title={p.isOnline ? 'Currently online' : lastSeenLabel(p.lastSeenAt)}>
+                        {p.isOnline ? 'Online' : 'Offline'}
+                      </span>
                     </span>
                   </td>
                   <td><Badge status={p.status} /></td>
@@ -672,7 +695,9 @@ export default function Partners() {
               <div className="detail-avatar">{selected.avatar}</div>
               <div className="detail-info">
                 <h3>{selected.name}</h3>
-                <p style={{ display:'flex', alignItems:'center', gap:8 }}>{selected.id} · <Badge status={selected.status} /> {selected.isOnline && <Badge status="online" label="Online"/>}</p>
+                <p style={{ display:'flex', alignItems:'center', gap:8 }}>{selected.id} · <Badge status={selected.status} /> {selected.isOnline
+                    ? <Badge status="online" label="Online"/>
+                    : <span style={{ fontSize: 12, color: 'var(--c-text-muted)' }}>{lastSeenLabel(selected.lastSeenAt)}</span>}</p>
               </div>
             </div>
 

@@ -191,6 +191,22 @@ const updateDeviceToken = catchAsync(async (req, res, next) => {
 });
 
 /**
+ * PATCH /api/v1/partners/online-status
+ * Body: { isOnline: boolean }
+ * Called when the partner flips the availability toggle, and again every
+ * few minutes while online so lastSeenAt stays fresh (see utils/partnerPresence).
+ */
+const updateOnlineStatus = catchAsync(async (req, res, next) => {
+  const { isOnline } = req.body;
+  if (typeof isOnline !== "boolean") {
+    return next(new AppError("isOnline must be true or false", 400));
+  }
+
+  const result = await partnersService.setOnlineStatus(req.partner.userId, isOnline);
+  res.status(200).json({ status: true, data: result });
+});
+
+/**
  * GET /api/v1/partners/bookings/available
  */
 const getAvailableBookings = catchAsync(async (req, res) => {
@@ -314,6 +330,7 @@ module.exports = {
   updateBookingStatus,
   markArrived,
   updateDeviceToken,
+  updateOnlineStatus,
   getEarnings,
   addExtraServices,
   addBookingPackage,
