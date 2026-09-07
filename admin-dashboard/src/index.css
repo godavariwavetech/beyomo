@@ -516,7 +516,72 @@ img { max-width: 100%; }
   border-radius: 0 0 var(--r-xl) var(--r-xl);
 }
 
+/* Feedback for a backdrop click on a modal that refuses to dismiss that way
+   (dismissOnBackdrop={false}). Without this the click is swallowed silently and
+   the admin has no idea why nothing happened, so shake the dialog and light up
+   the two things that DO close it: the header X and the footer buttons. */
+@keyframes modal-nudge {
+  0%, 100% { transform: translateX(0); }
+  15%      { transform: translateX(-7px); }
+  30%      { transform: translateX(7px); }
+  45%      { transform: translateX(-5px); }
+  60%      { transform: translateX(5px); }
+  75%      { transform: translateX(-2px); }
+}
+/* One continuous swell-and-fade rather than two pulses: repeating the keyframes
+   made the ring collapse to zero and re-expand between iterations, which read as a
+   flicker. Ends at 0 opacity so removing the class changes nothing visible. */
+@keyframes modal-exit-highlight {
+  0%   { box-shadow: 0 0 0 0 rgba(6, 64, 129, 0); }
+  25%  { box-shadow: 0 0 0 4px rgba(6, 64, 129, 0.38); }
+  70%  { box-shadow: 0 0 0 4px rgba(6, 64, 129, 0.30); }
+  100% { box-shadow: 0 0 0 7px rgba(6, 64, 129, 0); }
+}
+/* slideUp must stay listed FIRST and identical to the base .modal rule.
+   CSS matches running animations by their position in the animation-name list, so
+   keeping slideUp at index 0 means adding or removing modal-attention only adds or
+   removes the entry at index 1 and never restarts the entrance animation.
+   Writing just `animation: modal-nudge ...` here REPLACED slideUp, so dropping the
+   class flipped animation-name back to slideUp and replayed it - the whole dialog
+   faded from opacity 0 and slid up again after every shake. That was the flicker. */
+.modal.modal-attention { animation: slideUp 0.2s ease, modal-nudge 0.45s ease; }
+.modal-attention .modal-close,
+.modal-attention .modal-footer .btn {
+  animation: modal-exit-highlight 0.9s ease-out;
+  border-radius: var(--r-sm);
+}
+/* .modal-close already carries `transition: var(--t-fast)`, so this eases in and out
+   with the ring instead of snapping when the class is added and removed. */
+.modal-attention .modal-close {
+  background: var(--c-border-light);
+  color: var(--c-text-primary);
+}
+
+/* Respect users who have asked the OS for less motion: keep the highlight,
+   which carries the actual information, and drop the shake. */
+@media (prefers-reduced-motion: reduce) {
+  /* Drop the shake but keep the highlight, which carries the actual information.
+     Resets to slideUp rather than `none` for the same reason as above: blanking the
+     animation list here would make removing the class re-trigger the entrance. */
+  .modal.modal-attention { animation: slideUp 0.2s ease; }
+}
+
 /* ─── Forms ──────────────────────────────────────────────── */
+/* Section heading inside a long modal form (e.g. Edit Partner, which mirrors the
+   five steps of the add wizard as one scrollable form). */
+.section-divider-row {
+  display: flex; align-items: center; gap: 10px;
+  margin: 4px 0 -4px;
+}
+.section-divider-row::after {
+  content: ''; flex: 1; height: 1px; background: var(--c-border);
+}
+.section-divider-label {
+  font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--c-text-secondary);
+  white-space: nowrap;
+}
 .form-grid { display: grid; gap: 16px; }
 .form-grid-2 { grid-template-columns: 1fr 1fr; }
 .form-grid-3 { grid-template-columns: 1fr 1fr 1fr; }

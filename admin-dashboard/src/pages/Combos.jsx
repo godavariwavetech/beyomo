@@ -459,6 +459,8 @@ export default function Combos() {
         onClose={() => setModal(false)}
         title={editTarget ? 'Edit Combo' : 'New Combo'}
         size="lg"
+        dismissOnBackdrop={false}
+        dismissOnEscape={false}
         footer={
           <>
             <button className="btn btn-outline" onClick={() => setModal(false)}>Cancel</button>

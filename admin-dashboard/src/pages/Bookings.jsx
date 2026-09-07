@@ -694,6 +694,11 @@ export default function Bookings() {
         onClose={() => { setSelected(null); setReassignId(''); }}
         title={`Booking — ${selected?.bookingCode || selected?.id}`}
         size="lg"
+        // Not a read-only view: reassigning a partner, editing services, rescheduling
+        // and adding packages all happen in here, so a stray backdrop click threw away
+        // work in progress. Close via the header X or the footer Close button.
+        dismissOnBackdrop={false}
+        dismissOnEscape={false}
         footer={
           <>
             <button className="btn btn-outline" onClick={() => { setSelected(null); setReassignId(''); }}>Close</button>

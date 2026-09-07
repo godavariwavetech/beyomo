@@ -410,6 +410,8 @@ export default function Packages() {
         onClose={() => setModal(false)}
         title={editTarget ? 'Edit Package' : 'New Package'}
         size="lg"
+        dismissOnBackdrop={false}
+        dismissOnEscape={false}
         footer={
           <>
             <button className="btn btn-outline" onClick={() => setModal(false)}>Cancel</button>

@@ -29,6 +29,19 @@ const lastSeenLabel = (iso) => {
   return 'Offline · seen ' + Math.floor(hrs / 24) + 'd ago';
 };
 
+// professions / serviceCategoryIds are JSON columns, and MariaDB hands them back as
+// text rather than parsed arrays, so accept either form.
+const parseArr = (val) => {
+  if (!val) return [];
+  if (Array.isArray(val)) return val;
+  try {
+    const parsed = JSON.parse(val);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
 const normalizePartner = (p) => ({
   ...p,
   id: String(p.id ?? ''),
@@ -48,8 +61,21 @@ const normalizePartner = (p) => ({
   status: p.status === 'approved' ? 'active' : (p.status ?? 'pending'),
 });
 
-// Fixed profession list — matches the partner mobile app's registration screen exactly
-const PROFESSIONS = ['Beautician', 'Hairdresser', 'Makeup Artist', 'Mehendi', 'Spa Therapist', 'Aesthetician'];
+// Must stay in step with PROFESSIONS in the partner app's RegisterScreen.tsx — that is
+// where partners actually pick these. The two lists had drifted apart (the dashboard
+// still had 'Hairdresser' and 'Mehendi' while the app splits them into Female/Men
+// Hairdresser and Mehendi Artist, and had gained Nail Artist), so professions chosen in
+// the app matched no chip here and looked unset to an admin.
+const PROFESSIONS = [
+  'Beautician',
+  'Female Hairdresser',
+  'Men Hairdresser',
+  'Makeup Artist',
+  'Mehendi Artist',
+  'Spa Therapist',
+  'Aesthetician',
+  'Nail Artist',
+];
 
 function StepBar({ current, onStepClick }) {
   const steps = [
@@ -126,7 +152,15 @@ export default function Partners() {
 
   // Edit Details state
   const [editing, setEditing]   = useState(null);
-  const [editForm, setEditForm] = useState({ name: '', phone: '', email: '', city: '', experience: '', gender: '' });
+  // Mirrors addForm: a partner who self-registered in the app never supplies profession,
+  // skills, documents or bank details, so Edit is where an admin fills those gaps in.
+  const [editForm, setEditForm] = useState({
+    name: '', phone: '', email: '', city: '', experience: '', gender: '',
+    profilePicture: '', aadharUrl: '', agreementUrl: '',
+    bankAccountNo: '', bankIfsc: '', bankName: '', bankHolderName: '',
+  });
+  const [editProfessions, setEditProfessions] = useState([]);
+  const [editCats, setEditCats] = useState([]);
   const [savingEdit, setSavingEdit] = useState(false);
 
   const loadPartners = () => {
@@ -144,14 +178,16 @@ export default function Partners() {
   useAutoRefresh(loadPartners, 30_000);
 
   // Load service categories (for the optional Skills step) when the wizard opens
+  // Categories back the chips in BOTH the add wizard and the edit form.
   useEffect(() => {
-    if (!adding) return;
+    if (!adding && !editing) return;
+    if (regCats.length) return; // already fetched this session
     setRegLoading(true);
     action('get', '/api/v1/admin/services/categories').then(res => {
       if (res.ok) setRegCats(res.data?.data ?? []);
       setRegLoading(false);
     });
-  }, [adding]);
+  }, [adding, editing]);
 
   const resetAdd = () => {
     setAddStep(1);
@@ -172,9 +208,23 @@ export default function Partners() {
       city: p.city && p.city !== '—' ? p.city : '',
       experience: typeof p.experience === 'string' ? p.experience.replace(/\s*yrs$/, '') : (p.experience ?? ''),
       gender: p.gender ?? '',
+      profilePicture: p.profilePicture ?? '',
+      aadharUrl: p.aadharUrl ?? '',
+      agreementUrl: p.agreementUrl ?? '',
+      bankAccountNo: p.bankAccountNo ?? '',
+      bankIfsc: p.bankIfsc ?? '',
+      bankName: p.bankName ?? '',
+      bankHolderName: p.bankHolderName ?? '',
     });
+    setEditProfessions(parseArr(p.professions));
+    setEditCats(parseArr(p.serviceCategoryIds).map(Number));
     setEditing(p);
   };
+
+  const toggleEditProfession = (v) =>
+    setEditProfessions(prev => prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v]);
+  const toggleEditCat = (id) =>
+    setEditCats(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
 
   const saveEdit = async () => {
     if (!editForm.name?.trim() || !editForm.phone?.trim()) {
@@ -182,10 +232,17 @@ export default function Partners() {
       return;
     }
     setSavingEdit(true);
-    const res = await action('patch', `/api/v1/admin/partners/${editing.id}`, editForm);
+    // `professions` and `categories` are the names the backend's updatePartner expects
+    // (it maps categories -> serviceCategoryIds).
+    const payload = {
+      ...editForm,
+      professions: editProfessions,
+      categories: editCats,
+    };
+    const res = await action('patch', `/api/v1/admin/partners/${editing.id}`, payload);
     setSavingEdit(false);
     if (res.ok) {
-      const updated = normalizePartner(res.data?.data ?? { ...editing, ...editForm });
+      const updated = normalizePartner(res.data?.data ?? { ...editing, ...payload });
       setPartners(prev => prev.map(p => p.id === editing.id ? { ...p, ...updated } : p));
       if (selected?.id === editing.id) setSelected(prev => ({ ...prev, ...updated }));
       showToast('Partner details updated.', 'success');
@@ -293,15 +350,18 @@ export default function Partners() {
   const pendingPartners = partners.filter(p => p.status === 'pending');
 
   // Profession chips for step 2 — fixed list matching the partner app's registration screen
-  const ProfessionChips = () => (
+  const ProfessionChips = ({ values, onToggle }) => (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-      {PROFESSIONS.map(p => {
-        const active = selectedProfessions.includes(p);
+      {/* Anything already stored on the partner but missing from PROFESSIONS still gets
+          a chip, so a value written by an older app build is visible and removable
+          rather than silently invisible while quietly persisting on save. */}
+      {[...PROFESSIONS, ...values.filter(v => !PROFESSIONS.includes(v))].map(p => {
+        const active = values.includes(p);
         return (
           <button
             key={p}
             type="button"
-            onClick={() => toggleProfession(p)}
+            onClick={() => onToggle(p)}
             style={{
               display: 'flex', alignItems: 'center', gap: 6,
               border: `1.5px solid ${active ? 'var(--c-brand-primary)' : 'var(--c-border)'}`,
@@ -324,7 +384,7 @@ export default function Partners() {
   );
 
   // Service category chips for step 3 (Skills) — optional, sourced from the Services catalog
-  const CategoryChips = () => (
+  const CategoryChips = ({ values, onToggle }) => (
     regLoading ? (
       <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--c-text-muted)', fontSize: 13 }}>Loading categories…</div>
     ) : regCats.length === 0 ? (
@@ -332,12 +392,12 @@ export default function Partners() {
     ) : (
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
         {regCats.map(cat => {
-          const active = selectedCats.includes(cat.id);
+          const active = values.includes(cat.id);
           return (
             <button
               key={cat.id}
               type="button"
-              onClick={() => toggleCat(cat.id)}
+              onClick={() => onToggle(cat.id)}
               style={{
                 display: 'flex', alignItems: 'center', gap: 6,
                 border: `1.5px solid ${active ? 'var(--c-brand-primary)' : 'var(--c-border)'}`,
@@ -531,6 +591,10 @@ export default function Partners() {
         onClose={() => { setAdding(false); resetAdd(); }}
         title="Add New Partner"
         size="lg"
+        // Five-step wizard - a stray backdrop click ran resetAdd() and wiped every
+        // step the admin had already completed.
+        dismissOnBackdrop={false}
+        dismissOnEscape={false}
         footer={addWizardFooter}
       >
         <StepBar current={addStep} onStepClick={setAddStep} />
@@ -578,7 +642,7 @@ export default function Partners() {
             <p style={{ fontSize: 13, color: 'var(--c-text-secondary)', marginBottom: 16 }}>
               What is Your Profession? <span style={{ color: 'var(--c-text-muted)' }}>(optional)</span>
             </p>
-            <ProfessionChips />
+            <ProfessionChips values={selectedProfessions} onToggle={toggleProfession} />
             {selectedProfessions.length > 0 && (
               <div style={{ marginTop: 12, fontSize: 12, color: 'var(--c-text-muted)' }}>
                 {selectedProfessions.length} selected
@@ -592,7 +656,7 @@ export default function Partners() {
             <p style={{ fontSize: 13, color: 'var(--c-text-secondary)', marginBottom: 16 }}>
               Which service categories does this partner specialise in? <span style={{ color: 'var(--c-text-muted)' }}>(optional)</span>
             </p>
-            <CategoryChips />
+            <CategoryChips values={selectedCats} onToggle={toggleCat} />
             {selectedCats.length > 0 && (
               <div style={{ marginTop: 12, fontSize: 12, color: 'var(--c-text-muted)' }}>
                 {selectedCats.length} selected
@@ -797,6 +861,10 @@ export default function Partners() {
         isOpen={!!editing}
         onClose={() => setEditing(null)}
         title="Edit Partner Details"
+        // Holds the full profile now - profession, skills, uploaded documents and bank
+        // details - so a stray backdrop click could discard a lot of typing.
+        dismissOnBackdrop={false}
+        dismissOnEscape={false}
         footer={
           <>
             <button className="btn btn-outline" onClick={() => setEditing(null)}>Cancel</button>
@@ -839,6 +907,77 @@ export default function Partners() {
               <option value="female">Female</option>
               <option value="male">Male</option>
             </select>
+          </div>
+
+          {/* The remaining sections mirror steps 2-5 of the Add wizard. A partner who
+              signs up through the app never fills these in, so this is the only place
+              an admin can complete their profile. Laid out as sections rather than a
+              wizard because editing usually means changing one field, not walking
+              through five screens. */}
+
+          <div className="section-divider-row">
+            <span className="section-divider-label">Profession</span>
+          </div>
+          <ProfessionChips values={editProfessions} onToggle={toggleEditProfession} />
+
+          <div className="section-divider-row">
+            <span className="section-divider-label">Skills / Service Categories</span>
+          </div>
+          <CategoryChips values={editCats} onToggle={toggleEditCat} />
+
+          <div className="section-divider-row">
+            <span className="section-divider-label">Documents</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Profile Photo</div>
+              <ImageUploader
+                value={editForm.profilePicture}
+                onChange={url => setEditForm(f => ({...f, profilePicture: url}))}
+                width={64} height={64}
+                label="Upload Photo"
+              />
+            </div>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Aadhar Card</div>
+              <ImageUploader
+                value={editForm.aadharUrl}
+                onChange={url => setEditForm(f => ({...f, aadharUrl: url}))}
+                accept="image/jpeg,image/jpg,image/png,image/webp,application/pdf"
+                label="Upload Aadhar"
+              />
+            </div>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Signed Agreement</div>
+              <ImageUploader
+                value={editForm.agreementUrl}
+                onChange={url => setEditForm(f => ({...f, agreementUrl: url}))}
+                accept="image/jpeg,image/jpg,image/png,image/webp,application/pdf"
+                label="Upload Agreement"
+              />
+            </div>
+          </div>
+
+          <div className="section-divider-row">
+            <span className="section-divider-label">Bank Details</span>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Account Holder Name</label>
+            <input className="form-input" value={editForm.bankHolderName} onChange={e => setEditForm(f => ({...f, bankHolderName: e.target.value}))} />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Bank Name</label>
+            <input className="form-input" value={editForm.bankName} onChange={e => setEditForm(f => ({...f, bankName: e.target.value}))} />
+          </div>
+          <div className="form-grid form-grid-2" style={{ gap: 16 }}>
+            <div className="form-group">
+              <label className="form-label">Account Number</label>
+              <input className="form-input" value={editForm.bankAccountNo} onChange={e => setEditForm(f => ({...f, bankAccountNo: e.target.value}))} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">IFSC Code</label>
+              <input className="form-input" value={editForm.bankIfsc} onChange={e => setEditForm(f => ({...f, bankIfsc: e.target.value.toUpperCase()}))} />
+            </div>
           </div>
         </div>
       </Modal>

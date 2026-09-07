@@ -199,7 +199,8 @@ export default function Settlements() {
         </div>
       </div>
 
-      <Modal isOpen={!!selected} onClose={closeDetail} title={`Settlement Ledger — ${selected?.name ?? ''}`} size="lg">
+      <Modal isOpen={!!selected} onClose={closeDetail} title={`Settlement Ledger — ${selected?.name ?? ''}`} size="lg"
+        dismissOnBackdrop={false} dismissOnEscape={false}>
         {detailLoading ? (
           <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--c-text-muted)' }}>Loading ledger…</div>
         ) : ledger && (

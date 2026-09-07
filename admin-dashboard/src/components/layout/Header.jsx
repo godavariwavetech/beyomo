@@ -29,6 +29,7 @@ export default function Header({ onMenuClick }) {
   const [showDropdown, setShowDropdown] = useState(false);
   const [showCityMenu, setShowCityMenu] = useState(false);
   const cityMenuRef = useRef(null);
+  const userMenuRef = useRef(null);
 
   const pageInfo = PAGE_TITLES[location.pathname] || { title: 'Beyomo Admin', subtitle: '' };
   const roleColor = ROLE_COLORS[user?.role] || {};
@@ -43,6 +44,21 @@ export default function Header({ onMenuClick }) {
     if (showCityMenu) document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [showCityMenu]);
+
+  // Mirrors the city menu above. Deliberately NOT a full-screen click-catching overlay:
+  // that swallowed the first click anywhere on the page, so clicking a sidebar module
+  // while this was open only dismissed the dropdown and never navigated - you had to
+  // click the module twice. A document listener closes the menu and lets the click
+  // reach whatever was actually clicked.
+  useEffect(() => {
+    const handler = (e) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target)) {
+        setShowDropdown(false);
+      }
+    };
+    if (showDropdown) document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showDropdown]);
 
   const handleLogout = () => {
     logout();
@@ -194,7 +210,7 @@ export default function Header({ onMenuClick }) {
           </div>
         )}
 
-        <div style={{ position: 'relative' }}>
+        <div style={{ position: 'relative' }} ref={userMenuRef}>
           <div className="header-user" onClick={() => setShowDropdown(!showDropdown)}>
             <div className="header-user-avatar">{user?.avatar}</div>
             <div className="header-user-info">
@@ -209,8 +225,6 @@ export default function Header({ onMenuClick }) {
           </div>
 
           {showDropdown && (
-            <>
-              <div style={{ position: 'fixed', inset: 0, zIndex: 59 }} onClick={() => setShowDropdown(false)} />
               <div style={{
                 position: 'absolute', top: '110%', right: 0, zIndex: 60,
                 background: 'white', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)',
@@ -229,7 +243,6 @@ export default function Header({ onMenuClick }) {
                   Sign Out
                 </button>
               </div>
-            </>
           )}
         </div>
       </div>

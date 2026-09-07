@@ -255,6 +255,9 @@ export default function Users() {
 
       {/* Add User Modal */}
       <Modal isOpen={adding} onClose={() => setAdding(false)} title="Add New User" size="sm"
+        // A stray backdrop click discarded a half-filled new-user form.
+        dismissOnBackdrop={false}
+        dismissOnEscape={false}
         footer={<><button className="btn btn-outline" onClick={() => setAdding(false)}>Cancel</button><button className="btn btn-primary" onClick={addUser}>Add User</button></>}
       >
         <div className="form-grid">
