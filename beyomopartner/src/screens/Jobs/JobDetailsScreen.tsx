@@ -19,7 +19,7 @@ import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useFocusEffect} from '@react-navigation/native';
 import {useSelector, useDispatch} from 'react-redux';
 import {fonts} from '../../config/theme';
-import {resolveImageUrl} from '../../utils/utils';
+import {resolveImageUrl, formatAmount} from '../../utils/utils';
 import {markPartnerArrived, fetchPartnerBookings} from '../../redux/reducers/partner';
 import {useAppAlert} from '../../hooks/useAppAlert';
 import AppAlertModal from '../../components/AppAlertModal/AppAlertModal';
@@ -247,7 +247,7 @@ const JobDetailsScreen = ({navigation, route}: any) => {
                   ))}
                 </View>
               </View>
-              <Text style={styles.svcPrice}>₹{Number(group.price).toLocaleString('en-IN')}</Text>
+              <Text style={styles.svcPrice}>₹{formatAmount(group.price)}</Text>
             </View>
           ))}
           {otherItems.map((svc: any, idx: number) => {
@@ -280,14 +280,14 @@ const JobDetailsScreen = ({navigation, route}: any) => {
                 {isFree ? (
                   <View style={styles.freeBadge}><Text style={styles.freeBadgeText}>FREE</Text></View>
                 ) : svc.price != null ? (
-                  <Text style={styles.svcPrice}>₹{Number(svc.price * (svc.qty || 1)).toLocaleString('en-IN')}</Text>
+                  <Text style={styles.svcPrice}>₹{formatAmount(svc.price * (svc.qty || 1))}</Text>
                 ) : null}
               </View>
             );
           })}
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>Total Amount</Text>
-            <Text style={styles.totalValue}>₹{totalAmount.toLocaleString('en-IN')}</Text>
+            <Text style={styles.totalValue}>₹{formatAmount(totalAmount)}</Text>
           </View>
         </View>
 
@@ -297,24 +297,24 @@ const JobDetailsScreen = ({navigation, route}: any) => {
           <View style={styles.earningsTopRow}>
             <View>
               <Text style={styles.earningsLabel}>Your Earnings</Text>
-              <Text style={styles.earningsValue}>₹{earnings.toLocaleString('en-IN')}</Text>
+              <Text style={styles.earningsValue}>₹{formatAmount(earnings)}</Text>
             </View>
             <Ionicons name="cash-outline" size={sw(40)} color="rgba(255,255,255,0.2)" />
           </View>
           <View style={styles.earningsBreakdown}>
             <View style={styles.earningsBreakdownRow}>
               <Text style={styles.earningsBreakdownLabel}>Total Booking Amount</Text>
-              <Text style={styles.earningsBreakdownVal}>₹{totalAmount.toLocaleString('en-IN')}</Text>
+              <Text style={styles.earningsBreakdownVal}>₹{formatAmount(totalAmount)}</Text>
             </View>
             {taxAmount > 0 && (
               <View style={styles.earningsBreakdownRow}>
                 <Text style={styles.earningsBreakdownLabel}>GST (pass-through)</Text>
-                <Text style={styles.earningsBreakdownVal}>–₹{taxAmount.toLocaleString('en-IN')}</Text>
+                <Text style={styles.earningsBreakdownVal}>–₹{formatAmount(taxAmount)}</Text>
               </View>
             )}
             <View style={styles.earningsBreakdownRow}>
               <Text style={styles.earningsBreakdownLabel}>Admin Commission</Text>
-              <Text style={styles.earningsBreakdownVal}>–₹{adminCommission.toLocaleString('en-IN')}</Text>
+              <Text style={styles.earningsBreakdownVal}>–₹{formatAmount(adminCommission)}</Text>
             </View>
           </View>
         </LinearGradient>

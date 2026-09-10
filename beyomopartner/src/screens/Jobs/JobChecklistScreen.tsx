@@ -11,7 +11,7 @@ import {fonts} from '../../config/theme';
 import networkCall from '../../utils/networkCall';
 import api from '../../utils/api';
 import {endpoints} from '../../config/config';
-import {resolveImageUrl} from '../../utils/utils';
+import {resolveImageUrl, formatAmount} from '../../utils/utils';
 import {useAppAlert} from '../../hooks/useAppAlert';
 import AppAlertModal from '../../components/AppAlertModal/AppAlertModal';
 import SwipeToConfirm from '../../components/SwipeToConfirm/SwipeToConfirm';
@@ -449,7 +449,7 @@ const JobChecklistScreen = ({navigation, route}: any) => {
                   </Text>
                 </TouchableOpacity>
               </View>
-              <Text style={styles.svcPrice}>₹{Number(group.price).toLocaleString('en-IN')}</Text>
+              <Text style={styles.svcPrice}>₹{formatAmount(group.price)}</Text>
             </View>
           ))}
 
@@ -496,7 +496,7 @@ const JobChecklistScreen = ({navigation, route}: any) => {
                 </View>
                 <View style={{alignItems: 'flex-end', gap: sw(6)}}>
                   <Text style={[styles.svcPrice, isFree && {color: '#9CA3AF'}]}>
-                    {isFree ? 'FREE' : `₹${Number(svc.price * (svc.qty || 1)).toLocaleString('en-IN')}`}
+                    {isFree ? 'FREE' : `₹${formatAmount(svc.price * (svc.qty || 1))}`}
                   </Text>
                   <TouchableOpacity onPress={() => deleteService(idx)} hitSlop={{top:8,bottom:8,left:8,right:8}}>
                     <Ionicons name="trash-outline" size={sw(16)} color="#DB1919" />
@@ -509,7 +509,7 @@ const JobChecklistScreen = ({navigation, route}: any) => {
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>{hasChanges ? 'New Total' : 'Total'}</Text>
             <Text style={[styles.totalValue, hasChanges && {color: '#C87B1A'}]}>
-              ₹{displayTotal.toLocaleString('en-IN')}
+              ₹{formatAmount(displayTotal)}
               {hasChanges && ' *'}
             </Text>
           </View>
@@ -524,7 +524,7 @@ const JobChecklistScreen = ({navigation, route}: any) => {
           <View style={styles.earningsTopRow}>
             <View>
               <Text style={styles.earningsLabel}>Your Earnings</Text>
-              <Text style={styles.earningsValue}>₹{(hasChanges ? displayTotal : earnings).toLocaleString('en-IN')}</Text>
+              <Text style={styles.earningsValue}>₹{formatAmount(hasChanges ? displayTotal : earnings)}</Text>
             </View>
             <Ionicons name="cash-outline" size={sw(40)} color="rgba(255,255,255,0.2)" />
           </View>
@@ -532,17 +532,17 @@ const JobChecklistScreen = ({navigation, route}: any) => {
             <View style={styles.earningsBreakdown}>
               <View style={styles.earningsBreakdownRow}>
                 <Text style={styles.earningsBreakdownLabel}>Total Booking Amount</Text>
-                <Text style={styles.earningsBreakdownVal}>₹{totalAmount.toLocaleString('en-IN')}</Text>
+                <Text style={styles.earningsBreakdownVal}>₹{formatAmount(totalAmount)}</Text>
               </View>
               {jobTaxAmount > 0 && (
                 <View style={styles.earningsBreakdownRow}>
                   <Text style={styles.earningsBreakdownLabel}>GST (pass-through)</Text>
-                  <Text style={styles.earningsBreakdownVal}>–₹{jobTaxAmount.toLocaleString('en-IN')}</Text>
+                  <Text style={styles.earningsBreakdownVal}>–₹{formatAmount(jobTaxAmount)}</Text>
                 </View>
               )}
               <View style={styles.earningsBreakdownRow}>
                 <Text style={styles.earningsBreakdownLabel}>Admin Commission</Text>
-                <Text style={styles.earningsBreakdownVal}>–₹{adminCommission.toLocaleString('en-IN')}</Text>
+                <Text style={styles.earningsBreakdownVal}>–₹{formatAmount(adminCommission)}</Text>
               </View>
             </View>
           )}
@@ -631,7 +631,7 @@ const JobChecklistScreen = ({navigation, route}: any) => {
                         <View style={{flex: 1}}>
                           <Text style={styles.pickName}>{item.name}</Text>
                           <Text style={styles.pickMeta}>
-                            {item.duration ? `${item.duration} min  ·  ` : ''}₹{Number(item.basePrice).toLocaleString('en-IN')}
+                            {item.duration ? `${item.duration} min  ·  ` : ''}₹{formatAmount(item.basePrice)}
                           </Text>
                           {commission && <Text style={styles.pickCommission}>{commission}</Text>}
                         </View>
@@ -654,7 +654,7 @@ const JobChecklistScreen = ({navigation, route}: any) => {
                       <Ionicons name="add" size={sw(16)} color="#105641" />
                     </TouchableOpacity>
                   </View>
-                  <Text style={styles.qtyTotal}>₹{(Number(selectedSvc.basePrice) * addQty).toLocaleString('en-IN')}</Text>
+                  <Text style={styles.qtyTotal}>₹{formatAmount(Number(selectedSvc.basePrice) * addQty)}</Text>
                 </View>
               )}
               <TouchableOpacity style={[styles.confirmBtn, !selectedSvc && {opacity: 0.5}]}
@@ -699,7 +699,7 @@ const JobChecklistScreen = ({navigation, route}: any) => {
                     <Ionicons name="add" size={sw(16)} color="#105641" />
                   </TouchableOpacity>
                 </View>
-                <Text style={styles.qtyTotal}>₹{((parseFloat(addonPrice) || 0) * addQty).toLocaleString('en-IN')}</Text>
+                <Text style={styles.qtyTotal}>₹{formatAmount((parseFloat(addonPrice) || 0) * addQty)}</Text>
               </View>
               <TouchableOpacity
                 style={[styles.confirmBtn, (!addonName.trim() || !(parseFloat(addonPrice) >= 0)) && {opacity: 0.5}]}
@@ -744,7 +744,7 @@ const JobChecklistScreen = ({navigation, route}: any) => {
                         {item.packageType === 'fixed'
                           ? `${(item.services || []).length} services`
                           : `Pick any ${item.serviceCount} services`}
-                        {'  ·  '}₹{Number(item.price).toLocaleString('en-IN')}
+                        {'  ·  '}₹{formatAmount(item.price)}
                       </Text>
                     </View>
                     <TouchableOpacity
@@ -793,7 +793,7 @@ const JobChecklistScreen = ({navigation, route}: any) => {
                         <View style={{flex: 1}}>
                           <Text style={styles.pickName}>{item.name}</Text>
                           <Text style={styles.pickMeta}>
-                            {item.duration ? `${item.duration} min  ·  ` : ''}₹{Number(item.basePrice).toLocaleString('en-IN')}
+                            {item.duration ? `${item.duration} min  ·  ` : ''}₹{formatAmount(item.basePrice)}
                           </Text>
                         </View>
                         {picked && <Ionicons name="checkmark-circle" size={sw(22)} color="#105641" />}
@@ -812,7 +812,7 @@ const JobChecklistScreen = ({navigation, route}: any) => {
                   disabled={flexiblePicks.length !== pickingPackage.serviceCount || addingPkg}
                   onPress={handleConfirmFlexiblePackage} activeOpacity={0.88}>
                   {addingPkg ? <ActivityIndicator color="#FFFFFF" size="small" /> : (
-                    <Text style={styles.confirmBtnText}>Add Package (₹{Number(pickingPackage.price).toLocaleString('en-IN')})</Text>
+                    <Text style={styles.confirmBtnText}>Add Package (₹{formatAmount(pickingPackage.price)})</Text>
                   )}
                 </TouchableOpacity>
               </View>

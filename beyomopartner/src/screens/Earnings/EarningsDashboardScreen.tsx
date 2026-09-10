@@ -19,6 +19,7 @@ import {useDispatch, useSelector} from 'react-redux';
 import {fonts} from '../../config/theme';
 import {fetchPartnerEarnings, fetchPartnerWallet} from '../../redux/reducers/partner';
 import type {AppDispatch, RootState} from '../../redux/store';
+import {formatAmount} from '../../utils/utils';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
@@ -81,9 +82,9 @@ const EarningsDashboardScreen = ({navigation}: any) => {
 
   const balance = wallet?.partner?.walletBalance ?? 0;
   const settlementLabel = balance > 0
-    ? `You'll receive ₹${Number(balance).toLocaleString('en-IN')}`
+    ? `You'll receive ₹${formatAmount(balance)}`
     : balance < 0
-      ? `You owe admin ₹${Number(-balance).toLocaleString('en-IN')}`
+      ? `You owe admin ₹${formatAmount(-balance)}`
       : 'All settled — no pending dues';
   const settlementColor = balance > 0 ? '#22C55E' : balance < 0 ? '#EF4444' : '#105641';
 
@@ -109,8 +110,8 @@ const EarningsDashboardScreen = ({navigation}: any) => {
   const fmtCurrency = (n: number) => {
     const v = Number(n) || 0;
     return v >= 100000
-      ? `₹${(v / 100000).toFixed(2)}L`
-      : `₹${v.toLocaleString('en-IN', {maximumFractionDigits: 2})}`;
+      ? `₹${(v / 100000).toFixed(1)}L`
+      : `₹${formatAmount(v)}`;
   };
 
   return (
@@ -249,7 +250,7 @@ const EarningsDashboardScreen = ({navigation}: any) => {
                     <Text style={styles.earningService}>{item.service}</Text>
                     <Text style={styles.earningMeta}>{item.orderId}  •  {item.date}</Text>
                   </View>
-                  <Text style={styles.earningNet}>+₹{Number(item.net).toLocaleString('en-IN')}</Text>
+                  <Text style={styles.earningNet}>+₹{formatAmount(item.net)}</Text>
                 </View>
               ))}
             </View>

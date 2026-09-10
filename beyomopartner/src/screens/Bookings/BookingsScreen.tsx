@@ -20,6 +20,7 @@ import {fonts} from '../../config/theme';
 import {useDispatch, useSelector} from 'react-redux';
 import {fetchPartnerBookings} from '../../redux/reducers/partner';
 import api from '../../utils/api';
+import {formatAmount} from '../../utils/utils';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
@@ -162,7 +163,7 @@ const JobCard = ({
         <View style={styles.cardFooter}>
           <View style={styles.amountBlock}>
             <Text style={styles.amountLabel}>Earnings</Text>
-            <Text style={styles.amountValue}>₹{amount.toLocaleString('en-IN')}</Text>
+            <Text style={styles.amountValue}>₹{formatAmount(amount)}</Text>
           </View>
           <View style={[styles.ctaBtn, {backgroundColor: cfg.dot}]}>
             <Text style={styles.ctaText}>

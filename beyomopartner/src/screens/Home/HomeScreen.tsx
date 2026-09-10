@@ -22,14 +22,10 @@ import {fonts} from '../../config/theme';
 import api from '../../utils/api';
 import {endpoints} from '../../config/config';
 import type {RootState} from '../../redux/store';
-import {resolveImageUrl} from '../../utils/utils';
+import {resolveImageUrl, formatAmount} from '../../utils/utils';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
-
-// Same formatting the Profile and Earnings screens use, so one number never reads as two.
-const fmtAmount = (n: any) =>
-  (Number(n) || 0).toLocaleString('en-IN', {maximumFractionDigits: 2});
 
 const STAT_CONFIG = [
   {id: 's1', label: 'Today Jobs', icon: 'people',    iconBg: '#E6F4EC', iconColor: '#2B8A4B', dataKey: 'todayJobs'},
@@ -194,7 +190,7 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
             </View>
             <View style={styles.earningBlock}>
               <Text style={styles.earningLabel}>Total Earning</Text>
-              <Text style={styles.earningValue}>₹{fmtAmount(dashboardData?.totalEarnings)}</Text>
+              <Text style={styles.earningValue}>₹{formatAmount(dashboardData?.totalEarnings)}</Text>
             </View>
           </View>
         </LinearGradient>
@@ -232,7 +228,7 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
             } else if (stat.dataKey === 'totalCompleted') {
               value = String(dashboardData?.bookingStats?.totalCompleted || 0);
             } else if (stat.dataKey === 'todayEarnings') {
-              value = `₹${fmtAmount(dashboardData?.totalEarnings)}`;
+              value = `₹${formatAmount(dashboardData?.totalEarnings)}`;
             } else if (stat.dataKey === 'ratingsAverage') {
               value = String((dashboardData?.ratings?.average || 0).toFixed(1));
             }

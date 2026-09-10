@@ -16,7 +16,8 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {fonts} from '../../config/theme';
 import api from '../../utils/api';
-import {resolveImageUrl} from '../../utils/utils';
+import {resolveImageUrl, formatAmount} from '../../utils/utils';
+import SwipeToConfirm from '../../components/SwipeToConfirm/SwipeToConfirm';
 import {useAppAlert} from '../../hooks/useAppAlert';
 import AppAlertModal from '../../components/AppAlertModal/AppAlertModal';
 
@@ -280,7 +281,7 @@ const IncomingRequestScreen = ({navigation, route}: any) => {
                   ))}
                 </View>
               </View>
-              <Text style={styles.svcPrice}>₹{Number(group.price).toLocaleString('en-IN')}</Text>
+              <Text style={styles.svcPrice}>₹{formatAmount(group.price)}</Text>
             </View>
           ))}
 
@@ -325,7 +326,7 @@ const IncomingRequestScreen = ({navigation, route}: any) => {
                 {/* Right side */}
                 <View style={{alignItems: 'flex-end', gap: sw(4)}}>
                   <Text style={[styles.svcPrice, isTaken && {color: '#9CA3AF'}]}>
-                    ₹{Number(svc.price * (svc.qty || 1)).toLocaleString('en-IN')}
+                    ₹{formatAmount(svc.price * (svc.qty || 1))}
                   </Text>
                   {isTaken && (
                     <View style={styles.takenBadge}>
@@ -351,7 +352,7 @@ const IncomingRequestScreen = ({navigation, route}: any) => {
           <View>
             <Text style={styles.earningsLabel}>Your Earnings</Text>
             <Text style={styles.earningsAmount}>
-              ₹{Number(selectedEarnings).toLocaleString('en-IN')}
+              ₹{formatAmount(selectedEarnings)}
             </Text>
           </View>
           <Ionicons name="cash-outline" size={sw(36)} color="rgba(255,255,255,0.25)" />
@@ -376,38 +377,20 @@ const IncomingRequestScreen = ({navigation, route}: any) => {
 
       {/* ── Bottom action bar ── */}
       <View style={[styles.footer, {paddingBottom: insets.bottom + sw(8)}]}>
-        <View style={styles.actionRow}>
-          <TouchableOpacity style={styles.rejectBtn} activeOpacity={0.85} onPress={handleReject}>
-            <Ionicons name="close-circle-outline" size={sw(20)} color="#DB1919" />
-            <Text style={styles.rejectText}>Reject</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.acceptBtnWrap,
-              (accepting || (isMultiService && unassignedServices.length === 0)) && {opacity: 0.6},
-            ]}
-            activeOpacity={0.85}
-            onPress={handleAccept}
-            disabled={accepting || (isMultiService && unassignedServices.length === 0)}>
-            <LinearGradient
-              colors={['#0E5843', '#022723']}
-              style={styles.acceptGradient}
-              start={{x: 0, y: 0}} end={{x: 1, y: 0}}>
-              {accepting ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
-              ) : (
-                <>
-                  <Ionicons name="checkmark-circle-outline" size={sw(20)} color="#FFFFFF" />
-                  <Text style={styles.acceptText}>
-                    {isMultiService
-                      ? `Accept All (${unassignedServices.length})`
-                      : 'Accept Job'}
-                  </Text>
-                </>
-              )}
-            </LinearGradient>
-          </TouchableOpacity>
-        </View>
+        <SwipeToConfirm
+          label={
+            isMultiService
+              ? `Accept All (${unassignedServices.length})`
+              : 'Accept Job'
+          }
+          onConfirm={handleAccept}
+          disabled={accepting || (isMultiService && unassignedServices.length === 0)}
+          loading={accepting}
+        />
+        <TouchableOpacity style={styles.rejectBtn} activeOpacity={0.85} onPress={handleReject}>
+          <Ionicons name="close-circle-outline" size={sw(18)} color="#DB1919" />
+          <Text style={styles.rejectText}>Reject</Text>
+        </TouchableOpacity>
       </View>
 
       <AppAlertModal config={alertConfig} onRequestClose={hideAlert} />
@@ -533,24 +516,12 @@ const styles = StyleSheet.create({
     elevation: 8, shadowColor: '#000', shadowOffset: {width: 0, height: -3},
     shadowOpacity: 0.08, shadowRadius: 8,
   },
-  actionRow: {flexDirection: 'row', gap: sw(12)},
   rejectBtn: {
-    flex: 1, height: sw(52), borderRadius: sw(12),
-    borderWidth: 1.5, borderColor: '#DB1919',
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: sw(8),
+    height: sw(44), borderRadius: sw(12),
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: sw(6),
     backgroundColor: '#FFFFFF',
   },
-  rejectText: {fontFamily: fonts.title, fontSize: sw(15), fontWeight: '700', color: '#DB1919'},
-  acceptBtnWrap: {
-    flex: 1, borderRadius: sw(12), overflow: 'hidden',
-    elevation: 4, shadowColor: '#012823',
-    shadowOffset: {width: 0, height: 3}, shadowOpacity: 0.25, shadowRadius: 8,
-  },
-  acceptGradient: {
-    height: sw(52), flexDirection: 'row',
-    alignItems: 'center', justifyContent: 'center', gap: sw(8),
-  },
-  acceptText: {fontFamily: fonts.title, fontSize: sw(14), fontWeight: '700', color: '#FFFFFF'},
+  rejectText: {fontFamily: fonts.title, fontSize: sw(14), fontWeight: '700', color: '#DB1919'},
 });
 
 export default IncomingRequestScreen;

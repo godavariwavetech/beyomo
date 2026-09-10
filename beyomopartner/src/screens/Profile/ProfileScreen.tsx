@@ -17,7 +17,7 @@ import {fonts} from '../../config/theme';
 import {useDispatch, useSelector} from 'react-redux';
 import {fetchPartnerProfile, fetchPartnerDashboard} from '../../redux/reducers/partner';
 import {logoutPartner, actionLogout} from '../../redux/reducers/auth';
-import {resolveImageUrl} from '../../utils/utils';
+import {resolveImageUrl, formatAmount} from '../../utils/utils';
 import {useAppAlert} from '../../hooks/useAppAlert';
 import AppAlertModal from '../../components/AppAlertModal/AppAlertModal';
 
@@ -126,7 +126,7 @@ const ProfileScreen = ({navigation}: {navigation: any}) => {
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
             <Text style={styles.statVal}>
-              ₹{(Number(earned) || 0).toLocaleString('en-IN', {maximumFractionDigits: 2})}
+              ₹{formatAmount(earned)}
             </Text>
             <Text style={styles.statLabel}>Earned</Text>
           </View>
