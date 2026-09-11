@@ -18,6 +18,7 @@ import api from '../../utils/api';
 import {endpoints} from '../../config/config';
 import CartBar from '../../components/CartBar/CartBar';
 import type {RootState} from '../../redux/store';
+import {formatAmount} from '../../utils/utils';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
@@ -95,7 +96,7 @@ const PackageListingScreen = ({navigation, route}: Props) => {
                     </Text>
                   </View>
                   <View style={styles.comboPriceBand}>
-                    <Text style={styles.comboPriceText}>₹{Math.round(combo.price)}</Text>
+                    <Text style={styles.comboPriceText}>₹{formatAmount(combo.price)}</Text>
                   </View>
                   <View style={styles.comboBody}>
                     {(combo.services ?? []).map((svc: any, idx: number) => (
@@ -143,7 +144,7 @@ const PackageListingScreen = ({navigation, route}: Props) => {
                   />
                   {savings ? (
                     <View style={styles.savingsBadge}>
-                      <Text style={styles.savingsText}>Save ₹{savings}</Text>
+                      <Text style={styles.savingsText}>Save ₹{formatAmount(savings)}</Text>
                     </View>
                   ) : null}
                   <View style={styles.cardBody}>
@@ -152,9 +153,9 @@ const PackageListingScreen = ({navigation, route}: Props) => {
                       <Text style={styles.cardDesc} numberOfLines={2}>{pkg.description}</Text>
                     )}
                     <View style={styles.priceRow}>
-                      <Text style={styles.price}>₹{Math.round(pkg.price)}</Text>
+                      <Text style={styles.price}>₹{formatAmount(pkg.price)}</Text>
                       {pkg.originalPrice && pkg.originalPrice > pkg.price ? (
-                        <Text style={styles.originalPrice}>₹{Math.round(pkg.originalPrice)}</Text>
+                        <Text style={styles.originalPrice}>₹{formatAmount(pkg.originalPrice)}</Text>
                       ) : null}
                     </View>
                   </View>

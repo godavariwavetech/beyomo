@@ -72,6 +72,10 @@ const ADDITIVE_SCHEMA = [
   "ALTER TABLE partners ADD COLUMN IF NOT EXISTS bankIfsc VARCHAR(20) NULL",
   "ALTER TABLE partners ADD COLUMN IF NOT EXISTS bankName VARCHAR(100) NULL",
   "ALTER TABLE partners ADD COLUMN IF NOT EXISTS bankHolderName VARCHAR(100) NULL",
+  // Partner availability. lastSeenAt goes with isOnline so a partner who force-quits
+  // the app or loses signal ages out of "online" instead of being stuck there.
+  "ALTER TABLE partners ADD COLUMN IF NOT EXISTS isOnline TINYINT(1) NOT NULL DEFAULT 0",
+  "ALTER TABLE partners ADD COLUMN IF NOT EXISTS lastSeenAt DATETIME NULL",
   // Admin-selected packages/combos + categories featured on the app home screen
   "ALTER TABLE service_packages ADD COLUMN IF NOT EXISTS showOnHome TINYINT(1) NOT NULL DEFAULT 0",
   "ALTER TABLE service_categories ADD COLUMN IF NOT EXISTS showOnHome TINYINT(1) NOT NULL DEFAULT 0",
@@ -79,6 +83,10 @@ const ADDITIVE_SCHEMA = [
   "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS createdByAdminId INT NULL",
   // Admin-configurable display order for services within a category
   "ALTER TABLE services ADD COLUMN IF NOT EXISTS sortOrder INT NOT NULL DEFAULT 0",
+  // ...and the same for packages/combos. The model has carried sortOrder for a while
+  // but it never had an ALTER here, so every table created before it was added is
+  // missing the column and every package query dies on "Unknown column 'sortOrder'".
+  "ALTER TABLE service_packages ADD COLUMN IF NOT EXISTS sortOrder INT NOT NULL DEFAULT 0",
   // How many copies of a package/combo were booked (mirrors per-service qty)
   "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS packageQty INT NOT NULL DEFAULT 1",
   // Multi-package bookings — each entry keeps its own price/discount/revenue split

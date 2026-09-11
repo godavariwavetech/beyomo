@@ -27,6 +27,8 @@ import CartBar from '../../components/CartBar/CartBar';
 import type {AppDispatch, RootState} from '../../redux/store';
 import api from '../../utils/api';
 import {endpoints} from '../../config/config';
+import {formatAmount} from '../../utils/utils';
+import {useKeyboardVisible} from '../../utils/useKeyboardVisible';
 
 const BRAND_LOGOS = [
   require('../../assets/brands/b1.png'),
@@ -111,6 +113,7 @@ const chunkArray = <T,>(arr: T[], size: number): T[][] => {
 
 const HomeScreen = ({navigation}: {navigation: any}) => {
   const insets = useSafeAreaInsets();
+  const keyboardVisible = useKeyboardVisible();
   const dispatch = useDispatch<AppDispatch>();
   const {categories, loading} = useSelector((state: RootState) => state.Services);
   const selectedCity = useSelector((state: RootState) => state.City?.selectedCity);
@@ -121,7 +124,6 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
   const cartServices = useSelector((state: RootState) => (state as any).Cart?.services ?? []);
   const [banners, setBanners] = useState<any[]>([]);
   const [popularServices, setPopularServices] = useState<any[]>([]);
-  const [addedPopular, setAddedPopular] = useState<Set<string>>(new Set());
   const [packageStats, setPackageStats] = useState<{flexibleMinPrice: number | null; flexibleCount: number; fixedMinPrice: number | null; fixedCount: number}>({flexibleMinPrice: null, flexibleCount: 0, fixedMinPrice: null, fixedCount: 0});
 
   const [loadedServices, setLoadedServices] = useState<Set<string>>(new Set());
@@ -207,7 +209,6 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
     (searchResults.offers?.length ?? 0) > 0;
 
   const loadHomeData = () => {
-    setAddedPopular(new Set());
     const bannersPromise = api.get(endpoints.BANNERS).then(res => {
       if (res.data?.status) setBanners(res.data.data ?? []);
     }).catch(() => {});
@@ -254,7 +255,6 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
       image: svc.image,
       qty: 1,
     }]));
-    setAddedPopular(prev => new Set(prev).add(id));
   };
 
   useEffect(() => {
@@ -310,18 +310,20 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
         />
 
         <View style={styles.headerRow}>
-          <TouchableOpacity
-            activeOpacity={0.7}
-            style={styles.locationBtn}
-            onPress={() => navigation.navigate('CitySelector', {returnToHome: true})}>
-            <Ionicons name="location-sharp" size={sw(12)} color="#FFFFFF" />
-            <View style={styles.locationNameRow}>
-              <Text style={styles.locationName} numberOfLines={1}>
-                {selectedCity?.name ?? 'Select City'}
-              </Text>
-              <Ionicons name="chevron-down-outline" size={sw(10)} color="#FFFFFF" />
-            </View>
-          </TouchableOpacity>
+          <View style={styles.headerSide}>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              style={styles.locationBtn}
+              onPress={() => navigation.navigate('CitySelector', {returnToHome: true})}>
+              <Ionicons name="location-sharp" size={sw(12)} color="#FFFFFF" />
+              <View style={styles.locationNameRow}>
+                <Text style={styles.locationName} numberOfLines={1}>
+                  {selectedCity?.name ?? 'Select City'}
+                </Text>
+                <Ionicons name="chevron-down-outline" size={sw(10)} color="#FFFFFF" />
+              </View>
+            </TouchableOpacity>
+          </View>
 
           <Image
             source={require('../../assets/beyomo_logo.png')}
@@ -329,7 +331,7 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
             resizeMode="contain"
           />
 
-          <View style={styles.iconsGroup}>
+          <View style={[styles.headerSide, styles.headerSideRight]}>
             <TouchableOpacity activeOpacity={0.7} style={styles.bellBtn} onPress={() => Linking.openURL('https://wa.me/919885909192')}>
               <Ionicons name="logo-whatsapp" size={sw(24)} color="#25D366" />
             </TouchableOpacity>
@@ -391,7 +393,7 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
                         {svc.category?.name ?? ''}{svc.duration ? ` · ${svc.duration} mins` : ''}
                       </Text>
                     </View>
-                    <Text style={styles.searchRowPrice}>₹{Math.round(svc.price ?? svc.basePrice ?? 0)}</Text>
+                    <Text style={styles.searchRowPrice}>₹{formatAmount(svc.price ?? svc.basePrice ?? 0)}</Text>
                   </TouchableOpacity>
                 ))}
               </>
@@ -406,7 +408,7 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
                     <View style={{flex: 1}}>
                       <Text style={styles.searchRowTitle} numberOfLines={1}>{pkg.title}</Text>
                     </View>
-                    <Text style={styles.searchRowPrice}>₹{Math.round(pkg.price ?? 0)}</Text>
+                    <Text style={styles.searchRowPrice}>₹{formatAmount(pkg.price ?? 0)}</Text>
                   </TouchableOpacity>
                 ))}
               </>
@@ -485,7 +487,7 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
               {packageStats.flexibleCount > 0 && (
                 <Text style={styles.ctaCaption} numberOfLines={1}>
                   {packageStats.flexibleCount} {packageStats.flexibleCount === 1 ? 'package' : 'packages'}
-                  {packageStats.flexibleMinPrice != null ? ` · from ₹${packageStats.flexibleMinPrice.toLocaleString('en-IN')}` : ''}
+                  {packageStats.flexibleMinPrice != null ? ` · from ₹${formatAmount(packageStats.flexibleMinPrice)}` : ''}
                 </Text>
               )}
             </TouchableOpacity>
@@ -504,7 +506,7 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
               {packageStats.fixedCount > 0 && (
                 <Text style={styles.ctaCaption} numberOfLines={1}>
                   {packageStats.fixedCount} {packageStats.fixedCount === 1 ? 'combo' : 'combos'}
-                  {packageStats.fixedMinPrice != null ? ` · from ₹${packageStats.fixedMinPrice.toLocaleString('en-IN')}` : ''}
+                  {packageStats.fixedMinPrice != null ? ` · from ₹${formatAmount(packageStats.fixedMinPrice)}` : ''}
                 </Text>
               )}
             </TouchableOpacity>
@@ -615,7 +617,7 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
                         </View>
                       ) : null}
                       <Text style={styles.popularPrice}>
-                        {svc.priceStartsFrom ? 'From ' : ''}₹{Math.round(parseFloat(svc.basePrice) || 0).toLocaleString('en-IN')}
+                        {svc.priceStartsFrom ? 'From ' : ''}₹{formatAmount(parseFloat(svc.basePrice) || 0)}
                       </Text>
                       {qty === 0 ? (
                         <TouchableOpacity
@@ -684,7 +686,9 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
         </View>
 
       </ScrollView>
-      <CartBar navigation={navigation} />
+      {/* Search pulls up the keypad over the bottom of the screen — the cart bar
+          (and the tab bar below it) would just ride on top of it. */}
+      {!keyboardVisible && <CartBar navigation={navigation} />}
     </View>
   );
 };
@@ -933,10 +937,18 @@ const styles = StyleSheet.create({
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: sw(12),
     paddingTop: sw(14),
     paddingBottom: sw(4),
+  },
+  // The location button and the WhatsApp icon are different widths, so
+  // space-between left the logo sitting right of centre. Equal flex sides pin it
+  // to the true middle of the row whatever the city name is.
+  headerSide: {
+    flex: 1,
+  },
+  headerSideRight: {
+    alignItems: 'flex-end',
   },
   headerLogo: {
     width: sw(150.19),
@@ -958,11 +970,6 @@ const styles = StyleSheet.create({
     fontSize: sw(13),
     color: '#FFFFFF',
     maxWidth: sw(78),
-  },
-  iconsGroup: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: sw(12),
   },
   bellBtn: {
     width: sw(28),

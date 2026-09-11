@@ -1,13 +1,15 @@
-import React, {useState, useRef, useEffect} from 'react';
+import React, {useState, useRef, useEffect, useCallback} from 'react';
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   StyleSheet,
   Dimensions,
   StatusBar,
   KeyboardAvoidingView,
+  Keyboard,
   Platform,
   ActivityIndicator,
   Image,
@@ -23,6 +25,8 @@ import {verifyLoginOtp, requestLoginOtp, clearMessage} from '../../redux/reducer
 import {setSelectedCity} from '../../redux/reducers/city';
 import {findCityForLocation} from '../../utils/geoUtils';
 import type {AppDispatch, RootState} from '../../redux/store';
+import {pollOtpAutofill, cancelOtpAutofill} from '../../utils/otpAutofill';
+import {resetTo} from '../../navigation/navigationReset';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
@@ -45,10 +49,45 @@ const OTPScreen = ({navigation, route}: any) => {
   const {loading, message} = useSelector((state: RootState) => state.Auth);
   const selectedCity = useSelector((state: RootState) => state.City?.selectedCity);
 
-  const [otp, setOtp] = useState<string[]>(Array(OTP_LENGTH).fill(''));
+  // The whole code lives in one string behind a single input — see the row below.
+  const [otp, setOtp] = useState('');
+  const [focused, setFocused] = useState(false);
   const [timer, setTimer] = useState(RESEND_SECONDS);
   const [detecting, setDetecting] = useState(false);
-  const inputRefs = useRef<TextInput[]>([]);
+  const inputRef = useRef<TextInput>(null);
+  const submittedRef = useRef('');
+
+  const stopAutofillWatch = useRef<() => void>(() => {});
+
+  // Android asks the autofill service for suggestions once, when the field takes
+  // focus — seconds before the SMS lands, so the first ask comes back empty and the
+  // session closes. Re-asking on a backing-off schedule is what makes the code turn
+  // up above the keyboard once the provider has actually seen the message.
+  const startAutofillWatch = useCallback(() => {
+    stopAutofillWatch.current();
+    stopAutofillWatch.current = pollOtpAutofill();
+  }, []);
+
+  // RN's autoFocus fires before the view is attached, which is too early for the
+  // autofill framework to open a session on it — the field ends up focused with
+  // autofill never having been consulted. Deferring gives it a laid-out view.
+  useEffect(() => {
+    const id = setTimeout(() => {
+      inputRef.current?.focus();
+      startAutofillWatch();
+    }, 350);
+    return () => {
+      clearTimeout(id);
+      stopAutofillWatch.current();
+      cancelOtpAutofill();
+    };
+  }, [startAutofillWatch]);
+
+  // Once there are digits in the field the suggestion has either been taken or the
+  // user is typing; either way stop popping the dropdown over them.
+  useEffect(() => {
+    if (otp.length > 0) stopAutofillWatch.current();
+  }, [otp]);
 
   useEffect(() => {
     if (timer <= 0) return;
@@ -62,32 +101,31 @@ const OTPScreen = ({navigation, route}: any) => {
     };
   }, [dispatch]);
 
-  const handleChange = (val: string, idx: number) => {
-    const digit = val.replace(/\D/g, '').slice(-1);
-    const next = [...otp];
-    next[idx] = digit;
-    setOtp(next);
-    if (digit && idx < OTP_LENGTH - 1) {
-      inputRefs.current[idx + 1]?.focus();
+  // Verified users go to Main with the history wiped — `replace` only swaps OTP out
+  // and leaves Login underneath, so Android back dropped a signed-in user back onto
+  // the phone-number page. New users still get Login behind Register, so backing out
+  // of sign-up returns somewhere sensible rather than closing the app.
+  const goNext = (nextRoute: string) => {
+    if (nextRoute === 'Main') {
+      resetTo(navigation, 'Main');
+    } else {
+      navigation.replace(nextRoute);
     }
   };
 
-  const handleKeyPress = (e: any, idx: number) => {
-    if (e.nativeEvent.key === 'Backspace' && !otp[idx] && idx > 0) {
-      inputRefs.current[idx - 1]?.focus();
-    }
+  const handleChange = (val: string) => {
+    setOtp(val.replace(/\D/g, '').slice(0, OTP_LENGTH));
   };
 
   const handleVerify = async () => {
-    const otpString = otp.join('');
-    if (otpString.length < OTP_LENGTH || loading || detecting) return;
-    const result = await dispatch(verifyLoginOtp({phone, otp: otpString}));
+    if (otp.length < OTP_LENGTH || loading || detecting) return;
+    const result = await dispatch(verifyLoginOtp({phone, otp}));
     if (verifyLoginOtp.fulfilled.match(result)) {
       const isNew = result.payload?.data?.isNew ?? false;
       const nextRoute = isNew ? 'Register' : 'Main';
 
       if (selectedCity) {
-        navigation.replace(nextRoute);
+        goNext(nextRoute);
         return;
       }
 
@@ -117,7 +155,7 @@ const OTPScreen = ({navigation, route}: any) => {
               const matched = findCityForLocation(pos.lat, pos.lng, cities);
               if (matched) {
                 dispatch(setSelectedCity(matched));
-                navigation.replace(nextRoute);
+                goNext(nextRoute);
                 return;
               }
             } catch { /* GPS timeout */ }
@@ -128,19 +166,36 @@ const OTPScreen = ({navigation, route}: any) => {
       // GPS failed, denied, or outside service area — default to Nellore
       const fallbackCity = cities.find((c: any) => c.name === 'Nellore') ?? cities[0] ?? null;
       if (fallbackCity) dispatch(setSelectedCity(fallbackCity));
-      navigation.replace(nextRoute);
+      goNext(nextRoute);
     }
   };
 
+  // The code is only ever complete because the user finished typing it or the SMS
+  // autofill dropped all four digits in at once — either way there is nothing left to
+  // decide, so verify without making them reach for the button. Keyed on the code
+  // itself so a rejected one can be corrected and retried, but a single fill never
+  // fires twice.
+  useEffect(() => {
+    if (otp.length !== OTP_LENGTH || loading || detecting) return;
+    if (submittedRef.current === otp) return;
+    submittedRef.current = otp;
+    Keyboard.dismiss();
+    handleVerify();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [otp]);
+
   const handleResend = async () => {
     if (timer > 0 || loading) return;
-    setOtp(Array(OTP_LENGTH).fill(''));
+    setOtp('');
+    submittedRef.current = '';
     setTimer(RESEND_SECONDS);
-    inputRefs.current[0]?.focus();
+    inputRef.current?.focus();
+    // A fresh round of autofill asks for the new code.
+    startAutofillWatch();
     dispatch(requestLoginOtp(phone));
   };
 
-  const isComplete = otp.every(d => d !== '');
+  const isComplete = otp.length === OTP_LENGTH;
   const isBusy = loading || detecting;
 
   return (
@@ -177,24 +232,46 @@ const OTPScreen = ({navigation, route}: any) => {
             <Text style={styles.cardSubtitle}>We've sent a 4-digit code to</Text>
             <Text style={styles.phoneDisplay}>+91 {phone}</Text>
 
-            <View style={styles.otpRow}>
-              {otp.map((digit, idx) => (
+            {/* One real input holding the whole code, stretched invisibly across the
+                row; the boxes are just its display. Four separate inputs could never
+                take an SMS autofill — the keyboard commits the full code into the one
+                box that has focus, and everything past its single character is
+                dropped on the floor before JS ever sees it. */}
+            <TouchableWithoutFeedback onPress={() => inputRef.current?.focus()}>
+              <View style={styles.otpRow}>
+                {Array.from({length: OTP_LENGTH}).map((_, idx) => {
+                  const digit = otp[idx] ?? '';
+                  const isCaret = focused && idx === Math.min(otp.length, OTP_LENGTH - 1);
+                  return (
+                    <View
+                      key={idx}
+                      style={[
+                        styles.otpBox,
+                        digit ? styles.otpBoxFilled : null,
+                        isCaret ? styles.otpBoxActive : null,
+                      ]}>
+                      <Text style={styles.otpDigit}>{digit}</Text>
+                    </View>
+                  );
+                })}
                 <TextInput
-                  key={idx}
-                  ref={r => {
-                    if (r) inputRefs.current[idx] = r;
-                  }}
-                  style={[styles.otpBox, digit ? styles.otpBoxFilled : null]}
+                  ref={inputRef}
+                  style={styles.otpHiddenInput}
+                  value={otp}
+                  onChangeText={handleChange}
+                  onFocus={() => setFocused(true)}
+                  onBlur={() => setFocused(false)}
                   keyboardType="number-pad"
-                  maxLength={1}
-                  value={digit}
-                  onChangeText={val => handleChange(val, idx)}
-                  onKeyPress={e => handleKeyPress(e, idx)}
+                  maxLength={OTP_LENGTH}
+                  autoComplete="sms-otp"
+                  textContentType="oneTimeCode"
+                  importantForAutofill="yes"
                   caretHidden
-                  selectTextOnFocus
+                  selectionColor="transparent"
+                  underlineColorAndroid="transparent"
                 />
-              ))}
-            </View>
+              </View>
+            </TouchableWithoutFeedback>
 
             {message ? <Text style={styles.errorText}>{message}</Text> : null}
 
@@ -308,6 +385,10 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: 'rgba(255,255,255,0.25)',
     backgroundColor: 'rgba(255,255,255,0.08)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  otpDigit: {
     color: '#FEFEFE',
     fontSize: sw(20),
     fontFamily: fonts.title,
@@ -317,6 +398,26 @@ const styles = StyleSheet.create({
   otpBoxFilled: {
     borderColor: '#FDD77A',
     backgroundColor: 'rgba(253,215,122,0.10)',
+  },
+  // Marks where the next digit lands, standing in for the hidden caret.
+  otpBoxActive: {
+    borderColor: '#FDD77A',
+  },
+  // The only thing actually being typed into, covering the whole row so a tap
+  // anywhere on it lands here. Blanked with transparent text rather than
+  // `opacity: 0` on purpose: Android treats a zero-alpha view as not visible to
+  // the user and then refuses to offer autofill or the keyboard's SMS-code
+  // suggestion on it, which is exactly what we need it to receive.
+  otpHiddenInput: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    color: 'transparent',
+    backgroundColor: 'transparent',
+    fontSize: sw(20),
+    textAlign: 'center',
   },
   errorText: {
     fontFamily: fonts.textFont,

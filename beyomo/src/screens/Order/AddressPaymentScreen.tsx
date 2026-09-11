@@ -30,6 +30,8 @@ import {
 } from '../../redux/reducers/cart';
 import {payWithRazorpay, openQuoteCheckout} from '../../utils/payments';
 import type {RootState} from '../../redux/store';
+import {formatAmount} from '../../utils/utils';
+import {isCityServiceable} from '../../utils/geoUtils';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
@@ -100,17 +102,9 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
   const selectedCity = useSelector((state: RootState) => (state as any).City?.selectedCity);
   const addresses: SavedAddress[] = profile?.addresses ?? [];
 
-  // Same rule as the website's Checkout and MyAddressesScreen: without a serviceable
-  // city chosen there's nothing to validate against, so nothing is blocked; once one's
-  // picked, only addresses within it can be booked against.
-  const isLocationAvailable = (city?: string | null) => {
-    if (!selectedCity) return true;
-    if (!city) return false;
-    return city.toLowerCase().includes(selectedCity.name.toLowerCase());
-  };
-  const selectableAddresses = selectedCity
-    ? addresses.filter(a => isLocationAvailable(a.city))
-    : addresses;
+  const isLocationAvailable = (city?: string | null) =>
+    isCityServiceable(city, selectedCity);
+  const selectableAddresses = addresses.filter(a => isLocationAvailable(a.city));
 
   const [selectedAddr, setSelectedAddr] = useState<SavedAddress | null>(null);
   const [showAddrModal, setShowAddrModal] = useState(false);
@@ -431,7 +425,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
     if (subtotal < MIN_BOOKING_AMOUNT) {
       Alert.alert(
         'Minimum Booking Amount',
-        `Please add services worth at least ₹${MIN_BOOKING_AMOUNT} to continue. You're ₹${MIN_BOOKING_AMOUNT - subtotal} away.`,
+        `Please add services worth at least ₹${formatAmount(MIN_BOOKING_AMOUNT)} to continue. You're ₹${formatAmount(MIN_BOOKING_AMOUNT - subtotal)} away.`,
       );
       return;
     }
@@ -784,11 +778,11 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
             </View>
             <View style={styles.packagePriceRow}>
               <Text style={styles.packageBannerPrice}>
-                ₹{Math.round(item.packagePrice * item.qty).toLocaleString('en-IN')}
+                ₹{formatAmount(item.packagePrice * item.qty)}
               </Text>
               {item.packageOriginalPrice > item.packagePrice && (
                 <Text style={styles.packageBannerOriginal}>
-                  ₹{Math.round(item.packageOriginalPrice * item.qty).toLocaleString('en-IN')}
+                  ₹{formatAmount(item.packageOriginalPrice * item.qty)}
                 </Text>
               )}
             </View>
@@ -825,17 +819,17 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
             </View>
             <View style={styles.packagePriceRow}>
               <Text style={styles.packageBannerPrice}>
-                ₹{Math.round((routePackagePrice ?? 0) * currentPackageQty).toLocaleString('en-IN')}
+                ₹{formatAmount((routePackagePrice ?? 0) * currentPackageQty)}
               </Text>
               {packageItemsIndividualSum > (routePackagePrice ?? 0) * currentPackageQty && (
                 <Text style={styles.packageBannerOriginal}>
-                  ₹{Math.round(packageItemsIndividualSum).toLocaleString('en-IN')}
+                  ₹{formatAmount(packageItemsIndividualSum)}
                 </Text>
               )}
               {packageSavings > 0 && (
                 <View style={styles.packageSavingChip}>
                   <Text style={styles.packageSavingChipText}>
-                    Save ₹{Math.round(packageSavings).toLocaleString('en-IN')}
+                    Save ₹{formatAmount(packageSavings)}
                   </Text>
                 </View>
               )}
@@ -873,7 +867,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
                 {(item as any).isPackageItem ? (
                   <>
                     <Text style={styles.priceTextStrikethrough}>
-                      ₹{(item.price * item.qty).toLocaleString('en-IN')}
+                      ₹{formatAmount(item.price * item.qty)}
                     </Text>
                     <View style={styles.includedTag}>
                       <Ionicons name="checkmark-circle" size={sw(13)} color="#105641" />
@@ -890,7 +884,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
                 ) : (
                   <>
                     <Text style={styles.priceText}>
-                      ₹{(item.price * item.qty).toLocaleString('en-IN')}
+                      ₹{formatAmount(item.price * item.qty)}
                     </Text>
                     <View style={styles.stepper}>
                       <TouchableOpacity
@@ -1079,7 +1073,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
                     {item.packageTitle}{item.qty > 1 ? ` ×${item.qty}` : ''}
                   </Text>
                   <Text style={styles.billValue}>
-                    ₹{(item.packagePrice * item.qty).toLocaleString('en-IN')}
+                    ₹{formatAmount(item.packagePrice * item.qty)}
                   </Text>
                 </View>
               ))}
@@ -1089,7 +1083,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
                     {s.name}{s.qty > 1 ? ` ×${s.qty}` : ''}
                   </Text>
                   <Text style={styles.billValue}>
-                    ₹{(s.price * s.qty).toLocaleString('en-IN')}
+                    ₹{formatAmount(s.price * s.qty)}
                   </Text>
                 </View>
               ))}
@@ -1098,7 +1092,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
                   <View style={styles.billRow}>
                     <Text style={[styles.billLabel, {color: '#105641'}]}>Package Savings</Text>
                     <Text style={[styles.billValue, {color: '#105641'}]}>
-                      −₹{packageSavings.toLocaleString('en-IN')}
+                      −₹{formatAmount(packageSavings)}
                     </Text>
                   </View>
                 )
@@ -1107,14 +1101,14 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
                   <View style={styles.billRow}>
                     <Text style={[styles.billLabel, {fontWeight: '600'}]}>Package Price</Text>
                     <Text style={[styles.billValue, {fontWeight: '600'}]}>
-                      ₹{(routePackagePrice ?? 0).toLocaleString('en-IN')}
+                      ₹{formatAmount(routePackagePrice ?? 0)}
                     </Text>
                   </View>
                   {extraItemsSubtotal > 0 && (
                     <View style={styles.billRow}>
                       <Text style={[styles.billLabel, {fontWeight: '600'}]}>Extra Services</Text>
                       <Text style={[styles.billValue, {fontWeight: '600'}]}>
-                        ₹{extraItemsSubtotal.toLocaleString('en-IN')}
+                        ₹{formatAmount(extraItemsSubtotal)}
                       </Text>
                     </View>
                   )}
@@ -1122,7 +1116,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
                     <View style={styles.billRow}>
                       <Text style={[styles.billLabel, {color: '#105641'}]}>Package Savings</Text>
                       <Text style={[styles.billValue, {color: '#105641'}]}>
-                        −₹{packageSavings.toLocaleString('en-IN')}
+                        −₹{formatAmount(packageSavings)}
                       </Text>
                     </View>
                   )}
@@ -1131,7 +1125,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
                 <View style={styles.billRow}>
                   <Text style={[styles.billLabel, {fontWeight: '600'}]}>Service Value</Text>
                   <Text style={[styles.billValue, {fontWeight: '600'}]}>
-                    ₹{subtotal.toLocaleString('en-IN')}
+                    ₹{formatAmount(subtotal)}
                   </Text>
                 </View>
               )}
@@ -1141,7 +1135,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
                     Coupon ({appliedCoupon?.code})
                   </Text>
                   <Text style={[styles.billValue, {color: '#105641'}]}>
-                    −₹{couponDiscount.toLocaleString('en-IN')}
+                    −₹{formatAmount(couponDiscount)}
                   </Text>
                 </View>
               )}
@@ -1159,7 +1153,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
               </View>
               <View style={styles.billRow}>
                 <Text style={styles.billLabel}>Taxes & GST (5%)</Text>
-                <Text style={styles.billValue}>₹{tax}</Text>
+                <Text style={styles.billValue}>₹{formatAmount(tax)}</Text>
               </View>
               <View style={styles.divider} />
               <View style={styles.toPayRow}>
@@ -1168,7 +1162,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
                   <Text style={styles.toPayLabel}>To Pay</Text>
                   <Text style={styles.toPaySub}>Inclusive Of All Taxes And Charges</Text>
                 </View>
-                <Text style={styles.toPayAmount}>₹{total}</Text>
+                <Text style={styles.toPayAmount}>₹{formatAmount(total)}</Text>
               </View>
             </View>
           )}
@@ -1316,7 +1310,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
           {addSvcCart.length > 0 && (
             <View style={styles.addSvcCartBar}>
               <Text style={styles.addSvcCartText}>{addSvcCart.length} selected</Text>
-              <Text style={styles.addSvcCartPrice}>₹{addSvcCartTotal.toLocaleString('en-IN')}</Text>
+              <Text style={styles.addSvcCartPrice}>₹{formatAmount(addSvcCartTotal)}</Text>
             </View>
           )}
 
@@ -1343,7 +1337,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
                       }}>
                       <Text style={[styles.addSvcItemName, isSelected && styles.addSvcItemNameSelected]}>{item.name}</Text>
                       <Text style={styles.addSvcItemMeta}>
-                        {item.duration ? `${item.duration} min  •  ` : ''}₹{parseFloat(item.basePrice ?? 0).toLocaleString('en-IN')}
+                        {item.duration ? `${item.duration} min  •  ` : ''}₹{formatAmount(parseFloat(item.basePrice ?? 0))}
                       </Text>
                     </TouchableOpacity>
                     {isSelected ? (
@@ -1387,13 +1381,13 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
         <View style={styles.minAmountBanner}>
           <Ionicons name="information-circle" size={sw(14)} color="#B45309" />
           <Text style={styles.minAmountText}>
-            Add ₹{MIN_BOOKING_AMOUNT - subtotal} more to reach the ₹{MIN_BOOKING_AMOUNT} minimum booking amount
+            Add ₹{formatAmount(MIN_BOOKING_AMOUNT - subtotal)} more to reach the ₹{formatAmount(MIN_BOOKING_AMOUNT)} minimum booking amount
           </Text>
         </View>
       )}
       <View style={[styles.bottomBar, {paddingBottom: insets.bottom + sw(8)}]}>
         <View>
-          <Text style={styles.bottomPrice}>₹{total}</Text>
+          <Text style={styles.bottomPrice}>₹{formatAmount(total)}</Text>
           <View style={styles.bottomSubRow}>
             <Text style={styles.bottomSub}>Inclusive all taxes</Text>
             <Ionicons name="information-circle-outline" size={sw(12)} color="#454545" />

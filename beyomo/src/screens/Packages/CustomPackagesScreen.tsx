@@ -20,6 +20,7 @@ import {endpoints} from '../../config/config';
 import {addPackageToCart} from '../../redux/reducers/cart';
 import CartBar from '../../components/CartBar/CartBar';
 import type {RootState} from '../../redux/store';
+import {formatAmount} from '../../utils/utils';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
@@ -172,7 +173,7 @@ const CustomPackagesScreen = ({navigation}: Props) => {
                   activeOpacity={0.85}
                   onPress={() => scrollToPackage(pkg.id)}>
                   <Text style={styles.quickCardTitle} numberOfLines={2}>{pkg.title}</Text>
-                  <Text style={styles.quickCardPrice}>₹{Math.round(pkg.price)}</Text>
+                  <Text style={styles.quickCardPrice}>₹{formatAmount(pkg.price)}</Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -220,9 +221,9 @@ const CustomPackagesScreen = ({navigation}: Props) => {
                   ) : null}
 
                   <View style={styles.priceRow}>
-                    <Text style={styles.price}>₹{Math.round(pkg.price)}</Text>
+                    <Text style={styles.price}>₹{formatAmount(pkg.price)}</Text>
                     {pkg.originalPrice > pkg.price && (
-                      <Text style={styles.originalPrice}>₹{Math.round(pkg.originalPrice)}</Text>
+                      <Text style={styles.originalPrice}>₹{formatAmount(pkg.originalPrice)}</Text>
                     )}
                     {discountPct > 0 && (
                       <Text style={styles.discount}>{discountPct}% OFF</Text>

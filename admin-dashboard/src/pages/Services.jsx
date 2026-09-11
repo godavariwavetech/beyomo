@@ -935,6 +935,10 @@ export default function Services() {
 
       {/* Add Service Modal */}
       <Modal isOpen={adding} onClose={() => setAdding(false)} title="Add New Service"
+        // Same as Manage Categories: a stray backdrop click threw away a half-filled
+        // new-service form. Close via the header X or the footer Cancel button.
+        dismissOnBackdrop={false}
+        dismissOnEscape={false}
         footer={
           <>
             <button className="btn btn-outline" onClick={() => setAdding(false)}>Cancel</button>
@@ -1020,6 +1024,10 @@ export default function Services() {
 
       {/* Manage Categories Modal */}
       <Modal isOpen={managingCats} onClose={() => { setMngCats(false); setEditingCat(null); setCatForm({ cityIds: [], adminPercent: 20, partnerPercent: 80, gstPercent: 5 }); }} title="Manage Categories" size="md"
+        // Closing only via the header X or the footer Close button: this form holds
+        // unsaved category edits, and a stray click on the backdrop discarded them.
+        dismissOnBackdrop={false}
+        dismissOnEscape={false}
         footer={
           <div style={{ display: 'flex', gap: 8, width: '100%', justifyContent: 'space-between' }}>
             <button className="btn btn-outline btn-sm" onClick={seedCategories} disabled={seedingCats} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>

@@ -16,6 +16,7 @@ import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {fonts} from '../../config/theme';
 import api from '../../utils/api';
 import {endpoints} from '../../config/config';
+import {formatAmount} from '../../utils/utils';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
@@ -82,7 +83,7 @@ const ReferEarnScreen = ({navigation}: any) => {
           <View style={styles.creditsRow}>
             <View style={styles.creditPill}>
               <Ionicons name="wallet-outline" size={sw(14)} color="#FDD77A" />
-              <Text style={styles.creditText}>Your Credits: ₹{credits}</Text>
+              <Text style={styles.creditText}>Your Credits: ₹{formatAmount(credits)}</Text>
             </View>
             <View style={styles.creditPill}>
               <Ionicons name="people-outline" size={sw(14)} color="#FDD77A" />

@@ -4,6 +4,7 @@ import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useSelector} from 'react-redux';
 import {fonts} from '../../config/theme';
 import type {RootState} from '../../redux/store';
+import {formatAmount} from '../../utils/utils';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
@@ -28,7 +29,7 @@ export default function CartBar({navigation}: {navigation: any}) {
   return (
     <View style={[styles.cartBar, {paddingBottom: sw(6)}]}>
       <View>
-        <Text style={styles.cartPrice}>₹{Math.round(totalPrice).toLocaleString('en-IN')}</Text>
+        <Text style={styles.cartPrice}>₹{formatAmount(totalPrice)}</Text>
         <View style={styles.cartSubRow}>
           <Text style={styles.cartSubText}>{totalQty} item{totalQty !== 1 ? 's' : ''}</Text>
         </View>

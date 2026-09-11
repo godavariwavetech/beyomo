@@ -27,7 +27,7 @@ import {useFocusEffect} from '@react-navigation/native';
 import {fetchBookingById, cancelBooking, rescheduleBooking, addUserServices, removePackage, addPackage} from '../../redux/reducers/bookings';
 import networkCall from '../../utils/networkCall';
 import {payWithRazorpay} from '../../utils/payments';
-import {resolveImageUrl} from '../../utils/utils';
+import {resolveImageUrl, formatAmount} from '../../utils/utils';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
@@ -200,7 +200,7 @@ const BookingDetailScreen = ({navigation, route}: any) => {
       setShowAddModal(false);
       Alert.alert(
         'Services Added',
-        `${n} service(s) added to your booking. New total: ₹${parseFloat(result.payload?.totalAmount ?? 0).toLocaleString('en-IN')}`,
+        `${n} service(s) added to your booking. New total: ₹${formatAmount(parseFloat(result.payload?.totalAmount ?? 0))}`,
       );
     } else {
       Alert.alert('Error', result.payload ?? 'Failed to add services. Please try again.');
@@ -384,6 +384,8 @@ const BookingDetailScreen = ({navigation, route}: any) => {
     ? multiPackages.map((pkg: any) => ({
         key: pkg.packageId,
         title: pkg.title,
+        qty: Number(pkg.qty) || 1,
+        unitPrice: Number(pkg.price) || 0,
         price: Number(pkg.price || 0) * (pkg.qty || 1),
         items: packageItems.filter((s: any) => s.packageId === pkg.packageId),
       }))
@@ -391,6 +393,9 @@ const BookingDetailScreen = ({navigation, route}: any) => {
       ? [{
           key: booking.packageId,
           title: booking.package?.title ?? 'Package Deal',
+          qty: Number(booking.packageQty) || 1,
+          // Back-derived, so there's no reliable per-unit figure to show alongside it.
+          unitPrice: 0,
           price: Math.max(0, subtotal - otherItemsTotal),
           items: packageItems,
         }]
@@ -403,6 +408,32 @@ const BookingDetailScreen = ({navigation, route}: any) => {
   ]);
   const addablePackages = availablePackages.filter((p: any) => !existingPackageIds.has(p.id));
   const total = booking.totalAmount ?? subtotal;
+
+  // Item count is quantity-aware: two of the same service is two items. Packages count
+  // as one item each (their contents are listed underneath), plus their own qty.
+  const itemCount =
+    otherItems.reduce((n: number, i: any) => n + (Number(i.qty) || 1), 0) +
+    (multiPackages.length > 0
+      ? multiPackages.reduce((n: number, pkg: any) => n + (Number(pkg.qty) || 1), 0)
+      : packageGroups.length * (Number(booking.packageQty) || 1));
+
+  // The bill lines, so "Total Paid" is arithmetic the user can follow rather than a
+  // number that appears from nowhere. Every component the backend stores gets a row
+  // when it's non-zero; `discountAmount` was previously never shown at all.
+  const offerDiscount = Number(booking.discountAmount) || 0;
+  const couponDiscount = Number(booking.couponDiscountAmount) || 0;
+  const taxAmount = Number(booking.taxAmount) || 0;
+  const discountedSubtotal = Math.max(0, subtotal - offerDiscount - couponDiscount);
+  // Derive the rate actually charged rather than assuming 5% — it's configurable per
+  // category/package, so a hardcoded label would be wrong for some bookings.
+  const gstRate = discountedSubtotal > 0 ? (taxAmount / discountedSubtotal) * 100 : 0;
+  const gstLabel = gstRate > 0 ? `GST (${gstRate.toFixed(gstRate % 1 === 0 ? 0 : 1)}%)` : 'GST';
+  // Every amount on screen is rounded to whole rupees, so the spelled-out sum can land
+  // a rupee off its own parts (100.4 + 50.4 shows as 100 + 50 = 151). A line whose only
+  // job is to show the arithmetic must not contradict itself — show it only when the
+  // rounded figures genuinely add up; the rows above carry the breakdown regardless.
+  const formulaAddsUp =
+    Math.round(discountedSubtotal) + Math.round(taxAmount) === Math.round(Number(total) || 0);
   const partner = booking.partner ?? {};
   const partnerName = partner.name ?? booking.partnerName ?? '';
   const partnerAvatar = resolveImageUrl(partner.profilePicture ?? partner.avatar ?? partner.photo) ?? '';
@@ -410,7 +441,31 @@ const BookingDetailScreen = ({navigation, route}: any) => {
   const partnerRole = partner.specialty ?? partner.role ?? 'Beauty Expert';
   const partnerRating = partner.ratingsAverage ?? partner.averageRating ?? partner.rating ?? '';
   const partnerExp = partner.experience ? `${partner.experience}+ yrs experience` : '';
-  const address = booking.address?.formatted ?? booking.address?.line1 ?? booking.address ?? '';
+  // The API returns the delivery address as flat columns — addressLine1, addressCity
+  // and friends — never as a nested `address` object, so reading `booking.address`
+  // always produced undefined and the `!!address` guard below silently hid the whole
+  // row. The address the user picked at checkout is stored on the booking; build it
+  // from the fields that actually exist, keeping the nested/string shapes as a
+  // fallback in case another caller supplies one.
+  const flatAddress = [
+    booking.addressLine1,
+    booking.addressLine2,
+    booking.addressCity,
+    booking.addressState,
+    booking.addressPincode,
+  ].filter(Boolean).join(', ');
+  const nestedAddress =
+    booking.address?.formatted ??
+    booking.address?.line1 ??
+    (typeof booking.address === 'string' ? booking.address : '');
+  const address = flatAddress || nestedAddress || '';
+  const addressLabel = booking.addressLabel ?? '';
+
+  // A reschedule is recorded on the booking as a counter plus the slot it moved from.
+  const isRescheduled = Number(booking.rescheduledCount ?? 0) > 0;
+  const previousDt = booking.previousScheduledAt
+    ? formatDateTime(booking.previousScheduledAt)
+    : null;
   const paymentModeLabel = booking.paymentMode === 'cod' ? 'Pay after Service' : 'Paid Online';
   const paymentStatusLabel = booking.paymentStatus === 'paid' ? 'Paid' : booking.paymentMode === 'cod' ? 'Due on completion' : 'Unpaid';
 
@@ -448,8 +503,21 @@ const BookingDetailScreen = ({navigation, route}: any) => {
             <Ionicons name={statusInfo.icon} size={sw(36)} color="#FFFFFF" />
           </View>
           <View style={{flex: 1}}>
-            <Text style={styles.confirmedTitle}>{statusInfo.title}</Text>
+            <View style={styles.statusTitleRow}>
+              <Text style={styles.confirmedTitle}>{statusInfo.title}</Text>
+              {isRescheduled && (
+                <View style={styles.rescheduledChip}>
+                  <Ionicons name="repeat" size={sw(11)} color="#FFFFFF" />
+                  <Text style={styles.rescheduledChipText}>Rescheduled</Text>
+                </View>
+              )}
+            </View>
             <Text style={styles.confirmedCode}>Booking ID: {bookingId}</Text>
+            {isRescheduled && !!previousDt && (
+              <Text style={styles.rescheduledNote}>
+                Moved from {previousDt.date}, {previousDt.time}
+              </Text>
+            )}
           </View>
         </View>
 
@@ -488,7 +556,9 @@ const BookingDetailScreen = ({navigation, route}: any) => {
           {!!address && (
             <View style={styles.infoRow}>
               <Ionicons name="location-outline" size={sw(16)} color="#105641" />
-              <Text style={styles.infoText}>{address}</Text>
+              <Text style={styles.infoText}>
+                {addressLabel ? `${addressLabel} — ${address}` : address}
+              </Text>
             </View>
           )}
         </View>
@@ -532,7 +602,10 @@ const BookingDetailScreen = ({navigation, route}: any) => {
         {services.length > 0 && (
           <View style={styles.card}>
             <View style={styles.cardHeaderRow}>
-              <Text style={styles.cardLabel}>Services Booked</Text>
+              <Text style={styles.cardLabel}>
+                Services Booked
+                {itemCount > 0 ? ` (${itemCount} ${itemCount === 1 ? 'item' : 'items'})` : ''}
+              </Text>
               {['pending', 'confirmed'].includes(booking.status?.toLowerCase() ?? '') && (
                 <View style={{flexDirection: 'row', gap: sw(8)}}>
                   <TouchableOpacity style={styles.addServiceBtn} activeOpacity={0.8} onPress={openAddPackageModal}>
@@ -554,13 +627,19 @@ const BookingDetailScreen = ({navigation, route}: any) => {
                       <Text style={styles.serviceName}>{group.title}</Text>
                       <SvcTag type="package" />
                     </View>
+                    <Text style={styles.serviceQty}>
+                      Qty : {group.qty}
+                      {group.qty > 1 && group.unitPrice > 0
+                        ? ` × ₹${formatAmount(group.unitPrice)}`
+                        : ''}
+                    </Text>
                     <View style={{marginTop: sw(4)}}>
                       {group.items.map((s: any, i: number) => (
                         <Text key={s._id ?? s.id ?? i} style={styles.serviceDuration}>{i + 1}. {s.name}</Text>
                       ))}
                     </View>
                   </View>
-                  <Text style={styles.servicePrice}>₹{group.price}</Text>
+                  <Text style={styles.servicePrice}>₹{formatAmount(group.price)}</Text>
                 </View>
                 {['pending', 'confirmed'].includes(booking.status?.toLowerCase() ?? '') && (
                   <TouchableOpacity
@@ -576,6 +655,12 @@ const BookingDetailScreen = ({navigation, route}: any) => {
             {services.filter((svc: any) => !svc.addedByPackage).map((svc: any, idx: number) => {
               const isRemoved = !!svc.removed;
               const isFreeOffer = !!svc.addedByOffer;
+              const qty = Number(svc.qty) || 1;
+              // svc.price is the UNIT price, but the subtotal bills unit × qty — so a
+              // qty-3 line showed ₹299 next to a ₹897 subtotal and the column simply
+              // didn't add up. Show the line total, with the unit price spelled out
+              // beside the qty so the multiplication is visible rather than implied.
+              const lineTotal = (Number(svc.price) || 0) * qty;
               const tagType: 'admin' | 'partner' | 'user' | 'removed' | 'free' | null =
                 isRemoved ? 'removed' :
                 isFreeOffer ? 'free' :
@@ -596,13 +681,19 @@ const BookingDetailScreen = ({navigation, route}: any) => {
                       </Text>
                       {tagType && <SvcTag type={tagType} />}
                     </View>
+                    {!isFreeOffer && (
+                      <Text style={styles.serviceQty}>
+                        Qty : {qty}
+                        {qty > 1 ? ` × ₹${formatAmount(svc.price)}` : ''}
+                      </Text>
+                    )}
                     {!!svc.duration && <Text style={styles.serviceDuration}>{svc.duration} min</Text>}
                   </View>
                   {isFreeOffer ? (
                     <Text style={[styles.servicePrice, {color: '#1B6B3A'}]}>FREE</Text>
                   ) : !!svc.price ? (
                     <Text style={[styles.servicePrice, isRemoved && {textDecorationLine: 'line-through', color: '#9CA3AF'}]}>
-                      ₹{svc.price}
+                      ₹{formatAmount(lineTotal)}
                     </Text>
                   ) : null}
                 </View>
@@ -616,25 +707,51 @@ const BookingDetailScreen = ({navigation, route}: any) => {
           {subtotal > 0 && (
             <View style={styles.billRow}>
               <Text style={styles.billKey}>Subtotal</Text>
-              <Text style={styles.billVal}>₹{subtotal}</Text>
+              <Text style={styles.billVal}>₹{formatAmount(subtotal)}</Text>
             </View>
           )}
-          {!!Number(booking.couponDiscountAmount) && (
+          {offerDiscount > 0 && (
             <View style={styles.billRow}>
-              <Text style={styles.billKey}>Coupon Discount</Text>
-              <Text style={styles.billVal}>−₹{booking.couponDiscountAmount}</Text>
+              <Text style={styles.billKey}>Offer Discount</Text>
+              <Text style={[styles.billVal, styles.billValDiscount]}>
+                −₹{formatAmount(offerDiscount)}
+              </Text>
             </View>
           )}
-          {!!Number(booking.taxAmount) && (
+          {couponDiscount > 0 && (
             <View style={styles.billRow}>
-              <Text style={styles.billKey}>GST</Text>
-              <Text style={styles.billVal}>₹{booking.taxAmount}</Text>
+              <Text style={styles.billKey}>
+                Coupon Discount{booking.couponCode ? ` (${booking.couponCode})` : ''}
+              </Text>
+              <Text style={[styles.billVal, styles.billValDiscount]}>
+                −₹{formatAmount(couponDiscount)}
+              </Text>
+            </View>
+          )}
+          {/* Only worth showing once a discount has actually moved the number — with no
+              discount this just repeats the subtotal. */}
+          {(offerDiscount > 0 || couponDiscount > 0) && (
+            <View style={styles.billRow}>
+              <Text style={styles.billKey}>Amount after discount</Text>
+              <Text style={styles.billVal}>₹{formatAmount(discountedSubtotal)}</Text>
+            </View>
+          )}
+          {taxAmount > 0 && (
+            <View style={styles.billRow}>
+              <Text style={styles.billKey}>{gstLabel}</Text>
+              <Text style={styles.billVal}>+₹{formatAmount(taxAmount)}</Text>
             </View>
           )}
           <View style={[styles.billRow, styles.billTotal]}>
             <Text style={styles.billTotalKey}>Total Paid</Text>
-            <Text style={styles.billTotalVal}>₹{total}</Text>
+            <Text style={styles.billTotalVal}>₹{formatAmount(total)}</Text>
           </View>
+          {taxAmount > 0 && formulaAddsUp && (
+            <Text style={styles.billFormula}>
+              ₹{formatAmount(discountedSubtotal)} + ₹{formatAmount(taxAmount)} {gstLabel} = ₹
+              {formatAmount(total)}
+            </Text>
+          )}
           <View style={styles.billRow}>
             <Text style={styles.billKey}>Payment Method</Text>
             <Text style={styles.billVal}>{paymentModeLabel}</Text>
@@ -711,7 +828,7 @@ const BookingDetailScreen = ({navigation, route}: any) => {
             {svcCart.length > 0 && (
               <View style={styles.cartSummaryBar}>
                 <Text style={styles.cartSummaryText}>{svcCart.length} selected</Text>
-                <Text style={styles.cartSummaryPrice}>₹{cartTotal.toLocaleString('en-IN')}</Text>
+                <Text style={styles.cartSummaryPrice}>₹{formatAmount(cartTotal)}</Text>
               </View>
             )}
 
@@ -739,7 +856,7 @@ const BookingDetailScreen = ({navigation, route}: any) => {
                           else setSvcCart(prev => [...prev, {svc: item, qty: 1}]);
                         }}>
                         <Text style={[styles.svcItemName, isSelected && styles.svcItemNameSelected]}>{item.name}</Text>
-                        <Text style={styles.svcItemMeta}>{item.duration} min  •  ₹{parseFloat(item.basePrice).toLocaleString('en-IN')}</Text>
+                        <Text style={styles.svcItemMeta}>{item.duration} min  •  ₹{formatAmount(parseFloat(item.basePrice))}</Text>
                       </TouchableOpacity>
                       {isSelected ? (
                         <View style={styles.inlineQty}>
@@ -812,7 +929,7 @@ const BookingDetailScreen = ({navigation, route}: any) => {
                           </Text>
                         </View>
                       </View>
-                      <Text style={styles.pkgCardPrice}>₹{parseFloat(item.price).toLocaleString('en-IN')}</Text>
+                      <Text style={styles.pkgCardPrice}>₹{formatAmount(parseFloat(item.price))}</Text>
                       <Text style={styles.pkgCardIncludes} numberOfLines={3}>
                         {item.packageType === 'fixed'
                           ? (item.services || []).map((s: any) => s.name).join(', ')
@@ -866,7 +983,7 @@ const BookingDetailScreen = ({navigation, route}: any) => {
                           onPress={() => toggleFlexiblePick(item.id)}>
                           <View style={{flex: 1}}>
                             <Text style={[styles.svcItemName, picked && styles.svcItemNameSelected]}>{item.name}</Text>
-                            <Text style={styles.svcItemMeta}>{item.duration} min  •  ₹{parseFloat(item.basePrice).toLocaleString('en-IN')}</Text>
+                            <Text style={styles.svcItemMeta}>{item.duration} min  •  ₹{formatAmount(parseFloat(item.basePrice))}</Text>
                           </View>
                           <Ionicons name={picked ? 'checkmark-circle' : 'add-circle-outline'} size={sw(22)} color={picked ? '#105641' : '#CCCCCC'} />
                         </TouchableOpacity>
@@ -885,7 +1002,7 @@ const BookingDetailScreen = ({navigation, route}: any) => {
                     onPress={handleConfirmFlexiblePackage}>
                     {actionLoading
                       ? <ActivityIndicator color="#FFFFFF" size="small" />
-                      : <Text style={styles.modalAddText}>Add Package (₹{parseFloat(pickingPackage.price).toLocaleString('en-IN')})</Text>}
+                      : <Text style={styles.modalAddText}>Add Package (₹{formatAmount(parseFloat(pickingPackage.price))})</Text>}
                   </TouchableOpacity>
                 </View>
               </>
@@ -1010,6 +1127,28 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   confirmedTitle: {fontFamily: fonts.title, fontSize: sw(16), fontWeight: '700', color: '#FFFFFF'},
+  statusTitleRow: {flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: sw(8)},
+  rescheduledChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: sw(3),
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    borderRadius: sw(10),
+    paddingHorizontal: sw(7),
+    paddingVertical: sw(2),
+  },
+  rescheduledChipText: {
+    fontFamily: fonts.textFont,
+    fontSize: sw(10),
+    color: '#FFFFFF',
+    lineHeight: sw(14),
+  },
+  rescheduledNote: {
+    fontFamily: fonts.textFont,
+    fontSize: sw(11),
+    color: 'rgba(255,255,255,0.85)',
+    marginTop: sw(2),
+  },
   confirmedCode: {fontFamily: fonts.textFont, fontSize: sw(12), color: 'rgba(255,255,255,0.75)', marginTop: sw(2)},
 
   paymentDueCard: {
@@ -1089,6 +1228,13 @@ const styles = StyleSheet.create({
   serviceThumb: {width: sw(44), height: sw(44), borderRadius: sw(8), backgroundColor: '#EEEDED'},
   serviceName: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#171816', fontWeight: '500'},
   serviceDuration: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#656565', marginTop: sw(2)},
+  serviceQty: {
+    fontFamily: fonts.textFont,
+    fontSize: sw(12),
+    color: '#105641',
+    fontWeight: '600',
+    marginTop: sw(3),
+  },
   servicePrice: {fontFamily: fonts.title, fontSize: sw(14), color: '#105641', fontWeight: '700'},
   removePkgBtn: {
     alignSelf: 'flex-start',
@@ -1149,6 +1295,14 @@ const styles = StyleSheet.create({
   billRow: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center'},
   billKey: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#656565'},
   billVal: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#171816'},
+  billValDiscount: {color: '#105641'},
+  billFormula: {
+    fontFamily: fonts.textFont,
+    fontSize: sw(11),
+    color: '#8A8A8A',
+    textAlign: 'right',
+    marginTop: sw(2),
+  },
   billTotal: {borderTopWidth: 1, borderTopColor: '#F0F0F0', paddingTop: sw(10), marginTop: sw(4)},
   billTotalKey: {fontFamily: fonts.title, fontSize: sw(14), fontWeight: '700', color: '#171816'},
   billTotalVal: {fontFamily: fonts.title, fontSize: sw(16), fontWeight: '700', color: '#105641'},

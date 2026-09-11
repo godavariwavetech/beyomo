@@ -12,13 +12,17 @@ import {
   Modal,
   ActivityIndicator,
   Platform,
+  Linking,
 } from 'react-native';
 import WebView from 'react-native-webview';
 import Geolocation from 'react-native-geolocation-service';
-import {check, request, PERMISSIONS, RESULTS} from 'react-native-permissions';
+import LegacyGeolocation from '@react-native-community/geolocation';
+import {check, request, PERMISSIONS, RESULTS, openSettings} from 'react-native-permissions';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {fonts} from '../../config/theme';
+import {isCityServiceable, haversineKm} from '../../utils/geoUtils';
 import {useDispatch, useSelector} from 'react-redux';
 import {fetchProfile, addAddress, updateAddress, deleteAddress} from '../../redux/reducers/user';
 
@@ -29,19 +33,105 @@ const MAP_HEIGHT = height * 0.40;
 const DEFAULT_LAT = 14.4494;
 const DEFAULT_LNG = 79.9874; // Nellore, Andhra Pradesh — primary service area
 
+type Fix = {lat: number; lng: number};
+type PositionFix = Fix & {accuracy: number};
+
+/**
+ * Debug-only location override — set to null to use the real device location.
+ *
+ * The test device's fused provider reports a Wi-Fi-derived position 2.59 km from where
+ * the phone actually is, and reports it *confidently*: it claims ~28 m accuracy, so
+ * there is no accuracy threshold that can reject it. That makes it useless for
+ * checking whether this screen centres the map correctly, because every wrong result
+ * is explainable by the bad fix rather than by the code.
+ *
+ * Pinning a known point separates the two questions. `__DEV__` is false in release
+ * builds, so production always goes through the real GPS/fused path below.
+ */
+// All location logging goes through one tag so it can be filtered out of the noise:
+//   adb logcat -s ReactNativeJS:V | grep [LOC]
+const devLog = (...args: any[]) => {
+  if (__DEV__) console.log('[LOC]', ...args);
+};
+
+const DEV_LOCATION_OVERRIDE: PositionFix | null = __DEV__
+  ? {lat: 16.998077, lng: 81.798264, accuracy: 15} // Rajahmundry, Andhra Pradesh
+  : null;
+
+// Street-level. The network/cell provider's 500m-3km fixes are precise enough to name
+// a neighbouring village and nothing more, which is exactly how a wrong locality ends
+// up in the address form.
+const GOOD_ACCURACY_M = 50;
+// How long to keep the receiver running before settling for the best seen so far.
+const ACQUIRE_BUDGET_MS = 25000;
+type LocationFailure = 'permission' | 'disabled' | 'timeout';
+type LocationResult = ({ok: true} & PositionFix) | {ok: false; reason: LocationFailure};
+
+// Last successful device fix. The map opens here immediately so the user is looking
+// at their own neighbourhood while a fresh fix resolves, instead of a spinner or a
+// city they may not be in. Module-level so a second open in the same session is instant.
+const LAST_LOCATION_KEY = '@beyomo/lastKnownLocation';
+let lastKnownLocation: Fix | null = null;
+
+const loadCachedLocation = async (): Promise<Fix | null> => {
+  if (lastKnownLocation) return lastKnownLocation;
+  try {
+    const raw = await AsyncStorage.getItem(LAST_LOCATION_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (typeof parsed?.lat === 'number' && typeof parsed?.lng === 'number') {
+      lastKnownLocation = {lat: parsed.lat, lng: parsed.lng};
+    }
+  } catch {}
+  return lastKnownLocation;
+};
+
+const cacheLocation = (loc: Fix) => {
+  lastKnownLocation = loc;
+  AsyncStorage.setItem(LAST_LOCATION_KEY, JSON.stringify(loc)).catch(() => {});
+};
+
 // Photon (komoot.io) — same purpose-built autocomplete geocoder used on the website's
 // address picker: fast prefix matching, no 1-req/sec limit (unlike Nominatim).
 const PHOTON_BASE = 'https://photon.komoot.io';
 const INDIA_BBOX = '68.0,6.0,98.3,37.6'; // lon_min,lat_min,lon_max,lat_max
 
-function photonToFields(props: any = {}) {
-  return {
-    line1: [props.housenumber, props.street].filter(Boolean).join(' ') || props.name || '',
-    line2: props.district || props.suburb || props.locality || '',
-    city: props.city || props.town || props.village || props.county || '',
-    state: props.state || '',
-    pincode: props.postcode || '',
-  };
+/**
+ * Picks the town a person would actually name.
+ *
+ * For an Indian address Photon puts the OSM *locality* in `city` — often a village
+ * name like "Hukumpeta" — while the town it belongs to sits in `county`, as
+ * "Rajahmundry Rural". Reading `city` first therefore writes a place the user doesn't
+ * recognise into the form, and worse, fails the serviceable-city check, which matches
+ * on the selected city's name. So when any candidate names the selected city, use the
+ * selected city's own spelling; otherwise fall back to Photon's precedence.
+ */
+function pickCity(props: any, preferred?: string | null): string {
+  const candidates: string[] = [
+    props.city, props.town, props.village, props.county, props.district,
+  ].filter(Boolean);
+  if (preferred) {
+    const needle = preferred.toLowerCase();
+    if (candidates.some(c => c.toLowerCase().includes(needle))) return preferred;
+  }
+  return candidates[0] ?? '';
+}
+
+function photonToFields(props: any = {}, preferredCity?: string | null) {
+  const city = pickCity(props, preferredCity);
+  const street = [props.housenumber, props.street].filter(Boolean).join(' ');
+  const line1 = street || props.name || '';
+  // Everything finer-grained than the chosen city is what a courier actually needs —
+  // the building/landmark name when the street took line1, then the locality. Dropping
+  // it loses the most useful part of the match.
+  const line2 =
+    [props.name, props.district, props.suburb, props.locality, props.city]
+      .filter(Boolean)
+      .find(
+        (v: string) =>
+          v.toLowerCase() !== city.toLowerCase() &&
+          v.toLowerCase() !== line1.toLowerCase(),
+      ) || '';
+  return {line1, line2, city, state: props.state || '', pincode: props.postcode || ''};
 }
 
 function photonLabel(props: any = {}) {
@@ -50,11 +140,69 @@ function photonLabel(props: any = {}) {
     .join(', ');
 }
 
+// A reverse match that snapped further than this is the wrong building — fall through
+// to a coarser layer rather than naming somewhere down the road.
+const REVERSE_MAX_SNAP_M = 300;
+
+type ReverseCandidate = {props: any; distance: number};
+
+/**
+ * Reverse geocodes by asking every layer at once and combining the best parts.
+ *
+ * Photon's unfiltered reverse snaps to the nearest *place* node, which in India is a
+ * village or neighbourhood centroid, so on its own it answers a city street with a
+ * village name. But blindly preferring the `house` layer is wrong the other way: at
+ * one test point it returned a fountain 68 m off while an actual landmark sat 31 m
+ * away. Neither layer is right on its own.
+ *
+ * So: query all three, then take the STREET from the nearest candidate that actually
+ * has one — an address form needs something postable — and the NAME from the nearest
+ * candidate of any kind, which is the landmark a person would recognise. Anything that
+ * snapped further than REVERSE_MAX_SNAP_M is discarded rather than trusted.
+ */
 async function photonReverseGeocode(lat: number, lng: number, signal?: AbortSignal) {
-  const res = await fetch(`${PHOTON_BASE}/reverse?lat=${lat}&lon=${lng}&lang=en`, {signal});
-  if (!res.ok) throw new Error('Reverse geocoding failed');
-  const data = await res.json();
-  return data.features?.[0]?.properties || {};
+  const layers = ['house', 'street', ''] as const;
+
+  const settled = await Promise.all(
+    layers.map(async (layer): Promise<ReverseCandidate | null> => {
+      try {
+        const url =
+          `${PHOTON_BASE}/reverse?lat=${lat}&lon=${lng}&lang=en` +
+          (layer ? `&layer=${layer}&radius=1` : '');
+        const res = await fetch(url, {signal});
+        if (!res.ok) return null;
+        const data = await res.json();
+        const feature = data.features?.[0];
+        if (!feature) return null;
+        const coords = feature.geometry?.coordinates;
+        const distance =
+          Array.isArray(coords) && typeof coords[1] === 'number'
+            ? haversineKm(lat, lng, coords[1], coords[0]) * 1000
+            : Number.POSITIVE_INFINITY;
+        return {props: feature.properties || {}, distance};
+      } catch (err: any) {
+        // An abort must propagate — the caller has already moved on.
+        if (err?.name === 'AbortError') throw err;
+        return null;
+      }
+    }),
+  );
+
+  const usable = settled.filter(
+    (r): r is ReverseCandidate => !!r && r.distance <= REVERSE_MAX_SNAP_M,
+  );
+  if (usable.length === 0) throw new Error('Reverse geocoding failed');
+
+  const closest = (a: ReverseCandidate, b: ReverseCandidate) =>
+    b.distance < a.distance ? b : a;
+
+  const nearest = usable.reduce(closest);
+  const withStreet = usable.filter(r => r.props.street);
+  const streetSource = withStreet.length > 0 ? withStreet.reduce(closest) : nearest;
+
+  // Street/city/postcode come from the postable match; the landmark from whatever is
+  // physically closest to the pin.
+  return {...streetSource.props, name: nearest.props.name ?? streetSource.props.name};
 }
 
 async function photonSearch(query: string, biasLat?: number, biasLng?: number, signal?: AbortSignal) {
@@ -100,12 +248,25 @@ const buildMapHtml = (lat: number, lng: number) => `<!DOCTYPE html>
 <body>
   <div id="map"></div>
   <script>
-    var map=L.map('map',{zoomControl:false,attributionControl:false}).setView([${lat},${lng}],15);
+    var map=L.map('map',{zoomControl:false,attributionControl:false}).setView([${lat},${lng}],17);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,subdomains:['a','b','c']}).addTo(map);
+    /* Where the DEVICE reports it is, with its accuracy radius drawn around it. This is
+       deliberately separate from the centre pin (which is what gets saved): when a fix
+       is coarse you can SEE the dot sitting away from the pin, and the ring shows how
+       much slack there is, instead of a wrong address arriving unexplained. */
+    var youDot=null,youRing=null;
+    function setYou(lat,lng,acc){
+      if(youDot){youDot.setLatLng([lat,lng]);youRing.setLatLng([lat,lng]).setRadius(acc||0);return;}
+      youRing=L.circle([lat,lng],{radius:acc||0,color:'#1a73e8',weight:1,fillColor:'#1a73e8',fillOpacity:0.12}).addTo(map);
+      youDot=L.circleMarker([lat,lng],{radius:7,color:'#ffffff',weight:3,fillColor:'#1a73e8',fillOpacity:1}).addTo(map);
+    }
     function sendCenter(){var c=map.getCenter();window.ReactNativeWebView.postMessage(JSON.stringify({type:'regionChange',lat:c.lat,lng:c.lng}));}
     map.whenReady(sendCenter);
     map.on('moveend',sendCenter);
-    function handleMsg(d){try{var m=JSON.parse(d);if(m.type==='setCenter')map.setView([m.lat,m.lng],m.zoom||16,{animate:true});}catch(e){}}
+    function handleMsg(d){try{var m=JSON.parse(d);
+      if(m.type==='setCenter')map.setView([m.lat,m.lng],m.zoom||17,{animate:true});
+      else if(m.type==='setYou')setYou(m.lat,m.lng,m.acc);
+    }catch(e){}}
     document.addEventListener('message',function(e){handleMsg(e.data);});
     window.addEventListener('message',function(e){handleMsg(e.data);});
   </script>
@@ -119,14 +280,8 @@ const MyAddressesScreen = ({navigation}: any) => {
   const selectedCity = useSelector((s: any) => s.City?.selectedCity);
   const addresses: any[] = profile?.addresses ?? [];
 
-  // Same rule as the website: without a serviceable city chosen, we can't validate
-  // against a single city, so nothing is blocked; once one's picked, addresses
-  // must fall within it.
-  const isLocationAvailable = (city: string | null | undefined) => {
-    if (!selectedCity) return true;
-    if (!city) return false;
-    return city.toLowerCase().includes(selectedCity.name.toLowerCase());
-  };
+  const isLocationAvailable = (city: string | null | undefined) =>
+    isCityServiceable(city, selectedCity);
 
   const [showModal, setShowModal]   = useState(false);
   const [editAddr, setEditAddr]     = useState<any>(null);
@@ -134,6 +289,7 @@ const MyAddressesScreen = ({navigation}: any) => {
   const [mapHtml, setMapHtml]       = useState('');
   const [geocoding, setGeocoding]   = useState(false);
   const [locating, setLocating]     = useState(false);
+  const [locateError, setLocateError] = useState<LocationFailure | null>(null);
   const [showErrors, setShowErrors] = useState(false);
   const [searchQuery, setSearchQuery]           = useState('');
   const [searchResults, setSearchResults]       = useState<any[]>([]);
@@ -141,12 +297,18 @@ const MyAddressesScreen = ({navigation}: any) => {
   const [showSearchResults, setShowSearchResults] = useState(false);
 
   const mapRef      = useRef<WebView>(null);
+  const pendingCenter = useRef<Fix | null>(null);
+  const pendingYou = useRef<PositionFix | null>(null);
+  const mapBuilt = useRef(false);
   const geocodeTimer = useRef<any>(null);
   const geocodeAbortRef = useRef<AbortController | null>(null);
   const searchDebounceRef = useRef<any>(null);
   const searchAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
+    // Pull the persisted fix into memory so the first search of a fresh launch is
+    // biased near the user rather than at the default city.
+    loadCachedLocation();
     if (!profile) dispatch(fetchProfile());
     return () => {
       if (geocodeTimer.current) clearTimeout(geocodeTimer.current);
@@ -164,7 +326,12 @@ const MyAddressesScreen = ({navigation}: any) => {
     setGeocoding(true);
     try {
       const props = await photonReverseGeocode(lat, lng, controller.signal);
-      const fields = photonToFields(props);
+      const fields = photonToFields(props, selectedCity?.name);
+      devLog(
+        'PIN', `lat=${lat}`, `lng=${lng}`, '-> address:',
+        [fields.line1, fields.line2, fields.city, fields.state, fields.pincode]
+          .filter(Boolean).join(', '),
+      );
       setForm(prev => ({...prev, lat, lng, ...fields}));
     } catch (err: any) {
       if (err.name !== 'AbortError') setForm(prev => ({...prev, lat, lng}));
@@ -179,10 +346,54 @@ const MyAddressesScreen = ({navigation}: any) => {
     geocodeTimer.current = setTimeout(() => reverseGeocode(lat, lng), 800);
   };
 
+  // injectJavaScript is a silent no-op until the WebView has finished loading, and a
+  // cached GPS fix can easily land before Leaflet is up. Remember the last requested
+  // centre so onLoadEnd can replay it instead of leaving the map somewhere stale.
   const recenterMap = (lat: number, lng: number) => {
+    pendingCenter.current = {lat, lng};
     mapRef.current?.injectJavaScript(
       `handleMsg(JSON.stringify({type:'setCenter',lat:${lat},lng:${lng},zoom:16})); true;`
     );
+  };
+
+  // The blue dot: where the DEVICE reports it is, ringed by its accuracy radius.
+  // Kept distinct from the centre pin (which is what actually gets saved) so a coarse
+  // fix is visible as a dot drifting away from the pin instead of silently producing
+  // an address in the wrong locality.
+  const markDeviceLocation = (fix: PositionFix) => {
+    pendingYou.current = fix;
+    const acc = Number.isFinite(fix.accuracy) ? Math.round(fix.accuracy) : 0;
+    mapRef.current?.injectJavaScript(
+      `handleMsg(JSON.stringify({type:'setYou',lat:${fix.lat},lng:${fix.lng},acc:${acc}})); true;`
+    );
+  };
+
+  // Every fix that arrives: build the map around the first one, pan to each later
+  // improvement, and move the dot each time.
+  const showDeviceFix = (fix: PositionFix) => {
+    devLog(
+      mapBuilt.current ? 'MAP RECENTRE ->' : 'MAP OPEN AT ->',
+      `lat=${fix.lat}`, `lng=${fix.lng}`,
+      `| google maps: https://maps.google.com/?q=${fix.lat},${fix.lng}`,
+    );
+    if (mapBuilt.current) {
+      recenterMap(fix.lat, fix.lng);
+    } else {
+      mapBuilt.current = true;
+      pendingCenter.current = {lat: fix.lat, lng: fix.lng};
+      setMapHtml(buildMapHtml(fix.lat, fix.lng));
+    }
+    markDeviceLocation(fix);
+  };
+
+  // Acquire (or re-acquire) the device position and drive the map from it.
+  const locateDevice = async () => {
+    setLocating(true);
+    setLocateError(null);
+    const result = await getDeviceLocation(showDeviceFix);
+    setLocating(false);
+    if (!result.ok) setLocateError(result.reason);
+    return result;
   };
 
   const handleSearchChange = (value: string) => {
@@ -203,7 +414,11 @@ const MyAddressesScreen = ({navigation}: any) => {
       setSearching(true);
       try {
         console.log('[MyAddresses] searching for:', value);
-        const results = await photonSearch(value, form.lat ?? DEFAULT_LAT, form.lng ?? DEFAULT_LNG, controller.signal);
+        // Bias to the pin, else the device's last known fix — biasing to a fixed
+        // city ranks results near somewhere the user isn't.
+        const biasLat = form.lat ?? lastKnownLocation?.lat ?? DEFAULT_LAT;
+        const biasLng = form.lng ?? lastKnownLocation?.lng ?? DEFAULT_LNG;
+        const results = await photonSearch(value, biasLat, biasLng, controller.signal);
         console.log('[MyAddresses] search results:', results.length);
         setSearchResults(results);
         setShowSearchResults(true);
@@ -222,60 +437,260 @@ const MyAddressesScreen = ({navigation}: any) => {
     const [lng, lat] = result.geometry.coordinates;
     setShowSearchResults(false);
     setSearchQuery(photonLabel(result.properties));
-    setForm(prev => ({...prev, lat, lng, ...photonToFields(result.properties)}));
+    setForm(prev => ({...prev, lat, lng, ...photonToFields(result.properties, selectedCity?.name)}));
     recenterMap(lat, lng);
   };
 
-  // One getCurrentPosition call, wrapped as a promise.
-  const requestPosition = (options: any): Promise<{lat: number; lng: number} | null> =>
+  // One getCurrentPosition call, wrapped as a promise. Resolves either the coords or
+  // the PositionError code (1 = permission, 2 = location services off / no provider,
+  // 3 = timeout), because "it didn't work" isn't actionable — the user needs to be
+  // told which switch to flip.
+  const requestPosition = (
+    options: any,
+    provider: 'fused' | 'legacy' = 'fused',
+  ): Promise<PositionFix | {error: number}> =>
     new Promise(resolve => {
-      Geolocation.getCurrentPosition(
-        pos => {
-          console.log('[MyAddresses] device location:', pos.coords.latitude, pos.coords.longitude, 'via', options);
-          resolve({lat: pos.coords.latitude, lng: pos.coords.longitude});
-        },
-        err => {
-          console.log('[MyAddresses] geolocation error:', err, 'via', options);
-          resolve(null);
-        },
-        options,
-      );
+      const impl: any = provider === 'legacy' ? LegacyGeolocation : Geolocation;
+      try {
+        impl.getCurrentPosition(
+          (pos: any) => resolve({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            // Radius of the fix in metres. A provider that can't say is treated as
+            // the worst possible, so any fix that CAN say beats it.
+            accuracy: typeof pos.coords.accuracy === 'number'
+              ? pos.coords.accuracy
+              : Number.POSITIVE_INFINITY,
+          }),
+          (err: any) => resolve({error: err?.code ?? 2}),
+          options,
+        );
+      } catch {
+        // Native module absent from this build (a dependency added after the last
+        // native rebuild) — report it as "no provider" so the next attempt still runs.
+        resolve({error: 2});
+      }
     });
 
-  // Resolves the device's current coordinates (permission check + request included),
-  // or null if permission is denied / location can't be determined at all.
-  // Tries a fast high-accuracy (GPS) fix first; a lot of devices/emulators can't
-  // get a GPS lock quickly (or at all) indoors, so on timeout/failure this falls
-  // back to a low-accuracy (network/WiFi) fix, which resolves faster and more
-  // reliably even if it's less precise.
-  const getDeviceLocation = async (): Promise<{lat: number; lng: number} | null> => {
-    try {
-      const permission = Platform.OS === 'ios'
-        ? PERMISSIONS.IOS.LOCATION_WHEN_IN_USE
-        : PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION;
-      let status = await check(permission);
-      if (status !== RESULTS.GRANTED) status = await request(permission);
-      if (status !== RESULTS.GRANTED) {
-        console.log('[MyAddresses] location permission not granted:', status);
-        return null;
+  const isFix = (r: PositionFix | {error: number}): r is PositionFix =>
+    typeof (r as PositionFix).lat === 'number';
+
+  const ensurePermission = async (): Promise<boolean> => {
+    const permission = Platform.OS === 'ios'
+      ? PERMISSIONS.IOS.LOCATION_WHEN_IN_USE
+      : PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION;
+    let status = await check(permission);
+    // request() is a silent no-op once the OS has BLOCKED us — only Settings clears
+    // that — so prompt on DENIED and treat anything else as a hard permission fail.
+    if (status === RESULTS.DENIED) status = await request(permission);
+    return status === RESULTS.GRANTED;
+  };
+
+  /**
+   * Watches the device position until it is precise enough, reporting every
+   * improvement through `onFix` so the map can follow the fix in as it tightens.
+   *
+   * getCurrentPosition is the wrong tool for this. It hands back the FIRST answer any
+   * provider offers, and on a phone whose GPS is cold that is a cell/WiFi estimate
+   * hundreds of metres out — accurate enough to name the wrong locality, never your
+   * street. watchPosition keeps the receiver powered and delivers successively tighter
+   * fixes as satellites are acquired, which is the only way to actually get GPS out of
+   * a device that hasn't held a lock in weeks.
+   */
+  const watchForPreciseFix = (
+    onFix: (fix: PositionFix) => void,
+    seed: PositionFix | null,
+  ): Promise<PositionFix | {error: number}> =>
+    new Promise(resolve => {
+      const best: {current: PositionFix | null} = {current: seed};
+      let watchId: number | null = null;
+      let timer: any = null;
+      let settled = false;
+
+      const settle = (value: PositionFix | {error: number}) => {
+        if (settled) return;
+        settled = true;
+        if (watchId !== null) {
+          try { Geolocation.clearWatch(watchId); } catch {}
+        }
+        if (timer) clearTimeout(timer);
+        resolve(value);
+      };
+
+      // Don't hold the receiver open forever: settle for the best seen once the budget
+      // is spent. A device that can't see sky never reaches GOOD_ACCURACY_M at all.
+      timer = setTimeout(() => settle(best.current ?? {error: 3}), ACQUIRE_BUDGET_MS);
+
+      try {
+        watchId = Geolocation.watchPosition(
+          pos => {
+            const fix: PositionFix = {
+              lat: pos.coords.latitude,
+              lng: pos.coords.longitude,
+              accuracy: typeof pos.coords.accuracy === 'number'
+                ? pos.coords.accuracy
+                : Number.POSITIVE_INFINITY,
+            };
+            if (best.current && fix.accuracy >= best.current.accuracy) return;
+            best.current = fix;
+            onFix(fix);
+            if (fix.accuracy <= GOOD_ACCURACY_M) settle(fix);
+          },
+          err => { if (!best.current) settle({error: err?.code ?? 2}); },
+          {
+            enableHighAccuracy: true,
+            distanceFilter: 0,
+            interval: 1000,
+            fastestInterval: 500,
+            // Power the receiver up even when nothing else has asked for it, and let
+            // the OS offer its "turn on location" dialog instead of failing silently.
+            forceRequestLocation: true,
+            showLocationDialog: true,
+          },
+        );
+      } catch {
+        // Native module missing from this build — report "no provider".
+        settle({error: 2});
       }
+    });
 
-      const highAccuracyPos = await requestPosition({enableHighAccuracy: true, timeout: 8000, maximumAge: 60000});
-      if (highAccuracyPos) return highAccuracyPos;
+  /**
+   * Resolves the device's position, reporting every improvement through `onFix`.
+   * Never invents a location: when nothing can be obtained it says why instead.
+   */
+  const getDeviceLocation = async (
+    onFix?: (fix: PositionFix) => void,
+  ): Promise<LocationResult> => {
+    // Debug builds only, and only while DEV_LOCATION_OVERRIDE is set. Skips the
+    // permission prompt too — there's no device fix to ask for.
+    if (DEV_LOCATION_OVERRIDE) {
+      const fix = DEV_LOCATION_OVERRIDE;
+      devLog('USING DEV OVERRIDE (not the real device):', `lat=${fix.lat}`, `lng=${fix.lng}`);
+      cacheLocation({lat: fix.lat, lng: fix.lng});
+      onFix?.(fix);
+      return {ok: true, ...fix};
+    }
 
-      console.log('[MyAddresses] retrying with low accuracy…');
-      return await requestPosition({enableHighAccuracy: false, timeout: 15000, maximumAge: 60000});
-    } catch (err) {
-      console.log('[MyAddresses] getDeviceLocation exception:', err);
-      return null;
+    try {
+      if (!(await ensurePermission())) return {ok: false, reason: 'permission'};
+
+      const best: {current: PositionFix | null} = {current: null};
+      const offer = (fix: PositionFix) => {
+        if (best.current && fix.accuracy >= best.current.accuracy) {
+          devLog(
+            'fix REJECTED (not tighter):',
+            `lat=${fix.lat}`, `lng=${fix.lng}`,
+            `accuracy=${Math.round(fix.accuracy)}m`,
+            `(best so far ${Math.round(best.current.accuracy)}m)`,
+          );
+          return;
+        }
+        best.current = fix;
+        devLog(
+          'fix ACCEPTED:',
+          `lat=${fix.lat}`, `lng=${fix.lng}`,
+          `accuracy=${Math.round(fix.accuracy)}m`,
+        );
+        cacheLocation({lat: fix.lat, lng: fix.lng});
+        onFix?.(fix);
+      };
+
+      // Start the watch FIRST, and do NOT await it. Every second spent on a
+      // last-known lookup before this point is a second the receiver isn't running.
+      // It feeds `offer` continuously as fixes tighten.
+      const precise = watchForPreciseFix(offer, null);
+
+      // In parallel, ask each provider for what it already holds so there is something
+      // on screen within a frame or two. High accuracy with a short maximumAge so this
+      // is a genuinely recent fused fix (GPS + WiFi + cell), not a stale last-known.
+      // offer() only accepts a strictly better fix, so this can never override
+      // something the watch has already produced.
+      void (async () => {
+        for (const provider of ['fused', 'legacy'] as const) {
+          if (provider === 'legacy') {
+            // 'android' pins it to LocationManager; 'auto' would just hand us back the
+            // fused provider that already answered. Permission is settled by now, so
+            // don't let it raise a second prompt.
+            try {
+              LegacyGeolocation.setRNConfiguration({
+                skipPermissionRequests: true,
+                locationProvider: 'android',
+              });
+            } catch {}
+          }
+          const r = await requestPosition(
+            {enableHighAccuracy: true, timeout: 8000, maximumAge: 30000},
+            provider,
+          );
+          devLog(
+            `cached[${provider}] ->`,
+            isFix(r)
+              ? `lat=${r.lat} lng=${r.lng} accuracy=${Math.round(r.accuracy)}m`
+              : `error code ${r.error}`,
+          );
+          if (isFix(r)) { offer(r); return; }
+        }
+      })();
+
+      const settled = await precise;
+      devLog(
+        'GPS watch settled ->',
+        isFix(settled)
+          ? `lat=${settled.lat} lng=${settled.lng} accuracy=${Math.round(settled.accuracy)}m`
+          : `error code ${settled.error}`,
+      );
+      if (isFix(settled)) offer(settled);
+
+      const found = best.current;
+      if (found) return {ok: true, ...found};
+
+      const code = isFix(settled) ? 3 : settled.error;
+      return {
+        ok: false,
+        reason: code === 1 ? 'permission' : code === 2 ? 'disabled' : 'timeout',
+      };
+    } catch {
+      return {ok: false, reason: 'timeout'};
     }
   };
 
+
+  // Says which switch to flip, and takes them to it.
+  const explainLocationFailure = (reason: LocationFailure) => {
+    if (reason === 'timeout') {
+      Alert.alert(
+        'Couldn’t find your location',
+        'We couldn’t get a location fix just now. Drag the map to your address, or tap the locate button to retry.',
+      );
+      return;
+    }
+    const needsPermission = reason === 'permission';
+    Alert.alert(
+      needsPermission ? 'Location permission needed' : 'Location is switched off',
+      needsPermission
+        ? 'Allow location access so the map can open on your current address.'
+        : 'Turn on location (GPS) so the map can open on your current address.',
+      [
+        {text: 'Not now', style: 'cancel'},
+        {
+          text: needsPermission ? 'Open Settings' : 'Turn On',
+          onPress: () => {
+            if (!needsPermission && Platform.OS === 'android') {
+              Linking.sendIntent('android.settings.LOCATION_SOURCE_SETTINGS').catch(() => {});
+            } else {
+              openSettings().catch(() => {});
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  // recenterMap fires the map's moveend, which reverse-geocodes into the form, so
+  // there's nothing to fill in here beyond driving the map.
   const locateMe = async () => {
-    setLocating(true);
-    const pos = await getDeviceLocation();
-    if (pos) recenterMap(pos.lat, pos.lng);
-    setLocating(false);
+    const result = await locateDevice();
+    if (!result.ok) explainLocationFailure(result.reason);
   };
 
   const resetSearch = () => {
@@ -290,15 +705,20 @@ const MyAddressesScreen = ({navigation}: any) => {
     setForm(EMPTY_FORM);
     setShowErrors(false);
     resetSearch();
-    // Wait for the device's real location before rendering the map at all, so it
-    // opens centred there directly instead of flashing the hardcoded default first.
+    pendingCenter.current = null;
+    pendingYou.current = null;
+    mapBuilt.current = false;
     setMapHtml('');
-    setShowModal(true);
+    setLocateError(null);
     setLocating(true);
-    const pos = await getDeviceLocation();
-    console.log('[MyAddresses] openAdd centering map on:', pos ?? {lat: DEFAULT_LAT, lng: DEFAULT_LNG, fallback: true});
-    setMapHtml(buildMapHtml(pos?.lat ?? DEFAULT_LAT, pos?.lng ?? DEFAULT_LNG));
-    setLocating(false);
+    setShowModal(true);
+
+    // Nothing is drawn until the device says where it is — there is no default city to
+    // fall back on, because a map silently centred on somewhere else is precisely the
+    // bug this screen kept producing. If no fix can be had, the overlay says why and
+    // offers a retry; the search box above still works in the meantime.
+    const result = await locateDevice();
+    if (!result.ok) explainLocationFailure(result.reason);
   };
 
   const openEdit = (addr: any) => {
@@ -316,6 +736,10 @@ const MyAddressesScreen = ({navigation}: any) => {
       lng:       addr.lng ?? null,
     });
     setShowErrors(false);
+    pendingCenter.current = null;
+    pendingYou.current = null;
+    mapBuilt.current = true;
+    setLocateError(null);
     setMapHtml(buildMapHtml(addr.lat ?? DEFAULT_LAT, addr.lng ?? DEFAULT_LNG));
     setShowModal(true);
   };
@@ -466,8 +890,29 @@ const MyAddressesScreen = ({navigation}: any) => {
           <View style={{height: MAP_HEIGHT, width}}>
             {!mapHtml && (
               <View style={[StyleSheet.absoluteFillObject, styles.mapLoading]}>
-                <ActivityIndicator size="large" color="#105641" />
-                <Text style={styles.mapLoadingText}>Finding your location…</Text>
+                {locating ? (
+                  <>
+                    <ActivityIndicator size="large" color="#105641" />
+                    <Text style={styles.mapLoadingText}>Finding your location…</Text>
+                  </>
+                ) : (
+                  <>
+                    <Ionicons name="location-outline" size={sw(32)} color="#8A8A8A" />
+                    <Text style={styles.mapLoadingText}>
+                      {locateError === 'permission'
+                        ? 'Location permission is needed to place your address.'
+                        : locateError === 'disabled'
+                        ? 'Turn on location (GPS) to place your address.'
+                        : 'Couldn’t get a location fix.'}
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.mapRetryBtn}
+                      activeOpacity={0.85}
+                      onPress={locateMe}>
+                      <Text style={styles.mapRetryText}>Retry</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
               </View>
             )}
             {!!mapHtml && (
@@ -478,6 +923,14 @@ const MyAddressesScreen = ({navigation}: any) => {
                 originWhitelist={['*']}
                 javaScriptEnabled
                 scrollEnabled={false}
+                onLoadEnd={() => {
+                  // injectJavaScript is a no-op before load, so replay whatever was
+                  // requested while the WebView was still booting.
+                  const target = pendingCenter.current;
+                  if (target) recenterMap(target.lat, target.lng);
+                  const you = pendingYou.current;
+                  if (you) markDeviceLocation(you);
+                }}
                 onMessage={e => {
                   try {
                     const msg = JSON.parse(e.nativeEvent.data);
@@ -520,9 +973,15 @@ const MyAddressesScreen = ({navigation}: any) => {
               </View>
             )}
 
-            {/* Drag hint */}
+            {/* Drag hint. In debug builds it doubles as a readout of the pin's exact
+                coordinates, so what the map is actually centred on can be checked on
+                the device without digging through the Metro console. */}
             <View style={styles.dragHint} pointerEvents="none">
-              <Text style={styles.dragHintText}>Drag map · pin stays at centre</Text>
+              <Text style={styles.dragHintText}>
+                {__DEV__ && form.lat != null && form.lng != null
+                  ? `${form.lat.toFixed(6)}, ${form.lng.toFixed(6)}`
+                  : 'Drag map · pin stays at centre'}
+              </Text>
             </View>
           </View>
 
@@ -767,7 +1226,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: sw(10),
   },
-  mapLoadingText: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#5C5C5C'},
+  mapLoadingText: {
+    fontFamily: fonts.textFont,
+    fontSize: sw(13),
+    color: '#5C5C5C',
+    textAlign: 'center',
+    paddingHorizontal: sw(32),
+  },
+  mapRetryBtn: {
+    marginTop: sw(4),
+    paddingHorizontal: sw(20),
+    paddingVertical: sw(9),
+    borderRadius: sw(20),
+    backgroundColor: '#105641',
+  },
+  mapRetryText: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#FFFFFF'},
 
   /* Map overlay elements */
   mapBackBtn: {

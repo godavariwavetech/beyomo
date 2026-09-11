@@ -16,6 +16,7 @@ const {
   updateBookingStatus,
   markArrived,
   updateDeviceToken,
+  updateOnlineStatus,
   getEarnings,
   addExtraServices,
   addBookingPackage,
@@ -52,6 +53,7 @@ router.patch("/bookings/:id/extra-services", addExtraServices);
 router.patch("/bookings/:id/add-package", addBookingPackage);
 router.patch("/bookings/:id/remove-package", removeBookingPackage);
 router.patch("/device-token", updateDeviceToken);
+router.patch("/online-status", updateOnlineStatus);
 router.post("/test-notification", sendTestNotification);
 
 module.exports = router;

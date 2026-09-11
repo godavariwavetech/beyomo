@@ -13,6 +13,7 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import {useDispatch, useSelector} from 'react-redux';
 import {fonts} from '../../config/theme';
 import {refreshPartnerStatus, actionLogout} from '../../redux/reducers/auth';
+import {resetToLogin} from '../../navigation/navigationRef';
 import type {AppDispatch, RootState} from '../../redux/store';
 
 const {width} = Dimensions.get('window');
@@ -87,7 +88,8 @@ const AccountStatusScreen = ({navigation}: any) => {
 
   const handleLogout = useCallback(() => {
     dispatch(actionLogout());
-    navigation.replace('Login');
+    // replace() swaps only this screen; anything below it stayed reachable via back.
+    resetToLogin();
   }, [dispatch, navigation]);
 
   return (

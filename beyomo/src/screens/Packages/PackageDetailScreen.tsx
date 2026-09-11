@@ -20,6 +20,7 @@ import api from '../../utils/api';
 import {endpoints} from '../../config/config';
 import {addPackageToCart} from '../../redux/reducers/cart';
 import CartBar from '../../components/CartBar/CartBar';
+import {formatAmount} from '../../utils/utils';
 
 const MAX_SERVICE_QTY = 5;
 
@@ -215,7 +216,7 @@ const PackageDetailScreen = ({navigation, route}: {navigation: any; route: any})
         <View style={styles.heroContent}>
           {savings ? (
             <View style={styles.savingsBadge}>
-              <Text style={styles.savingsText}>Save ₹{savings}</Text>
+              <Text style={styles.savingsText}>Save ₹{formatAmount(savings)}</Text>
             </View>
           ) : null}
           <Text style={styles.heroTitle}>{fullPkg.title}</Text>
@@ -223,9 +224,9 @@ const PackageDetailScreen = ({navigation, route}: {navigation: any; route: any})
             <Text style={styles.heroDesc}>{fullPkg.description}</Text>
           ) : null}
           <View style={styles.priceRow}>
-            <Text style={styles.packagePrice}>₹{Math.round(fullPkg.price)}</Text>
+            <Text style={styles.packagePrice}>₹{formatAmount(fullPkg.price)}</Text>
             {fullPkg.originalPrice && fullPkg.originalPrice > fullPkg.price ? (
-              <Text style={styles.originalPrice}>₹{Math.round(fullPkg.originalPrice)}</Text>
+              <Text style={styles.originalPrice}>₹{formatAmount(fullPkg.originalPrice)}</Text>
             ) : null}
           </View>
         </View>
@@ -291,7 +292,7 @@ const PackageDetailScreen = ({navigation, route}: {navigation: any; route: any})
                     <View style={styles.serviceInfo}>
                       <Text style={styles.serviceName}>{svc.name}</Text>
                       <Text style={styles.serviceMeta}>
-                        {svc.duration ? `${svc.duration} min · ` : ''}{svc.priceStartsFrom ? 'Starts at ' : ''}₹{Math.round(svc.basePrice)}
+                        {svc.duration ? `${svc.duration} min · ` : ''}{svc.priceStartsFrom ? 'Starts at ' : ''}₹{formatAmount(svc.basePrice)}
                       </Text>
                     </View>
                     <View style={[styles.checkCircle, selected && styles.checkCircleActive]}>
@@ -361,7 +362,7 @@ const PackageDetailScreen = ({navigation, route}: {navigation: any; route: any})
       <View style={[styles.footer, {paddingBottom: insets.bottom + sw(12)}]}>
         <View style={styles.footerPriceSummary}>
           <Text style={styles.footerLabel}>Package Total</Text>
-          <Text style={styles.footerPrice}>₹{Math.round(fullPkg.price * packageQty)}</Text>
+          <Text style={styles.footerPrice}>₹{formatAmount(fullPkg.price * packageQty)}</Text>
         </View>
         <TouchableOpacity activeOpacity={0.88} onPress={handleBook} style={styles.bookBtn}>
           <LinearGradient colors={['#105641', '#012823']} style={styles.bookBtnGradient}>

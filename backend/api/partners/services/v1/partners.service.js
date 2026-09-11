@@ -3,6 +3,7 @@ const { sequelize } = require("../../../../utils/dbconnect");
 const fs = require("fs");
 const path = require("path");
 const Partner = require("../../models/partner.model");
+const { HEARTBEAT_MINUTES, isPartnerOnline } = require("../../../../utils/partnerPresence");
 const PartnerService = require("../../models/partnerService.model");
 const PartnerSkillCategory = require("../../../skills/models/PartnerSkillCategory");
 const Booking = require("../../../bookings/models/booking.model");
@@ -232,7 +233,7 @@ const computeTotalEarned = async (partnerId) => {
 
 const getDashboard = async (partnerId) => {
   const partner = await Partner.findByPk(partnerId, {
-    attributes: ["pendingEarnings", "ratingsAverage", "ratingsCount", "status"],
+    attributes: ["pendingEarnings", "ratingsAverage", "ratingsCount", "status", "isOnline", "lastSeenAt"],
   });
   if (!partner) throw new AppError("Partner not found", 404);
 
@@ -272,6 +273,10 @@ const getDashboard = async (partnerId) => {
     pendingEarnings: partner.pendingEarnings,
     ratings: { average: partner.ratingsAverage, count: partner.ratingsCount },
     status: partner.status,
+    // Availability travels with the dashboard payload the app already fetches, so the
+    // toggle can show the partner's real server-side state instead of assuming "online".
+    isOnline: isPartnerOnline(partner),
+    heartbeatMinutes: HEARTBEAT_MINUTES,
     bookingStats: { total: totalBookings, todayJobs, completedToday, totalCompleted },
   };
 };
@@ -499,6 +504,24 @@ const updateDeviceToken = async (partnerId, fcmToken) => {
   // token update logged implicitly
 
   return { message: "Device token updated" };
+};
+
+/**
+ * Records the partner's availability toggle and refreshes their heartbeat.
+ * The app calls this on toggle AND every HEARTBEAT_MINUTES while online, so
+ * lastSeenAt stays fresh; going offline is recorded immediately.
+ */
+const setOnlineStatus = async (partnerId, isOnline) => {
+  const partner = await Partner.findByPk(partnerId);
+  if (!partner) throw new AppError("Partner not found", 404);
+
+  await partner.update({ isOnline, lastSeenAt: new Date() });
+
+  return {
+    isOnline: partner.isOnline,
+    lastSeenAt: partner.lastSeenAt,
+    heartbeatMinutes: HEARTBEAT_MINUTES,
+  };
 };
 
 const getEarnings = async (partnerId, period = "month") => {
@@ -975,5 +998,5 @@ const removeBookingPackage = async (partnerId, bookingId, packageId) => {
 module.exports = {
   getProfile, updateProfile, updateDocuments, deleteAccount,
   getDashboard, getBookings, getBookingById, getAvailableBookings, acceptBooking, claimServices, updateBookingStatus,
-  markArrived, updateDeviceToken, getEarnings, addExtraServices, addBookingPackage, removeBookingPackage,
+  markArrived, updateDeviceToken, setOnlineStatus, getEarnings, addExtraServices, addBookingPackage, removeBookingPackage,
 };

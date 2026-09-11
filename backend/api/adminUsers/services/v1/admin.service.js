@@ -7,6 +7,7 @@ const AdminUser = require("../../models/adminUser.model");
 const User = require("../../../users/models/user.model");
 const UserAddress = require("../../../users/models/userAddress.model");
 const Partner = require("../../../partners/models/partner.model");
+const { withPresence } = require("../../../../utils/partnerPresence");
 const ServiceCategory = require("../../../services/models/serviceCategory.model");
 const Service = require("../../../services/models/service.model");
 const ServiceCityMap = require("../../../services/models/service_city_map.model");
@@ -117,16 +118,19 @@ const listPartners = async ({ search, status, source, cityIds, page = 1, limit =
       { email: { [Op.like]: `%${search}%` } },
     ];
   }
-  const { count: total, rows: data } = await Partner.findAndCountAll({
+  const { count: total, rows } = await Partner.findAndCountAll({
     where, order: [["createdAt", "DESC"]], offset, limit,
   });
+  // withPresence downgrades a stale isOnline to false, so the dashboard never shows a
+  // partner as available when we haven't heard from their app in ONLINE_TIMEOUT_MINUTES.
+  const data = rows.map(withPresence);
   return { data, pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } };
 };
 
 const getPartnerById = async (partnerId) => {
   const partner = await Partner.findByPk(partnerId);
   if (!partner) throw new AppError("Partner not found", 404);
-  return partner;
+  return withPresence(partner);
 };
 
 const createPartner = async (data) => {

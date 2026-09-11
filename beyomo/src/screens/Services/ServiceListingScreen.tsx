@@ -1,4 +1,4 @@
-import React, {useState, useEffect} from 'react';
+import React, {useState, useEffect, useMemo} from 'react';
 import {
   View,
   Text,
@@ -17,7 +17,12 @@ import LinearGradient from 'react-native-linear-gradient';
 import {fonts} from '../../config/theme';
 import {useDispatch, useSelector} from 'react-redux';
 import {fetchCategories, fetchServices} from '../../redux/reducers/services';
-import {addServicesToCart} from '../../redux/reducers/cart';
+import {
+  addServicesToCart,
+  decrementServiceQty,
+  removeFreeService,
+} from '../../redux/reducers/cart';
+import {formatAmount} from '../../utils/utils';
 
 const MAX_SERVICE_QTY = 5;
 
@@ -62,8 +67,10 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
     ? (offer?.triggerValue?.categoryId ?? null)
     : null;
 
-  // Build the free service item (price = 0, locked in cart)
-  const freeServiceItem: any | null = offer?.freeService
+  // Build the free service item (price = 0, locked in cart). Memoized because the
+  // sync effect below depends on it — rebuilt inline it would be a fresh object on
+  // every render and re-run the effect each time.
+  const freeServiceItem: any | null = useMemo(() => offer?.freeService
     ? {
         id: String(offer.freeService.id),
         name: offer.freeService.name,
@@ -76,17 +83,35 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
         bookedCount: '',
         bullets: '',
       }
-    : null;
+    : null, [offer]);
 
   const [activeCategory, setActiveCategory] = useState<string>(initialCat);
   const [activeCategoryId, setActiveCategoryId] = useState<any>(
     offerCategoryId ?? initialCatId,
   );
+  // The shared cart is the only source of truth for what has been added. Keeping a
+  // local copy meant an Add was invisible to the cart bar on Home and to every other
+  // screen until checkout, and backing out of here with the Android button threw the
+  // whole selection away — the dispatch that committed it only ran on "Book Now".
+  //
   // The free service is added/removed automatically as the required items are
   // added/removed below — never pre-populated, since the cart starts empty and the
   // offer's condition isn't met yet.
-  const [quantities, setQuantities] = useState<Record<string, number>>({});
-  const [addedServicesMap, setAddedServicesMap] = useState<Record<string, any>>({});
+  const cartServices = useSelector((st: any) => st.Cart?.services ?? []);
+
+  const quantities: Record<string, number> = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const svc of cartServices) map[String(svc.id)] = svc.qty;
+    return map;
+  }, [cartServices]);
+
+  // Cross-category selections stay addressable because they live in the cart, not in
+  // whichever category list happens to be loaded.
+  const addedServicesMap: Record<string, any> = useMemo(() => {
+    const map: Record<string, any> = {};
+    for (const svc of cartServices) map[String(svc.id)] = svc;
+    return map;
+  }, [cartServices]);
   const [detailItem, setDetailItem] = useState<any>(null);
   const [showSortSheet, setShowSortSheet] = useState(false);
   const [showFilterSheet, setShowFilterSheet] = useState(false);
@@ -116,14 +141,12 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
 
     const hasFree = !!quantities[freeServiceItem.id];
     if (conditionMet && !hasFree) {
-      setQuantities(prev => ({...prev, [freeServiceItem.id]: 1}));
-      setAddedServicesMap(prev => ({...prev, [freeServiceItem.id]: freeServiceItem}));
+      dispatch(addServicesToCart([freeServiceItem]));
     } else if (!conditionMet && hasFree) {
-      setQuantities(prev => { const next = {...prev}; delete next[freeServiceItem.id]; return next; });
-      setAddedServicesMap(prev => { const next = {...prev}; delete next[freeServiceItem.id]; return next; });
+      dispatch(removeFreeService());
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [quantities, freeServiceItem, offerType]);
+  }, [quantities, addedServicesMap, freeServiceItem, offerType]);
 
   useEffect(() => {
     if (offerType === 'specific_services') {
@@ -202,52 +225,39 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
   };
 
   const increment = (id: string) => {
-    setQuantities(prev => ({...prev, [id]: Math.min((prev[id] ?? 0) + 1, MAX_SERVICE_QTY)}));
-    // Persist the full service object so it survives category switches
-    if (!addedServicesMap[id]) {
-      const svc = currentServices.find((s: any) => String(s.id) === id);
-      if (svc) setAddedServicesMap(prev => ({...prev, [id]: svc}));
-    }
+    // Prefer the freshly fetched row over the cart's copy so fields the cart line may
+    // be missing (originalPrice, discountPct — Home adds a leaner object) get filled
+    // in; falls back to the cart for services from a category no longer loaded.
+    const svc = currentServices.find((s: any) => String(s.id) === id) ?? addedServicesMap[id];
+    if (!svc) return;
+    // The reducer bumps an existing line's qty rather than duplicating it, and caps at
+    // MAX_SERVICE_QTY, so a plain add is the whole increment.
+    dispatch(addServicesToCart([{...svc, id: String(svc.id), qty: 1}]));
   };
 
   const decrement = (id: string) => {
     if (freeServiceItem && id === freeServiceItem.id) return; // free service is locked
-    setQuantities(prev => {
-      const next = {...prev};
-      if ((next[id] ?? 0) <= 1) {
-        delete next[id];
-        setAddedServicesMap(m => { const n = {...m}; delete n[id]; return n; });
-      } else {
-        next[id] -= 1;
-      }
-      return next;
-    });
+    // Drops the line entirely once it reaches zero.
+    dispatch(decrementServiceQty(id));
   };
 
   const addedCount = Object.entries(quantities).reduce((a, [id, qty]) =>
     (freeServiceItem && id === freeServiceItem.id) ? a : a + qty, 0);
   const totalSaved = Object.entries(quantities).reduce((acc, [id, qty]) => {
     const svc = addedServicesMap[id];
-    return svc ? acc + (svc.originalPrice - svc.price) * qty : acc;
+    // A line added from elsewhere (Home's popular row) carries no originalPrice —
+    // treat it as no discount rather than letting NaN into the total.
+    return svc ? acc + ((svc.originalPrice ?? svc.price) - svc.price) * qty : acc;
   }, 0);
   const cartTotal = Object.entries(quantities).reduce((acc, [id, qty]) => {
     const svc = addedServicesMap[id];
     return svc && !svc.isFree ? acc + svc.price * qty : acc;
   }, 0);
 
-  // Derive from addedServicesMap (not currentServices) so cross-category selections are preserved
-  const selectedServices = Object.entries(quantities)
-    .filter(([id]) => addedServicesMap[id])
-    .flatMap(([id, qty]) => Array.from({length: qty}, () => addedServicesMap[id]));
-
   const handleCheckout = () => {
-    // Merge this page's picks into the shared cart (same one packages/combos use) so a
-    // booking can mix individual services with packages, instead of navigating away with
-    // its own isolated services list.
-    const toAdd = Object.entries(quantities)
-      .filter(([id]) => addedServicesMap[id])
-      .map(([id, qty]) => ({...addedServicesMap[id], qty}));
-    dispatch(addServicesToCart(toAdd));
+    // Nothing to commit — every Add already went straight into the shared cart (the
+    // same one packages/combos use), so a booking can mix individual services with
+    // packages and this is just navigation.
     navigation?.navigate('AddressPayment', {
       // Explicitly clear these so a stale legacy single-flow visit to this screen
       // (services/packageId params from before) can't leak into cart mode.
@@ -376,13 +386,13 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
       {(addedCount > 0 || freeServiceItem) && (
         <View style={[styles.cartBar, {paddingBottom: insets.bottom + sw(8)}]}>
           <View>
-            <Text style={styles.cartPrice}>₹{cartTotal.toLocaleString('en-IN')}</Text>
+            <Text style={styles.cartPrice}>₹{formatAmount(cartTotal)}</Text>
             <View style={styles.cartSubRow}>
               <Text style={styles.cartSubText}>
                 {addedCount} item{addedCount !== 1 ? 's' : ''}{freeServiceItem ? ' + 1 FREE' : ''}
               </Text>
               {totalSaved > 0 && (
-                <Text style={styles.cartSavedText}> · Saved ₹{totalSaved.toLocaleString('en-IN')}</Text>
+                <Text style={styles.cartSavedText}> · Saved ₹{formatAmount(totalSaved)}</Text>
               )}
             </View>
           </View>
@@ -497,9 +507,9 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
                 />
                 {/* Price badge over image */}
                 <View style={styles.sheetHeroPriceBadge}>
-                  <Text style={styles.sheetHeroPrice}>{detailItem.priceStartsFrom ? 'Starts at ' : ''}₹{detailItem.price?.toLocaleString('en-IN')}</Text>
+                  <Text style={styles.sheetHeroPrice}>{detailItem.priceStartsFrom ? 'Starts at ' : ''}₹{formatAmount(detailItem.price)}</Text>
                   {detailItem.originalPrice > detailItem.price && (
-                    <Text style={styles.sheetHeroOriginal}>₹{detailItem.originalPrice?.toLocaleString('en-IN')}</Text>
+                    <Text style={styles.sheetHeroOriginal}>₹{formatAmount(detailItem.originalPrice)}</Text>
                   )}
                 </View>
                 {/* Close button */}
@@ -566,7 +576,7 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
                     onPress={() => { increment(String(detailItem.id)); setDetailItem(null); }}>
                     <Text style={styles.sheetAddBtnText}>Add to Cart</Text>
                     <View style={styles.sheetAddBtnPriceBadge}>
-                      <Text style={styles.sheetAddBtnPrice}>₹{detailItem.price?.toLocaleString('en-IN')}</Text>
+                      <Text style={styles.sheetAddBtnPrice}>₹{formatAmount(detailItem.price)}</Text>
                     </View>
                   </TouchableOpacity>
                 ) : (
@@ -625,9 +635,9 @@ const ServiceCard = ({
             <View style={styles.priceBlock}>
               {item.priceStartsFrom && <Text style={styles.startsAtLabel}>Starts at</Text>}
               <View style={styles.priceRow}>
-                <Text style={styles.currentPrice}>₹{item.price.toLocaleString('en-IN')}</Text>
+                <Text style={styles.currentPrice}>₹{formatAmount(item.price)}</Text>
                 {item.originalPrice > item.price && (
-                  <Text style={styles.originalPrice}>₹{item.originalPrice.toLocaleString('en-IN')}</Text>
+                  <Text style={styles.originalPrice}>₹{formatAmount(item.originalPrice)}</Text>
                 )}
                 {item.discountPct > 0 && (
                   <View style={styles.discountPill}>

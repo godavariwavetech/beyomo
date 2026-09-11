@@ -17,6 +17,7 @@ import {fonts} from '../../config/theme';
 import {useDispatch, useSelector} from 'react-redux';
 import {fetchPartnerProfile, fetchPartnerDashboard} from '../../redux/reducers/partner';
 import {logoutPartner, actionLogout} from '../../redux/reducers/auth';
+import {resetToLogin} from '../../navigation/navigationRef';
 import {resolveImageUrl, formatAmount} from '../../utils/utils';
 import {useAppAlert} from '../../hooks/useAppAlert';
 import AppAlertModal from '../../components/AppAlertModal/AppAlertModal';
@@ -56,7 +57,9 @@ const ProfileScreen = ({navigation}: {navigation: any}) => {
         onPress: async () => {
           await dispatch(logoutPartner(undefined));
           dispatch(actionLogout());
-          navigation.navigate('Login');
+          // reset, not navigate: navigate() would leave Main/Profile/JobDetails on the
+          // stack and the back button would walk straight back into them.
+          resetToLogin();
         },
       },
     ]);

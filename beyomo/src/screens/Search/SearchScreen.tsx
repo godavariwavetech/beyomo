@@ -19,6 +19,7 @@ import {fonts} from '../../config/theme';
 import api from '../../utils/api';
 import {endpoints} from '../../config/config';
 import type {RootState} from '../../redux/store';
+import {formatAmount} from '../../utils/utils';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
@@ -184,7 +185,7 @@ const SearchScreen = ({navigation}: {navigation: any}) => {
                     {svc.category?.name ?? ''}{svc.duration ? ` · ${svc.duration} mins` : ''}
                   </Text>
                 </View>
-                <Text style={styles.rowPrice}>{svc.priceStartsFrom ? 'Starts at ' : ''}₹{Math.round(svc.price ?? svc.basePrice ?? 0)}</Text>
+                <Text style={styles.rowPrice}>{svc.priceStartsFrom ? 'Starts at ' : ''}₹{formatAmount(svc.price ?? svc.basePrice ?? 0)}</Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -204,7 +205,7 @@ const SearchScreen = ({navigation}: {navigation: any}) => {
                       : `${(pkg.services ?? []).length} services included`}
                   </Text>
                 </View>
-                <Text style={styles.rowPrice}>₹{Math.round(pkg.price ?? 0)}</Text>
+                <Text style={styles.rowPrice}>₹{formatAmount(pkg.price ?? 0)}</Text>
               </TouchableOpacity>
             ))}
           </View>
