@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
+import { formatAmount } from '../../utils/format';
 
-const fmt = (n) => Number(n || 0).toLocaleString('en-IN');
+const fmt = (n) => formatAmount(n);
 
 // Category accordion + service checkboxes — shared by Combos and Custom Packages
 // so an admin can build a cross-category list of eligible/included services.

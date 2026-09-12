@@ -9,8 +9,9 @@ import { Badge } from '../components/common/Badge';
 import { useReports } from '../hooks/useReports';
 import { useCityFilter } from '../context/CityContext';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
+import { formatRupee } from '../utils/format';
 
-const fmtCurrency = (v) => v >= 100000 ? `₹${(v/100000).toFixed(2)}L` : `₹${v.toLocaleString('en-IN')}`;
+const fmtCurrency = (v) => v >= 100000 ? `₹${(v/100000).toFixed(2)}L` : formatRupee(v);
 const fmtNum = (v) => typeof v === 'number' && v % 1 !== 0 ? v.toFixed(1) : v?.toLocaleString('en-IN');
 
 // "2026-08" reads better on an axis as "Aug 26".
@@ -304,7 +305,7 @@ export default function Dashboard() {
                       <div className="table-cell-sub">{b.bookingCode ?? b._id ?? b.id}</div>
                     </td>
                     <td>{b.service?.name ?? b.service ?? b.services?.[0]?.name ?? '—'}</td>
-                    <td style={{ fontWeight: 600 }}>₹{(b.amount ?? b.totalAmount ?? 0).toLocaleString('en-IN')}</td>
+                    <td style={{ fontWeight: 600 }}>{formatRupee(b.amount ?? b.totalAmount ?? 0)}</td>
                     <td><Badge status={b.status} /></td>
                   </tr>
                 ))}

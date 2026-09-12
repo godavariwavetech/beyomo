@@ -1,8 +1,9 @@
 import React from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { GripVertical, X } from 'lucide-react';
+import { formatAmount } from '../../utils/format';
 
-const fmt = (n) => Number(n || 0).toLocaleString('en-IN');
+const fmt = (n) => formatAmount(n);
 
 // Shows the currently-selected services in display order and lets the admin
 // drag to reorder or remove one — used by Packages.jsx and Combos.jsx so the

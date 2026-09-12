@@ -7,6 +7,7 @@ import { Download, TrendingUp, Users, UserCog, Star } from 'lucide-react';
 import api from '../services/api';
 import { useCityFilter } from '../context/CityContext';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
+import { formatAmount, formatRupee } from '../utils/format';
 
 const exportCSV = (data, headers, filename) => {
   const csv = [headers, ...data.map(r => headers.map(h => `"${String(r[h]??'').replace(/"/g,'""')}"`))].map(r => Array.isArray(r) ? r.join(',') : r).join('\n');
@@ -30,10 +31,10 @@ const fmtCompact = (v) => {
   if (Math.abs(n) >= 1e7) return `₹${(n / 1e7).toFixed(2)}Cr`;
   if (Math.abs(n) >= 1e5) return `₹${(n / 1e5).toFixed(2)}L`;
   if (Math.abs(n) >= 1e3) return `₹${(n / 1e3).toFixed(1)}k`;
-  return `₹${n.toLocaleString('en-IN')}`;
+  return formatRupee(n);
 };
 
-const fmtNum = (v) => (Number(v) || 0).toLocaleString('en-IN');
+const fmtNum = (v) => formatAmount(v);
 
 // A month key like "2026-08" reads better on an axis as "Aug 26".
 const fmtMonth = (m) => {
@@ -287,7 +288,7 @@ export default function Reports() {
                       <td><div style={{ fontWeight:600 }}>{p.name}</div></td>
                       <td style={{ fontWeight:600 }}>{p.jobs ?? 0}</td>
                       <td><span style={{ color:'#FDD77A', fontWeight:700 }}>★ {p.rating ?? 0}</span></td>
-                      <td style={{ fontWeight:700, color:'var(--c-brand-primary)' }}>₹{(p.earnings ?? 0).toLocaleString('en-IN')}</td>
+                      <td style={{ fontWeight:700, color:'var(--c-brand-primary)' }}>{formatRupee(p.earnings)}</td>
                     </tr>
                   ))}
                 </tbody>

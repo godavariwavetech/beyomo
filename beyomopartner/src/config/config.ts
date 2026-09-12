@@ -1,6 +1,11 @@
-// Android emulator: 10.0.2.2 | iOS simulator: localhost | Physical device: your machine IP
-export const BASE_URL = 'https://beyomo.com:3099';
-// export const BASE_URL = 'http://192.168.1.16:3000';
+// Local testing backend, reached over the USB debug bridge:
+//   adb reverse tcp:3000 tcp:3000
+// Re-run that after replugging the phone. Android emulator: 'http://10.0.2.2:3000'.
+// Cleartext http is debug-only (android/app/src/debug/AndroidManifest.xml).
+export const BASE_URL = 'http://localhost:3000';
+
+// Live - swap back before building a release.
+// export const BASE_URL = 'https://beyomo.com:3099';
 
 export const baseURL = BASE_URL;
 

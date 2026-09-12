@@ -620,14 +620,25 @@ const getBookingDetail = async (bookingId) => {
   // These fields let the UI display the up-to-date admin/partner split per booking.
   try {
     const serviceItems = plain.services ?? [];
+    // `packages` comes back from the driver as a JSON string, so an Array.isArray test on
+    // the raw column silently skips the multi-package branch and blends the booking over
+    // its raw per-service prices instead of the package prices it was actually charged —
+    // which reported a different split here than the partner app's stored partnerEarning.
+    const bookingPackages = typeof plain.packages === "string"
+      ? (() => { try { return JSON.parse(plain.packages); } catch { return []; } })()
+      : plain.packages;
     let rates;
-    if (Array.isArray(plain.packages) && plain.packages.length > 0) {
+    if (Array.isArray(bookingPackages) && bookingPackages.length > 0) {
       // Multi-package: each package keeps its own split — blend them by price weight.
+      // The pool must carry `price`; resolveRatesForMultiPackageBooking weights by
+      // price * qty, so omitting it makes every weight NaN. Prefer the price snapshotted
+      // on the booking over the package's current price — that's what the customer paid.
       const ratePools = [];
-      for (const p of plain.packages) {
+      for (const p of bookingPackages) {
         const pkg = await ServicePackage.findByPk(p.packageId);
-        if (pkg) ratePools.push({ package: { adminPercent: pkg.adminPercent, partnerPercent: pkg.partnerPercent, gstPercent: pkg.gstPercent }, qty: p.qty || 1 });
-        else ratePools.push({ package: { adminPercent: DEFAULT_ADMIN_PERCENT, partnerPercent: DEFAULT_PARTNER_PERCENT, gstPercent: DEFAULT_GST_PERCENT }, qty: p.qty || 1 });
+        const price = p.price ?? pkg?.price ?? 0;
+        if (pkg) ratePools.push({ package: { price, adminPercent: pkg.adminPercent, partnerPercent: pkg.partnerPercent, gstPercent: pkg.gstPercent }, qty: p.qty || 1 });
+        else ratePools.push({ package: { price, adminPercent: DEFAULT_ADMIN_PERCENT, partnerPercent: DEFAULT_PARTNER_PERCENT, gstPercent: DEFAULT_GST_PERCENT }, qty: p.qty || 1 });
       }
       rates = await resolveRatesForMultiPackageBooking({ packages: ratePools, serviceItems });
     } else {

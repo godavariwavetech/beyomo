@@ -8,6 +8,7 @@ import api from '../services/api';
 import { Badge, StarRating } from '../components/common/Badge';
 import Modal from '../components/common/Modal';
 import ImageUploader from '../components/common/ImageUploader';
+import { formatRupee } from '../utils/format';
 
 const exportCSV = (data, filename) => {
   const headers = ['ID','Name','Phone','Email','City','Services','Rating','Total Jobs','Monthly Earnings','Status'];
@@ -537,7 +538,7 @@ export default function Partners() {
                   </td>
                   <td><StarRating rating={p.rating} size={13} /></td>
                   <td style={{ fontWeight:600, textAlign:'center' }}>{p.totalJobs}</td>
-                  <td style={{ fontWeight:600 }}>₹{p.monthlyEarnings.toLocaleString('en-IN')}</td>
+                  <td style={{ fontWeight:600 }}>{formatRupee(p.monthlyEarnings)}</td>
                   <td>
                     <span style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize:12, fontWeight:600, color: p.isOnline ? 'var(--c-success)' : 'var(--c-text-muted)' }}>
                       <span style={{ width:8, height:8, borderRadius:'50%', background: p.isOnline ? 'var(--c-success)' : 'var(--c-border)', display:'inline-block' }} />
@@ -843,9 +844,9 @@ export default function Partners() {
             {tab === 'earnings' && (
               <div>
                 <div className="mini-stats" style={{ marginBottom:20 }}>
-                  <div className="mini-stat"><div className="value">₹{selected.monthlyEarnings.toLocaleString('en-IN')}</div><div className="label">This Month</div></div>
+                  <div className="mini-stat"><div className="value">{formatRupee(selected.monthlyEarnings)}</div><div className="label">This Month</div></div>
                   <div className="mini-stat"><div className="value">₹{(selected.totalEarnings/(selected.totalJobs||1)).toFixed(0)}</div><div className="label">Avg per Job</div></div>
-                  <div className="mini-stat"><div className="value">₹{selected.totalEarnings.toLocaleString('en-IN')}</div><div className="label">All Time</div></div>
+                  <div className="mini-stat"><div className="value">{formatRupee(selected.totalEarnings)}</div><div className="label">All Time</div></div>
                 </div>
                 <div style={{ background:'var(--c-border-light)', borderRadius:'var(--r-md)', padding:16, textAlign:'center', color:'var(--c-text-secondary)', fontSize:14 }}>
                   Detailed payout history available in the Earnings section.

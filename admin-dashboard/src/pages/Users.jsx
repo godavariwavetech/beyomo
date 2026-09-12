@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { useUsers } from '../hooks/useUsers';
 import { useCityFilter } from '../context/CityContext';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
+import { formatRupee } from '../utils/format';
 
 const exportCSV = (data, filename) => {
   const headers = ['ID','Name','Phone','Email','Joined','Bookings','Total Spent','Status'];
@@ -215,7 +216,7 @@ export default function Users() {
                   <td style={{ color: 'var(--c-text-secondary)', fontSize: 13 }}>{u.phone}</td>
                   <td style={{ fontSize: 13 }}>{new Date(u.joinedDate).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' })}</td>
                   <td style={{ fontWeight: 600, textAlign: 'center' }}>{u.bookings}</td>
-                  <td style={{ fontWeight: 600 }}>₹{u.totalSpent.toLocaleString('en-IN')}</td>
+                  <td style={{ fontWeight: 600 }}>{formatRupee(u.totalSpent)}</td>
                   <td><Badge status={u.status} /></td>
                   <td>
                     <div style={{ display: 'flex', gap: 4 }}>
@@ -324,7 +325,7 @@ export default function Users() {
                     { icon: <Calendar size={14}/>, label:'Joined',   value: new Date(selected.joinedDate).toLocaleDateString('en-IN',{day:'2-digit',month:'long',year:'numeric'}) },
                     { icon: <Calendar size={14}/>, label:'Last Active', value: (selected.updatedAt ?? selected.createdAt) ? new Date(selected.updatedAt ?? selected.createdAt).toLocaleDateString('en-IN',{day:'2-digit',month:'long',year:'numeric'}) : '—' },
                     { icon: <MapPin size={14}/>, label:'Addresses',  value: `${selected.addresses ?? 0} saved address${(selected.addresses ?? 0) !== 1 ? 'es' : ''}` },
-                    { icon: <DollarSign size={14}/>, label:'Avg. Order', value: selected.bookings ? `₹${Math.round(selected.totalSpent/selected.bookings).toLocaleString('en-IN')}` : '—' },
+                    { icon: <DollarSign size={14}/>, label:'Avg. Order', value: selected.bookings ? formatRupee(selected.totalSpent/selected.bookings) : '—' },
                   ].map(item => (
                     <div key={item.label} className="detail-item">
                       <div className="label" style={{ display:'flex', alignItems:'center', gap:4 }}>{item.icon} {item.label}</div>
@@ -355,7 +356,7 @@ export default function Users() {
                           <td style={{ fontSize:12, color:'var(--c-text-secondary)' }}>{b.code}</td>
                           <td>{b.service}</td>
                           <td style={{ fontSize:13 }}>{b.partnerName}</td>
-                          <td style={{ fontWeight:600 }}>₹{Number(b.amount ?? 0).toLocaleString('en-IN')}</td>
+                          <td style={{ fontWeight:600 }}>{formatRupee(b.amount)}</td>
                           <td><Badge status={b.status} /></td>
                           <td style={{ fontSize:13 }}>{b.date}</td>
                         </tr>

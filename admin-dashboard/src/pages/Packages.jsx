@@ -10,8 +10,9 @@ import ServiceTree from '../components/common/ServiceTree';
 import ReorderableServiceList from '../components/common/ReorderableServiceList';
 import api from '../services/api';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
+import { formatAmount } from '../utils/format';
 
-const fmt = (n) => Number(n || 0).toLocaleString('en-IN');
+const fmt = (n) => formatAmount(n);
 
 const emptyForm = () => ({
   title: '',
