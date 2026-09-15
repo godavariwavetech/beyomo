@@ -188,9 +188,9 @@ const ActiveJobScreen = ({navigation, route}: any) => {
     // the payment never went through. Either way, don't block completion: ask whether the
     // partner collected cash on the spot instead, rather than refusing to close the job.
     const needsPaymentConfirmation = job?.paymentStatus !== 'paid';
-    const title = needsPaymentConfirmation ? 'Confirm Payment Collected' : 'Mark as Completed?';
+    const title = needsPaymentConfirmation ? 'Collect Payment' : 'Mark as Completed?';
     const message = needsPaymentConfirmation
-      ? `Have you collected ₹${formatAmount(totalAmount)} from the customer (cash or otherwise)?`
+      ? `Collect ₹${formatAmount(totalAmount)} from the customer (cash or otherwise), then tap Collect to complete this booking.`
       : 'Confirm that you have completed all services for this booking.';
 
     showAlert(
@@ -199,7 +199,7 @@ const ActiveJobScreen = ({navigation, route}: any) => {
       [
         {text: 'Not Yet', style: 'cancel'},
         {
-          text: needsPaymentConfirmation ? 'Yes, Collected' : 'Confirm',
+          text: needsPaymentConfirmation ? 'Collect' : 'Confirm',
           onPress: async () => {
             setCompleting(true);
             if (job?.id) {

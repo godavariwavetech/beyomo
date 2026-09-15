@@ -31,6 +31,35 @@ const computePartnerShare = async (booking, partnerServiceItems) => {
   const couponDiscount = parseFloat(booking.couponDiscountAmount || 0);
   const grossShare = Math.max(0, (baseAmount - couponDiscount) * fraction);
 
+  // The booking's own partnerEarning is the authoritative split — it's what the partner
+  // app shows as "Your Earnings", and recomputeBookingAmounts keeps it current as
+  // services/packages are added or removed. Apportioning it is the only way the ledger
+  // can agree with that figure.
+  //
+  // The category-weighted fallback below cannot: it weights by raw catalog prices and
+  // reads adminPercent off each service's CATEGORY, so it is blind to packages. A
+  // package's fixed price isn't the sum of its services' list prices, and a package
+  // carries its own adminPercent — so on any booking with a package or combo the two
+  // numbers drift apart (GEN2600026: ledger said 2108.74, the booking said 2147.82,
+  // because the ledger weighted 3894 of raw prices instead of the 2797 actually charged
+  // and counted a 50%-commission service twice, once inside a combo and once standalone).
+  const bookingEarning = parseFloat(booking.partnerEarning);
+  if (Number.isFinite(bookingEarning) && bookingEarning > 0) {
+    // Clamped because the Booking model falls back to partnerEarning = totalAmount when
+    // none was computed, and totalAmount includes GST — which would otherwise produce a
+    // share above gross and a negative commission.
+    const partnerNetAmount = parseFloat(Math.min(grossShare, bookingEarning * fraction).toFixed(2));
+    const adminCommissionAmount = parseFloat(Math.max(0, grossShare - partnerNetAmount).toFixed(2));
+    return {
+      grossShare: parseFloat(grossShare.toFixed(2)),
+      commissionPercent: grossShare > 0
+        ? parseFloat(((adminCommissionAmount / grossShare) * 100).toFixed(2))
+        : 0,
+      adminCommissionAmount,
+      partnerNetAmount,
+    };
+  }
+
   // Weighted admin commission % across the partner's services, by their catalog-price weight
   let weightedAdminPercent = 0;
   if (nominalShare > 0) {

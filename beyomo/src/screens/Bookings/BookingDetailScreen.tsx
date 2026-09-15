@@ -475,6 +475,14 @@ const BookingDetailScreen = ({navigation, route}: any) => {
   // once a partner has started the job (in_progress) it can no longer be cancelled/rescheduled.
   const isCancellable = ['pending', 'confirmed'].includes(booking.status?.toLowerCase() ?? '');
   const isCompleted = booking.status?.toLowerCase() === 'completed';
+
+  // The 4-digit code the expert has to type in to start the job. Only worth showing
+  // while that is still ahead of (or has just happened in) this booking — once it is
+  // completed or cancelled the code is spent, and bookings made before this feature
+  // shipped have no code at all.
+  const isOtpVerified = !!booking.otpVerifiedAt;
+  const showServiceOtp = !!booking.serviceOtp
+    && ['confirmed', 'in_progress'].includes(booking.status?.toLowerCase() ?? '');
   const needsPayment = booking.paymentMode === 'online'
     && booking.paymentStatus !== 'paid'
     && !['cancelled'].includes(booking.status?.toLowerCase() ?? '');
@@ -536,6 +544,26 @@ const BookingDetailScreen = ({navigation, route}: any) => {
                 <Text style={styles.paymentDueBtnText}>Pay Now</Text>
               )}
             </TouchableOpacity>
+          </View>
+        )}
+
+        {showServiceOtp && (
+          <View style={styles.card}>
+            <View style={styles.otpRow}>
+              <View style={styles.otpTextCol}>
+                <Text style={styles.otpLabel}>
+                  {isOtpVerified ? 'Service started' : 'Start service OTP'}
+                </Text>
+                <Text style={styles.otpHint}>
+                  {isOtpVerified
+                    ? 'Your expert entered this code.'
+                    : 'Share only after your expert arrives.'}
+                </Text>
+              </View>
+              <Text style={[styles.otpCode, isOtpVerified && styles.otpCodeDone]}>
+                {booking.serviceOtp}
+              </Text>
+            </View>
           </View>
         )}
 
@@ -1163,6 +1191,17 @@ const styles = StyleSheet.create({
   },
   paymentDueTitle: {fontFamily: fonts.title, fontSize: sw(13), fontWeight: '700', color: '#C87B1A'},
   paymentDueSub: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#6B4C0A', marginTop: sw(2)},
+
+  // Start-service OTP — deliberately plain: it reuses the standard `card` shell and
+  // states the code as text rather than boxing each digit, so it reads as one more
+  // detail on the booking instead of an alert competing with the status banner.
+  otpRow: {flexDirection: 'row', alignItems: 'center', gap: sw(12)},
+  otpTextCol: {flex: 1},
+  otpLabel: {fontFamily: fonts.title, fontSize: sw(14), fontWeight: '700', color: '#171816'},
+  otpHint: {fontFamily: fonts.textFont, fontSize: sw(12), color: '#6B6B6B', marginTop: sw(3), lineHeight: sw(17)},
+  otpCode: {fontFamily: fonts.title, fontSize: sw(26), fontWeight: '700', color: '#105641', letterSpacing: sw(3)},
+  // Spent, so it recedes rather than still reading as an action.
+  otpCodeDone: {color: '#9A9A9A'},
   paymentDueBtn: {
     backgroundColor: '#105641',
     borderRadius: sw(8),

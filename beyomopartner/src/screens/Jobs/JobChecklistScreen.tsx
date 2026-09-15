@@ -40,6 +40,13 @@ const JobChecklistScreen = ({navigation, route}: any) => {
   const [saving, setSaving] = useState(false);
   const [starting, setStarting] = useState(false);
 
+  // Start-service OTP — the 4-digit code the customer reads off their booking. The
+  // job cannot move to in_progress until the backend has checked it.
+  const [showOtpModal, setShowOtpModal] = useState(false);
+  const [otp, setOtp] = useState('');
+  const [otpError, setOtpError] = useState('');
+  const [verifyingOtp, setVerifyingOtp] = useState(false);
+
   // Add Service modal — either pick from the catalog, or key in a free-form add-on charge
   const [showModal, setShowModal] = useState(false);
   const [addMode, setAddMode] = useState<'catalog' | 'addon'>('catalog');
@@ -306,20 +313,48 @@ const JobChecklistScreen = ({navigation, route}: any) => {
     ]);
   };
 
-  // The booking only actually moves to "in_progress" here — once the partner has
-  // reviewed/confirmed the checklist and is ready to start, not at "Arrived at Location".
+  // Swiping "Start Service" no longer starts the job on its own — it asks for the
+  // customer's 4-digit code first. A job with no id is a local/preview one that was
+  // never persisted, so there's nothing to verify against.
   const handleStartService = async () => {
     if (!job?.id) {
       navigation.navigate('ActiveJob', {job: {...job, services: visibleServices, totalAmount}});
       return;
     }
+    setOtp('');
+    setOtpError('');
+    setShowOtpModal(true);
+  };
+
+  // The booking only actually moves to "in_progress" here — once the partner has
+  // reviewed/confirmed the checklist AND entered the customer's OTP, not at
+  // "Arrived at Location". The backend re-checks verification on the status call, so
+  // the two requests can't be reordered or the first one skipped.
+  const handleVerifyAndStart = async () => {
+    if (!/^\d{4}$/.test(otp)) {
+      setOtpError('Enter the 4-digit code from the customer.');
+      return;
+    }
+    setVerifyingOtp(true);
+    setOtpError('');
+    try {
+      await api.post(endpoints.PARTNER_VERIFY_OTP(String(job.id)), {otp});
+    } catch (e: any) {
+      // Wrong code, or too many tries — keep the sheet open so it can be retyped.
+      setOtpError(e.response?.data?.message ?? 'Could not verify the OTP. Please try again.');
+      setVerifyingOtp(false);
+      return;
+    }
+
     setStarting(true);
     try {
       await api.patch(endpoints.PARTNER_BOOKING_STATUS(String(job.id)), {status: 'in_progress'});
+      setShowOtpModal(false);
       navigation.navigate('ActiveJob', {job: {...job, services: visibleServices, totalAmount, status: 'in_progress'}});
     } catch (e: any) {
-      showAlert('Error', e.response?.data?.message ?? 'Failed to start service. Please try again.');
+      setOtpError(e.response?.data?.message ?? 'Failed to start service. Please try again.');
     }
+    setVerifyingOtp(false);
     setStarting(false);
   };
 
@@ -584,6 +619,54 @@ const JobChecklistScreen = ({navigation, route}: any) => {
           />
         )}
       </View>
+
+      {/* Start-Service OTP Modal — the customer reads the code off their booking in
+          the Beyomo app. No dismiss-on-backdrop here: the swipe is already done, so a
+          stray tap shouldn't silently drop the partner back to the checklist. */}
+      <Modal visible={showOtpModal} animationType="slide" transparent onRequestClose={() => setShowOtpModal(false)}>
+        <View style={styles.overlay} />
+        <View style={[styles.sheet, {paddingBottom: insets.bottom + sw(16)}]}>
+          <View style={styles.handle} />
+          <Text style={styles.sheetTitle}>Enter Customer OTP</Text>
+          <Text style={styles.otpSubtitle}>
+            Ask the customer for the 4-digit code shown on their booking. The service
+            can't be started without it.
+          </Text>
+
+          <TextInput
+            style={[styles.otpInput, !!otpError && styles.otpInputError]}
+            value={otp}
+            onChangeText={t => { setOtp(t.replace(/\D/g, '').slice(0, 4)); setOtpError(''); }}
+            keyboardType="number-pad"
+            maxLength={4}
+            autoFocus
+            placeholder="––––"
+            placeholderTextColor="#C4C4C4"
+            editable={!verifyingOtp}
+          />
+
+          {!!otpError && <Text style={styles.otpErrorText}>{otpError}</Text>}
+
+          <TouchableOpacity
+            style={[styles.btn, styles.otpVerifyBtn, (verifyingOtp || otp.length !== 4) && {opacity: 0.6}]}
+            onPress={handleVerifyAndStart}
+            disabled={verifyingOtp || otp.length !== 4}
+            activeOpacity={0.88}>
+            {verifyingOtp ? <ActivityIndicator color="#FFFFFF" /> : (
+              <><Ionicons name="play-circle-outline" size={sw(18)} color="#FFFFFF" />
+              <Text style={styles.btnText}>Verify & Start Service</Text></>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.otpCancelBtn}
+            onPress={() => setShowOtpModal(false)}
+            disabled={verifyingOtp}
+            activeOpacity={0.7}>
+            <Text style={styles.otpCancelText}>Cancel</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
 
       {/* Add Service Modal */}
       <Modal visible={showModal} animationType="slide" transparent onRequestClose={() => setShowModal(false)}>
@@ -906,6 +989,31 @@ const styles = StyleSheet.create({
   sheet: {backgroundColor: '#FFFFFF', borderTopLeftRadius: sw(20), borderTopRightRadius: sw(20), paddingHorizontal: sw(16), paddingTop: sw(12), maxHeight: '85%'},
   handle: {width: sw(40), height: sw(4), borderRadius: sw(2), backgroundColor: '#D0D0D0', alignSelf: 'center', marginBottom: sw(14)},
   sheetTitle: {fontFamily: fonts.title, fontSize: sw(17), fontWeight: '700', color: '#171816', marginBottom: sw(14)},
+
+  // Start-service OTP sheet
+  otpSubtitle: {fontFamily: fonts.textFont, fontSize: sw(13), color: '#6B6B6B', lineHeight: sw(19), marginTop: sw(-6), marginBottom: sw(16)},
+  otpInput: {
+    fontFamily: fonts.title,
+    fontSize: sw(30),
+    fontWeight: '700',
+    color: '#171816',
+    textAlign: 'center',
+    letterSpacing: sw(14),
+    height: sw(66),
+    borderRadius: sw(12),
+    borderWidth: 1.5,
+    borderColor: '#E0E0E0',
+    backgroundColor: '#FAFAFA',
+    // letterSpacing pads the right of the last glyph too, which visually shifts the
+    // text left of centre — this offsets it back.
+    paddingLeft: sw(14),
+  },
+  otpInputError: {borderColor: '#D64545', backgroundColor: '#FEF5F5'},
+  otpErrorText: {fontFamily: fonts.textFont, fontSize: sw(12), color: '#D64545', marginTop: sw(8)},
+  otpVerifyBtn: {backgroundColor: '#105641', height: sw(56), flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: sw(10), marginTop: sw(18)},
+  otpCancelBtn: {alignItems: 'center', paddingVertical: sw(14)},
+  otpCancelText: {fontFamily: fonts.title, fontSize: sw(14), fontWeight: '600', color: '#6B6B6B'},
+
   modeToggle: {flexDirection: 'row', backgroundColor: '#F5F5F5', borderRadius: sw(12), padding: sw(4), marginBottom: sw(14)},
   modeToggleBtn: {flex: 1, alignItems: 'center', paddingVertical: sw(9), borderRadius: sw(9)},
   modeToggleBtnActive: {backgroundColor: '#FFFFFF', elevation: 1, shadowColor: '#000', shadowOffset: {width: 0, height: 1}, shadowOpacity: 0.08, shadowRadius: 3},

@@ -346,6 +346,13 @@ const updateBookingStatus = async (partnerId, bookingId, status, cashCollected =
     if (!["confirmed", "in_progress"].includes(booking.status)) {
       throw new AppError(`Cannot start a booking with status "${booking.status}"`, 400);
     }
+    // The customer's 4-digit code has to be verified first — this is the server-side
+    // half of that rule, so a partner can't start a job by calling the API directly
+    // and skipping the OTP screen. Bookings predating the feature (serviceOtp NULL)
+    // are let through rather than being stranded un-startable.
+    if (booking.serviceOtp && !booking.otpVerifiedAt) {
+      throw new AppError("Enter the customer's 4-digit OTP to start this service", 403);
+    }
     await booking.update({ status: "in_progress" });
     return booking.reload();
   }
@@ -995,8 +1002,68 @@ const removeBookingPackage = async (partnerId, bookingId, packageId) => {
   return booking.reload();
 };
 
+// A 4-digit code is guessable in 10k tries, so cap the attempts. The counter is only
+// reset by a correct entry — a partner who burns through it needs support to step in,
+// which is the right amount of friction for something this easy to brute force.
+const OTP_MAX_ATTEMPTS = 5;
+
+/**
+ * Check the customer's start-service OTP and record the verification.
+ *
+ * Deliberately does NOT move the booking to in_progress: the partner app still calls
+ * PATCH /status for that, and updateBookingStatus enforces otpVerifiedAt. Keeping the
+ * two apart means the existing start-service path stays the single place where a job
+ * actually starts, instead of there being two ways in.
+ */
+const verifyServiceOtp = async (partnerId, bookingId, otp) => {
+  const booking = await Booking.findByPk(bookingId);
+  if (!booking) throw new AppError("Booking not found", 404);
+
+  const svcs = (() => { const s = booking.services; if (Array.isArray(s)) return s; if (typeof s === 'string') { try { return JSON.parse(s); } catch { return []; } } return []; })();
+  const isPrimaryPartner = String(booking.partnerId) === String(partnerId);
+  const hasClaimedServices = svcs.some(s => String(s.assignedPartnerId) === String(partnerId));
+  if (!isPrimaryPartner && !hasClaimedServices) throw new AppError("Booking not found", 404);
+
+  if (!["confirmed", "in_progress"].includes(booking.status)) {
+    throw new AppError(`Cannot verify OTP on a booking with status "${booking.status}"`, 400);
+  }
+
+  // Already verified — return success so a retry after a dropped response doesn't
+  // look like a failure to the partner.
+  if (booking.otpVerifiedAt) {
+    return { verified: true, otpVerifiedAt: booking.otpVerifiedAt, attemptsRemaining: null };
+  }
+
+  // Predates the feature: nothing to check against, so let the job start.
+  if (!booking.serviceOtp) {
+    await booking.update({ otpVerifiedAt: new Date() });
+    return { verified: true, otpVerifiedAt: booking.otpVerifiedAt, attemptsRemaining: null };
+  }
+
+  if (booking.otpAttempts >= OTP_MAX_ATTEMPTS) {
+    throw new AppError("Too many incorrect attempts. Please contact support.", 429);
+  }
+
+  const supplied = String(otp ?? "").trim();
+  if (supplied !== booking.serviceOtp) {
+    const attempts = booking.otpAttempts + 1;
+    await booking.update({ otpAttempts: attempts });
+    const remaining = Math.max(OTP_MAX_ATTEMPTS - attempts, 0);
+    throw new AppError(
+      remaining > 0
+        ? `Incorrect OTP. ${remaining} attempt${remaining === 1 ? "" : "s"} remaining.`
+        : "Incorrect OTP. Too many incorrect attempts. Please contact support.",
+      400
+    );
+  }
+
+  await booking.update({ otpVerifiedAt: new Date(), otpAttempts: 0 });
+  return { verified: true, otpVerifiedAt: booking.otpVerifiedAt, attemptsRemaining: null };
+};
+
 module.exports = {
   getProfile, updateProfile, updateDocuments, deleteAccount,
   getDashboard, getBookings, getBookingById, getAvailableBookings, acceptBooking, claimServices, updateBookingStatus,
   markArrived, updateDeviceToken, setOnlineStatus, getEarnings, addExtraServices, addBookingPackage, removeBookingPackage,
+  verifyServiceOtp,
 };

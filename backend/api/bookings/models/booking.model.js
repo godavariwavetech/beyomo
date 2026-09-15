@@ -1,4 +1,5 @@
-﻿const { DataTypes, Op } = require("sequelize");
+﻿const crypto = require("crypto");
+const { DataTypes, Op } = require("sequelize");
 const { sequelize } = require("../../../utils/dbconnect");
 const City = require("../../cities/models/city.model");
 
@@ -70,6 +71,15 @@ const Booking = sequelize.define("Booking", {
   // Set when a support/admin agent creates the booking on the customer's behalf
   // (e.g. a phone call requesting a one-time service) rather than the user app.
   createdByAdminId: { type: DataTypes.INTEGER, allowNull: true },
+  // 4-digit start-service OTP. Shown to the customer on their booking; the partner has
+  // to type it in before the job can move to in_progress, which is what proves the
+  // partner is actually standing in front of the customer. Never sent to the partner
+  // app — the partner router strips it from every response (see partners.routes.js).
+  serviceOtp: { type: DataTypes.STRING(4), allowNull: true },
+  // Null until the partner enters the right code; doubles as the "verified" flag.
+  otpVerifiedAt: { type: DataTypes.DATE, allowNull: true },
+  // Wrong guesses so far. Caps brute force on a 4-digit space (see OTP_MAX_ATTEMPTS).
+  otpAttempts: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
 }, {
   timestamps: true,
   tableName: "bookings",
@@ -80,6 +90,9 @@ const Booking = sequelize.define("Booking", {
       }
       if (booking.partnerEarning == null) {
         booking.partnerEarning = booking.totalAmount;
+      }
+      if (!booking.serviceOtp) {
+        booking.serviceOtp = await generateServiceOtp();
       }
     },
   },
@@ -113,6 +126,37 @@ const generateBookingCode = async (cityId) => {
   }
   // Extremely unlikely fallback — timestamp suffix guarantees uniqueness.
   return `${cityCode}${yy}${String(Date.now()).slice(-5)}`;
+};
+
+// Statuses where a booking can still be started, so its OTP is still live.
+const OTP_OPEN_STATUSES = ["pending", "confirmed", "in_progress"];
+
+/**
+ * 4-digit start-service OTP, unique across the bookings that can still be started.
+ *
+ * Global uniqueness over all history isn't possible — the space only holds 10,000
+ * codes — and wouldn't buy anything, since a code is only ever checked against the
+ * one booking it was issued for. Keeping *open* bookings collision-free is the part
+ * that matters: it stops a partner holding two live jobs from starting the wrong one
+ * with a code that happens to fit both.
+ *
+ * randomInt (not Math.random) because this is a credential the partner must not be
+ * able to predict from another booking's code.
+ */
+const generateServiceOtp = async () => {
+  const open = await Booking.findAll({
+    where: { status: { [Op.in]: OTP_OPEN_STATUSES }, serviceOtp: { [Op.ne]: null } },
+    attributes: ["serviceOtp"],
+  });
+  const taken = new Set(open.map((b) => b.serviceOtp));
+
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const candidate = String(crypto.randomInt(0, 10000)).padStart(4, "0");
+    if (!taken.has(candidate)) return candidate;
+  }
+  // Only reachable with ~10k bookings open at once. A duplicate is still safe (it's
+  // checked per booking), so hand one back rather than failing the booking outright.
+  return String(crypto.randomInt(0, 10000)).padStart(4, "0");
 };
 
 module.exports = Booking;

@@ -31,6 +31,9 @@ export const endpoints = {
   // Partner booking actions
   PARTNER_BOOKING_DETAIL: (id: string) => `/api/v1/partners/bookings/${id}`,
   PARTNER_BOOKING_STATUS: (id: string) => `/api/v1/partners/bookings/${id}/status`,
+  // Checks the customer's 4-digit code — must pass before PARTNER_BOOKING_STATUS
+  // will accept in_progress.
+  PARTNER_VERIFY_OTP: (id: string) => `/api/v1/partners/bookings/${id}/verify-otp`,
   PARTNER_BOOKING_ARRIVED: (id: string) => `/api/v1/partners/bookings/${id}/arrived`,
   PARTNER_EXTRA_SERVICES: (id: string) => `/api/v1/partners/bookings/${id}/extra-services`,
   PARTNER_ADD_PACKAGE: (id: string) => `/api/v1/partners/bookings/${id}/add-package`,

@@ -104,6 +104,12 @@ const ADDITIVE_SCHEMA = [
   "ALTER TABLE cities ADD COLUMN IF NOT EXISTS code VARCHAR(5) NULL",
   // Per-city price override — NULL means "use services.basePrice" for that city
   "ALTER TABLE service_city_map ADD COLUMN IF NOT EXISTS customPrice DECIMAL(10,2) NULL DEFAULT NULL",
+  // Start-service OTP: the customer reads the 4-digit code off their booking and the
+  // partner must type it in before the job can move to in_progress. otpVerifiedAt is
+  // the verification record (NULL = not yet verified); otpAttempts throttles guessing.
+  "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS serviceOtp VARCHAR(4) NULL",
+  "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS otpVerifiedAt DATETIME NULL",
+  "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS otpAttempts INT NOT NULL DEFAULT 0",
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -193,6 +199,23 @@ const ONE_TIME_MIGRATIONS = [
       "UPDATE cities SET isActive = 0 WHERE name != 'Nellore'",
       "UPDATE cities SET isActive = 1 WHERE name = 'Nellore'",
     ],
+  },
+  {
+    key: "2026-09-15_backfill_booking_service_otp",
+    description: "Give already-open bookings a start-service OTP",
+    // Bookings created before the OTP feature have serviceOtp NULL. The partner app
+    // requires a code to start, so without this backfill every in-flight job would be
+    // unstartable. Only open bookings need one — completed/cancelled jobs never start.
+    // Unlike new bookings (which get a collision-checked code from the model hook),
+    // this is a plain RAND(): good enough for a one-shot backfill of open rows, and a
+    // repeat here is harmless anyway since the code is only ever checked against the
+    // one booking it belongs to.
+    statements: [`
+      UPDATE bookings
+      SET serviceOtp = LPAD(FLOOR(RAND() * 10000), 4, '0')
+      WHERE serviceOtp IS NULL
+        AND status IN ('pending', 'confirmed', 'in_progress')
+    `],
   },
 ];
 

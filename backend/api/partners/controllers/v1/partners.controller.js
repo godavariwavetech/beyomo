@@ -180,6 +180,23 @@ const markArrived = catchAsync(async (req, res, next) => {
 });
 
 /**
+ * POST /api/v1/partners/bookings/:id/verify-otp
+ * Body: { otp: "1234" }
+ *
+ * Checks the 4-digit code the customer reads off their booking. Passing this is what
+ * lets the follow-up PATCH /status?in_progress through.
+ */
+const verifyServiceOtp = catchAsync(async (req, res, next) => {
+  const otp = String(req.body?.otp ?? "").trim();
+  if (!/^\d{4}$/.test(otp)) {
+    return next(new AppError("Enter the 4-digit OTP from the customer", 400));
+  }
+
+  const result = await partnersService.verifyServiceOtp(req.partner.userId, req.params.id, otp);
+  res.status(200).json({ status: true, message: "OTP verified", data: result });
+});
+
+/**
  * PATCH /api/v1/partners/device-token
  */
 const updateDeviceToken = catchAsync(async (req, res, next) => {
@@ -337,4 +354,5 @@ module.exports = {
   removeBookingPackage,
   sendTestNotification,
   getWallet,
+  verifyServiceOtp,
 };
