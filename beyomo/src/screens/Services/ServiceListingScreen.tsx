@@ -23,6 +23,7 @@ import {
   removeFreeService,
 } from '../../redux/reducers/cart';
 import {formatAmount} from '../../utils/utils';
+import {BASE_URL, endpoints} from '../../config/config';
 
 const MAX_SERVICE_QTY = 5;
 
@@ -40,6 +41,9 @@ const normalizeService = (s: any) => ({
   discountPct:   s.discountPercent ?? s.discountPct ?? (s.originalPrice && s.price ? Math.round(((s.originalPrice - s.price) / s.originalPrice) * 100) : 0),
   image:         s.image ?? s.photo ?? s.thumbnail ?? '',
   priceStartsFrom: s.priceStartsFrom ?? false,
+  // null for services not filed under a subcategory — they simply never match a
+  // selected chip, and show whenever "All" is selected.
+  subcategoryId: s.subcategoryId ?? null,
 });
 
 interface Props {
@@ -51,6 +55,12 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
   const insets = useSafeAreaInsets();
   const dispatch = useDispatch<any>();
   const {categories: rawCategories, services: rawServices, loading} = useSelector((s: any) => s.Services);
+
+  // The city the user picked (or was located into). Every service request has to carry
+  // it, otherwise the backend can't apply that service's city mapping and returns
+  // city-specific services to everyone. Same source Home already reads.
+  const selectedCityId = useSelector((s: any) => s.City?.selectedCity?.id ?? null);
+  const cityParam = selectedCityId ? {cityId: selectedCityId} : {};
 
   const initialCat = route?.params?.category ?? '';
   const initialCatId = route?.params?.categoryId ?? null;
@@ -119,6 +129,11 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
   const [filterDiscount, setFilterDiscount] = useState(false);
   const [filterDuration, setFilterDuration] = useState<'all'|'short'|'medium'|'long'>('all');
 
+  // Subcategories for the active category (e.g. Waxing -> Honey / Rica). Empty for
+  // categories that don't use them, in which case no chip row is rendered at all.
+  const [subcategories, setSubcategories] = useState<any[]>([]);
+  const [activeSubcategoryId, setActiveSubcategoryId] = useState<number | null>(null);
+
   // Keep the free service in sync with whether its offer's condition is currently met —
   // add it once the required items are in the cart, remove it the moment they're not.
   useEffect(() => {
@@ -151,18 +166,37 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
   useEffect(() => {
     if (offerType === 'specific_services') {
       // Fetch all services so we can filter to the required subset
-      dispatch(fetchServices({limit: 500}));
+      dispatch(fetchServices({limit: 500, ...cityParam}));
     } else {
-      dispatch(fetchCategories());
+      dispatch(fetchCategories(cityParam));
     }
-  }, []);
+  }, [selectedCityId]);
 
-  // Fetch services when categoryId is known (skip when offer loads all services)
+  // Fetch services when categoryId is known (skip when offer loads all services).
+  // cityId is what makes the backend honour each service's city mapping — without it
+  // every city-specific service (e.g. a Vijayawada-only one) came back everywhere.
   useEffect(() => {
     if (offerType === 'specific_services') return;
     if (activeCategoryId) {
-      dispatch(fetchServices({categoryId: activeCategoryId}));
+      dispatch(fetchServices({categoryId: activeCategoryId, ...cityParam}));
     }
+  }, [activeCategoryId, selectedCityId]);
+
+  // Load the active category's subcategories, and drop any chip selected under the
+  // previous category — its id means nothing here. Failures fall back to an empty list,
+  // which renders no row, so the screen behaves exactly as it did before subcategories.
+  useEffect(() => {
+    setActiveSubcategoryId(null);
+    if (offerType === 'specific_services' || !activeCategoryId) {
+      setSubcategories([]);
+      return;
+    }
+    let cancelled = false;
+    fetch(`${BASE_URL}${endpoints.SUBCATEGORIES}?categoryId=${activeCategoryId}`)
+      .then(r => r.json())
+      .then(j => { if (!cancelled) setSubcategories(Array.isArray(j?.data) ? j.data : []); })
+      .catch(() => { if (!cancelled) setSubcategories([]); });
+    return () => { cancelled = true; };
   }, [activeCategoryId]);
 
   // When categories load, resolve categoryId from name if not set; or set first category
@@ -202,6 +236,10 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
     // Exclude the free service from the regular list (we pin it at top separately)
     if (freeServiceItem) {
       list = list.filter(s => String(s.id) !== freeServiceItem.id);
+    }
+    // Subcategory chip (Honey / Rica). Null = "All", which leaves the list untouched.
+    if (activeSubcategoryId != null) {
+      list = list.filter(s => Number(s.subcategoryId) === Number(activeSubcategoryId));
     }
     // Standard filters
     if (filterDiscount) list = list.filter(s => s.discountPct > 0);
@@ -324,6 +362,38 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
                     <Text style={styles.categoryText} numberOfLines={2} adjustsFontSizeToFit>{cat.label}</Text>
                   </>
                 )}
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      )}
+
+      {/* ── Subcategory chips (e.g. Waxing -> Honey / Rica) ──
+          Only rendered when the active category actually has subcategories, so every
+          other category's layout is unchanged. Sits above the Filter / Sort By row. */}
+      {subcategories.length > 0 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.subcatScroll}
+          contentContainerStyle={styles.subcatContent}>
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={() => setActiveSubcategoryId(null)}
+            style={[styles.subcatChip, activeSubcategoryId == null && styles.subcatChipActive]}>
+            <Text style={[styles.subcatText, activeSubcategoryId == null && styles.subcatTextActive]}>All</Text>
+          </TouchableOpacity>
+          {subcategories.map((sub: any) => {
+            const active = Number(activeSubcategoryId) === Number(sub.id);
+            return (
+              <TouchableOpacity
+                key={sub.id}
+                activeOpacity={0.8}
+                onPress={() => setActiveSubcategoryId(active ? null : sub.id)}
+                style={[styles.subcatChip, active && styles.subcatChipActive]}>
+                <Text style={[styles.subcatText, active && styles.subcatTextActive]} numberOfLines={1}>
+                  {sub.name}
+                </Text>
               </TouchableOpacity>
             );
           })}
@@ -746,6 +816,22 @@ const styles = StyleSheet.create({
     marginTop: sw(6),
   },
   categoryTextActive: {color: '#FEFEFE', marginTop: sw(2)},
+
+  // Subcategory chips — pill row above the Filter / Sort By controls. Deliberately
+  // lighter than the category strip above it so the hierarchy stays readable.
+  subcatScroll: {flexGrow: 0, marginBottom: sw(12)},
+  subcatContent: {paddingHorizontal: sw(16), gap: sw(8)},
+  subcatChip: {
+    paddingHorizontal: sw(16),
+    paddingVertical: sw(8),
+    borderRadius: sw(20),
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    backgroundColor: '#FFFFFF',
+  },
+  subcatChipActive: {backgroundColor: '#105641', borderColor: '#105641'},
+  subcatText: {fontFamily: fonts.title, fontSize: sw(13), fontWeight: '600', color: '#292D32'},
+  subcatTextActive: {color: '#FFFFFF'},
 
   filterRow: {
     flexDirection: 'row',

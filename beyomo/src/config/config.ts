@@ -31,6 +31,9 @@ export const endpoints = {
 
   // Services
   CATEGORIES: '/api/v1/services/categories',
+  // Optional second level under a category (e.g. Waxing -> Honey / Rica). Returns []
+  // for categories that have none, which the listing screen reads as "no row to show".
+  SUBCATEGORIES: '/api/v1/services/subcategories',
   NEARBY_PARTNERS: '/api/v1/services/nearby',
   SERVICES: '/api/v1/services',
 

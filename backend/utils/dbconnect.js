@@ -110,6 +110,26 @@ const ADDITIVE_SCHEMA = [
   "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS serviceOtp VARCHAR(4) NULL",
   "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS otpVerifiedAt DATETIME NULL",
   "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS otpAttempts INT NOT NULL DEFAULT 0",
+  // Optional second level under a service category (Waxing -> Honey / Rica). The table
+  // is created here rather than left to sync() because sync() never alters an existing
+  // database, same reason the partner columns above need explicit statements.
+  `CREATE TABLE IF NOT EXISTS service_subcategories (
+     id INT NOT NULL AUTO_INCREMENT,
+     categoryId INT NOT NULL,
+     name VARCHAR(100) NOT NULL,
+     description TEXT NULL,
+     image TEXT NULL,
+     isActive TINYINT(1) NOT NULL DEFAULT 1,
+     sortOrder INT NOT NULL DEFAULT 0,
+     createdAt DATETIME NOT NULL,
+     updatedAt DATETIME NOT NULL,
+     PRIMARY KEY (id),
+     UNIQUE KEY uniq_subcategory_per_category (categoryId, name),
+     KEY idx_subcategory_category (categoryId)
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  // Nullable on purpose — every service that predates subcategories keeps listing
+  // under its category untouched.
+  "ALTER TABLE services ADD COLUMN IF NOT EXISTS subcategoryId INT NULL DEFAULT NULL",
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -215,6 +235,23 @@ const ONE_TIME_MIGRATIONS = [
       SET serviceOtp = LPAD(FLOOR(RAND() * 10000), 4, '0')
       WHERE serviceOtp IS NULL
         AND status IN ('pending', 'confirmed', 'in_progress')
+    `],
+  },
+  {
+    key: "2026-09-15_sync_partner_cityid_with_locationcity",
+    description: "Point partners.cityId at the city their locationCity actually names",
+    // The dashboard's partner form only ever wrote locationCity, so cityId kept whatever
+    // it was first created with. A partner moved to another city therefore carried a
+    // cityId for the city they left — and the available-bookings feed, which matches on
+    // cityId, kept offering them the old city's jobs. createPartner/updatePartner now
+    // write both; this repairs the rows written before that.
+    statements: [`
+      UPDATE partners p
+      JOIN cities c ON c.name = p.locationCity
+      SET p.cityId = c.id
+      WHERE p.locationCity IS NOT NULL
+        AND p.locationCity <> ''
+        AND (p.cityId IS NULL OR p.cityId <> c.id)
     `],
   },
 ];

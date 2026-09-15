@@ -611,7 +611,7 @@ const getEarnings = async (partnerId, period = "month") => {
 };
 
 const getAvailableBookings = async (partnerId) => {
-  const partner = await Partner.findByPk(partnerId, { attributes: ['locationCity'] });
+  const partner = await Partner.findByPk(partnerId, { attributes: ['cityId', 'locationCity'] });
   // Exclude online-payment bookings whose payment hasn't actually gone through yet
   // (e.g. the customer cancelled Razorpay checkout) — those stay "pending" too, but
   // a partner must never be offered a job that hasn't been paid for.
@@ -619,7 +619,26 @@ const getAvailableBookings = async (partnerId) => {
     status: { [Op.in]: ['pending', 'confirmed'] },
     [Op.or]: [{ paymentMode: 'cod' }, { paymentStatus: 'paid' }],
   };
-  if (partner?.locationCity) where.addressCity = partner.locationCity;
+
+  // ---- Location scope ----
+  // cityId is the dependable side of this on both tables: an exact foreign key set from
+  // the city the customer booked in and the city the partner was registered to.
+  // addressCity/locationCity are free text typed into an address form, so a trailing
+  // space, a lowercase letter or "Rajamahendravaram" instead of "Rajahmundry" silently
+  // stops matching — which is why the string comparison alone wasn't reliable. It stays
+  // as the fallback for partners registered before cityId was captured.
+  if (partner?.cityId) {
+    where.cityId = partner.cityId;
+  } else if (partner?.locationCity) {
+    where.addressCity = partner.locationCity;
+  } else {
+    // Neither is set. This previously fell through with no location filter at all,
+    // which offered that partner every city's jobs — the exact leak this is meant to
+    // stop. Fail closed: a partner we can't place gets nothing until admin sets their
+    // city, rather than everything.
+    logger.warn(`[partners] partner ${partnerId} has no cityId/locationCity — no available bookings can be matched`);
+    return [];
+  }
 
   const bookings = await Booking.findAll({
     where,

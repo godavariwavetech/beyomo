@@ -36,6 +36,8 @@ const Field = ({
   placeholder,
   keyboardType = 'default',
   multiline = false,
+  editable = true,
+  hint,
 }: {
   icon: string;
   label: string;
@@ -44,13 +46,15 @@ const Field = ({
   placeholder: string;
   keyboardType?: any;
   multiline?: boolean;
+  editable?: boolean;
+  hint?: string;
 }) => (
   <View style={styles.fieldGroup}>
     <Text style={styles.fieldLabel}>{label}</Text>
-    <View style={[styles.inputWrapper, multiline && styles.inputWrapperMulti]}>
+    <View style={[styles.inputWrapper, multiline && styles.inputWrapperMulti, !editable && styles.inputWrapperLocked]}>
       <Ionicons name={icon} size={sw(18)} color="rgba(255,255,255,0.5)" style={styles.inputIcon} />
       <TextInput
-        style={[styles.input, multiline && styles.inputMulti]}
+        style={[styles.input, multiline && styles.inputMulti, !editable && styles.inputLocked]}
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
@@ -60,8 +64,13 @@ const Field = ({
         numberOfLines={multiline ? 3 : 1}
         textAlignVertical={multiline ? 'top' : 'center'}
         autoCapitalize={keyboardType === 'email-address' ? 'none' : 'sentences'}
+        editable={editable}
       />
+      {!editable && (
+        <Ionicons name="lock-closed" size={sw(14)} color="rgba(255,255,255,0.35)" style={styles.inputLockIcon} />
+      )}
     </View>
+    {!!hint && <Text style={styles.fieldHint}>{hint}</Text>}
   </View>
 );
 
@@ -181,8 +190,28 @@ const EditProfileScreen = ({navigation}: {navigation: any}) => {
             <View style={styles.sectionDivider} />
             <Text style={styles.sectionTitle}>Location</Text>
 
-            <Field icon="location-outline" label="City" value={city} onChangeText={setCity} placeholder="e.g. Hyderabad" />
-            <Field icon="map-outline" label="State" value={state} onChangeText={setState} placeholder="e.g. Telangana" />
+            {/* Both read-only: a partner's location decides which bookings they're
+                offered, so it's set by admin rather than self-selected. Saving them from
+                here also wrote locationCity/locationState without touching cityId, which
+                left the partner matched to the city they used to be in. One hint under
+                the pair rather than one each — they're a single piece of information. */}
+            <Field
+              icon="location-outline"
+              label="City"
+              value={city}
+              onChangeText={setCity}
+              placeholder="e.g. Hyderabad"
+              editable={false}
+            />
+            <Field
+              icon="map-outline"
+              label="State"
+              value={state}
+              onChangeText={setState}
+              placeholder="e.g. Telangana"
+              editable={false}
+              hint="Contact support to change your city or state."
+            />
           </View>
 
           <TouchableOpacity
@@ -297,6 +326,21 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   inputMulti: {height: sw(70)},
+  // Read-only field: flatter background and a padlock, so it reads as deliberately
+  // locked rather than as an input that quietly refuses to accept typing.
+  inputWrapperLocked: {
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderColor: 'rgba(255,255,255,0.10)',
+  },
+  inputLocked: {color: 'rgba(254,254,254,0.55)'},
+  inputLockIcon: {marginLeft: sw(8)},
+  fieldHint: {
+    fontFamily: fonts.textFont,
+    fontSize: sw(11),
+    color: 'rgba(255,255,255,0.45)',
+    marginLeft: sw(4),
+    marginTop: sw(5),
+  },
   sectionDivider: {
     height: 1,
     backgroundColor: 'rgba(255,255,255,0.15)',

@@ -10,14 +10,14 @@ import { useCityFilter } from '../context/CityContext';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import api from '../services/api';
 
-const DEFAULT_CATEGORIES = [
+export const DEFAULT_CATEGORIES = [
   'Men Grooming', 'Haircut', 'Hair Spa', 'Hair Colour',
   'Head Massage', 'Hair Treatments', 'Threading', 'Waxing',
   'De-Tan', 'Facials', 'Peeloff Mask', 'Pedicure',
   'Manicure', 'Mehndi', 'Nail Art', 'Bridal Services',
 ];
 
-const ImagePicker = ({ value, onChange, label = 'Image', hint = 'JPEG, PNG or WebP · Max 2 MB', exactWidth, exactHeight }) => {
+export const ImagePicker = ({ value, onChange, label = 'Image', hint = 'JPEG, PNG or WebP · Max 2 MB', exactWidth, exactHeight }) => {
   const [uploading, setUploading] = useState(false);
 
   const checkDimensions = (file) =>
@@ -107,7 +107,7 @@ const ImagePicker = ({ value, onChange, label = 'Image', hint = 'JPEG, PNG or We
 };
 
 // Multi-city selection: no selection = global (available everywhere)
-const CityMultiSelect = ({ selected, onChange, cities, hint }) => (
+export const CityMultiSelect = ({ selected, onChange, cities, hint }) => (
   <div className="form-group">
     <label className="form-label">
       Available In
@@ -286,6 +286,13 @@ export default function Services() {
   const [seedingCats, setSeedingCats] = useState(false);
   const [reorderingSvcs, setReorderingSvcs] = useState(false);
 
+  // Subcategories — the optional second level under a category (Waxing -> Honey/Rica).
+  // Loaded flat for every category; the modal and the service form filter by categoryId.
+  const [subcats, setSubcats] = useState([]);
+  const [managingSubcats, setMngSubcats] = useState(false);
+  const [editingSubcat, setEditingSubcat] = useState(null);
+  const [subcatForm, setSubcatForm] = useState({ categoryId: '', name: '' });
+
   const loadServices = () => {
     const params = cityId ? { cityId, limit: 1000 } : { limit: 1000 };
     fetchServices(params).then(res => {
@@ -319,6 +326,64 @@ export default function Services() {
 
   useEffect(() => { loadServices(); }, [cityId]);
   useAutoRefresh(loadServices);
+
+  // ---- Subcategories (optional second level under a category) ----
+  const loadSubcats = () => {
+    api.get('/api/v1/admin/services/subcategories')
+      .then(res => setSubcats(res.data?.data ?? []))
+      .catch(() => {});
+  };
+  useEffect(() => { loadSubcats(); }, []);
+
+  const subcatsForCategory = (categoryId) =>
+    subcats.filter(s => String(s.categoryId) === String(categoryId));
+
+  const saveSubcat = async () => {
+    if (!subcatForm.categoryId) { showToast('Pick a category for the subcategory.', 'danger'); return; }
+    if (!subcatForm.name?.trim()) { showToast('Subcategory name is required.', 'danger'); return; }
+    const payload = {
+      categoryId: Number(subcatForm.categoryId),
+      name: subcatForm.name.trim(),
+      description: subcatForm.description ?? '',
+    };
+    try {
+      if (editingSubcat) {
+        await api.patch(`/api/v1/admin/services/subcategories/${editingSubcat.id}`, payload);
+        showToast('Subcategory updated!', 'success');
+      } else {
+        await api.post('/api/v1/admin/services/subcategories', payload);
+        showToast('Subcategory added!', 'success');
+      }
+      setEditingSubcat(null);
+      setSubcatForm({ categoryId: subcatForm.categoryId, name: '' });
+      loadSubcats();
+    } catch (e) {
+      showToast(e.response?.data?.message ?? 'Failed to save subcategory.', 'danger');
+    }
+  };
+
+  const toggleSubcatActive = async (sub) => {
+    try {
+      await api.patch(`/api/v1/admin/services/subcategories/${sub.id}`, { isActive: !sub.isActive });
+      loadSubcats();
+    } catch (e) {
+      showToast(e.response?.data?.message ?? 'Failed to update.', 'danger');
+    }
+  };
+
+  const deleteSubcat = async (sub) => {
+    // The backend detaches its services rather than deleting them, so this only ever
+    // costs the grouping — worth saying out loud before it happens.
+    if (!window.confirm(`Delete "${sub.name}"? Its services stay, but lose this subcategory.`)) return;
+    try {
+      await api.delete(`/api/v1/admin/services/subcategories/${sub.id}`);
+      showToast('Subcategory deleted.', 'danger');
+      loadSubcats();
+      loadServices();
+    } catch (e) {
+      showToast(e.response?.data?.message ?? 'Failed to delete.', 'danger');
+    }
+  };
 
   const categories = ['all', ...cats.map(c => c.name ?? c)];
 
@@ -467,6 +532,8 @@ export default function Services() {
     setForm({
       name: svc.name,
       categoryId: String(svc.categoryId ?? ''),
+      // '' renders as the "None" option; anything else preselects the current one.
+      subcategoryId: svc.subcategoryId == null ? '' : String(svc.subcategoryId),
       // The global base price, never the selected city's overridden one — otherwise
       // saving from a city view would write that city's rate onto every other city.
       basePrice: svc.baseServicePrice ?? svc.basePrice,
@@ -510,6 +577,8 @@ export default function Services() {
     const payload = {
       name: form.name,
       categoryId: form.categoryId || String(editing.categoryId ?? ''),
+      // "" is the form's "None" option; the backend turns it into a real NULL.
+      subcategoryId: form.subcategoryId === '' || form.subcategoryId == null ? null : Number(form.subcategoryId),
       basePrice: +form.basePrice,
       duration: +form.duration,
       description: form.description ?? '',
@@ -545,6 +614,7 @@ export default function Services() {
     const payload = {
       name: form.name,
       categoryId: String(form.categoryId),
+      subcategoryId: form.subcategoryId === '' || form.subcategoryId == null ? null : Number(form.subcategoryId),
       basePrice: +form.basePrice,
       duration: +form.duration,
       description: form.description ?? '',
@@ -644,9 +714,17 @@ export default function Services() {
                 <ListOrdered size={14}/> {reorderingSvcs ? 'Done Reordering' : 'Reorder'}
               </button>
             )}
+            {/* Categories / Subcategories buttons hidden from this toolbar — both are
+                now managed in the dedicated Categories module (/catalog). Same approach
+                as the hidden Coupons and Offers nav items: the modals and every handler
+                below stay intact, they're just no longer opened from here.
             <button className="btn btn-outline btn-sm" onClick={() => { setMngCats(true); setEditingCat(null); setCatForm({ cityIds: [], adminPercent: 20, partnerPercent: 80, gstPercent: 5 }); }} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <FolderOpen size={14}/> Categories
             </button>
+            <button className="btn btn-outline btn-sm" onClick={() => { setMngSubcats(true); setEditingSubcat(null); setSubcatForm({ categoryId: cats[0]?.id ?? '', name: '' }); }} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <FolderOpen size={14}/> Subcategories
+            </button>
+            */}
             <button className="btn btn-primary btn-sm" onClick={() => { setAdding(true); setForm({ name: '', basePrice: '', duration: 60, description: '', image: '', cityIds: [] }); }} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <Plus size={14}/> Add Service
             </button>
@@ -857,10 +935,25 @@ export default function Services() {
             </div>
             <div className="form-group">
               <label className="form-label">Category</label>
-              <select className="form-select" value={form.categoryId || ''} onChange={e => setForm(f => ({ ...f, categoryId: e.target.value }))}>
+              <select className="form-select" value={form.categoryId || ''} onChange={e => setForm(f => ({ ...f, categoryId: e.target.value, subcategoryId: '' }))}>
                 <option value="">Select Category</option>
                 {cats.map(c => <option key={c.id} value={String(c.id)}>{c.name ?? c}</option>)}
               </select>
+            </div>
+            {/* Always rendered, for every category. Hiding it when a category had no
+                subcategories yet made the feature look like it only existed for the
+                one category that did — there was no way to discover it from here. */}
+            <div className="form-group">
+              <label className="form-label">Subcategory</label>
+              <select className="form-select" value={form.subcategoryId ?? ''} onChange={e => setForm(f => ({ ...f, subcategoryId: e.target.value }))} disabled={!form.categoryId}>
+                <option value="">None</option>
+                {subcatsForCategory(form.categoryId).map(sub => <option key={sub.id} value={String(sub.id)}>{sub.name}</option>)}
+              </select>
+              {!!form.categoryId && subcatsForCategory(form.categoryId).length === 0 && (
+                <div style={{ fontSize: 11, color: 'var(--c-text-muted)', marginTop: 4 }}>
+                  No subcategories for this category yet — add them under <strong>Subcategories</strong>.
+                </div>
+              )}
             </div>
             <div className="form-group">
               <label className="form-label">Base Price (₹)</label>
@@ -954,10 +1047,22 @@ export default function Services() {
           </div>
           <div className="form-group">
             <label className="form-label">Category *</label>
-            <select className="form-select" value={form.categoryId || ''} onChange={e => setForm(f => ({ ...f, categoryId: e.target.value }))}>
+            <select className="form-select" value={form.categoryId || ''} onChange={e => setForm(f => ({ ...f, categoryId: e.target.value, subcategoryId: '' }))}>
               <option value="">Select Category</option>
               {cats.map(c => <option key={c.id} value={String(c.id)}>{c.name ?? c}</option>)}
             </select>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Subcategory</label>
+            <select className="form-select" value={form.subcategoryId ?? ''} onChange={e => setForm(f => ({ ...f, subcategoryId: e.target.value }))} disabled={!form.categoryId}>
+              <option value="">None</option>
+              {subcatsForCategory(form.categoryId).map(sub => <option key={sub.id} value={String(sub.id)}>{sub.name}</option>)}
+            </select>
+            {!!form.categoryId && subcatsForCategory(form.categoryId).length === 0 && (
+              <div style={{ fontSize: 11, color: 'var(--c-text-muted)', marginTop: 4 }}>
+                No subcategories for this category yet — add them under <strong>Subcategories</strong>.
+              </div>
+            )}
           </div>
           <CityMultiSelect
             selected={form.cityIds ?? []}
@@ -1018,6 +1123,90 @@ export default function Services() {
           <div className="form-group">
             <label className="form-label">Description</label>
             <textarea className="form-input" rows={3} placeholder="Describe what this service includes…" value={form.description || ''} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} style={{ resize: 'vertical' }} />
+          </div>
+        </div>
+      </Modal>
+
+      {/* Manage Subcategories Modal — the optional second level under a category
+          (Waxing -> Honey / Rica). Separate from Manage Categories so nothing about
+          that screen changes. */}
+      <Modal
+        isOpen={managingSubcats}
+        onClose={() => { setMngSubcats(false); setEditingSubcat(null); setSubcatForm({ categoryId: '', name: '' }); }}
+        title="Manage Subcategories"
+        size="md"
+        // Same reasoning as Manage Categories: a stray backdrop click threw away a
+        // half-filled form.
+        dismissOnBackdrop={false}
+        dismissOnEscape={false}
+        footer={
+          <div style={{ display: 'flex', gap: 8, width: '100%', justifyContent: 'flex-end' }}>
+            <button className="btn btn-outline" onClick={() => { setMngSubcats(false); setEditingSubcat(null); setSubcatForm({ categoryId: '', name: '' }); }}>Close</button>
+          </div>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div className="form-grid form-grid-2" style={{ gap: 10 }}>
+            <div className="form-group">
+              <label className="form-label">Category</label>
+              <select
+                className="form-input"
+                value={subcatForm.categoryId ?? ''}
+                onChange={e => setSubcatForm(f => ({ ...f, categoryId: e.target.value }))}
+              >
+                <option value="">Select category…</option>
+                {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Subcategory Name</label>
+              <input
+                className="form-input"
+                placeholder="e.g. Honey"
+                value={subcatForm.name ?? ''}
+                onChange={e => setSubcatForm(f => ({ ...f, name: e.target.value }))}
+                onKeyDown={e => { if (e.key === 'Enter') saveSubcat(); }}
+              />
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn-primary btn-sm" onClick={saveSubcat} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Plus size={14}/> {editingSubcat ? 'Save Changes' : 'Add Subcategory'}
+            </button>
+            {editingSubcat && (
+              <button className="btn btn-outline btn-sm" onClick={() => { setEditingSubcat(null); setSubcatForm({ categoryId: subcatForm.categoryId, name: '' }); }}>Cancel</button>
+            )}
+          </div>
+
+          <div style={{ borderTop: '1px solid var(--c-border)', paddingTop: 12 }}>
+            {subcats.length === 0 ? (
+              <div style={{ fontSize: 13, color: 'var(--c-text-muted)' }}>
+                No subcategories yet. Pick a category above and add one — e.g. Honey and Rica under Waxing.
+              </div>
+            ) : (
+              cats.filter(c => subcatsForCategory(c.id).length > 0).map(c => (
+                <div key={c.id} style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: 'var(--c-text-secondary)', marginBottom: 6 }}>{c.name}</div>
+                  {subcatsForCategory(c.id).map(sub => {
+                    const count = services.filter(s => String(s.subcategoryId) === String(sub.id)).length;
+                    return (
+                      <div key={sub.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: 'var(--c-border-light)', borderRadius: 'var(--r-sm)', marginBottom: 6 }}>
+                        <span style={{ flex: 1, fontSize: 13, fontWeight: 600, opacity: sub.isActive ? 1 : 0.5 }}>
+                          {sub.name}
+                          <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 500, color: 'var(--c-text-muted)' }}>
+                            {count} service{count === 1 ? '' : 's'}
+                          </span>
+                          {!sub.isActive && <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--c-text-muted)' }}>(hidden)</span>}
+                        </span>
+                        <button className="btn btn-ghost btn-icon" title={sub.isActive ? 'Hide from app' : 'Show in app'} onClick={() => toggleSubcatActive(sub)}><Power size={14}/></button>
+                        <button className="btn btn-ghost btn-icon" title="Edit" onClick={() => { setEditingSubcat(sub); setSubcatForm({ categoryId: sub.categoryId, name: sub.name }); }}><Edit2 size={14}/></button>
+                        <button className="btn btn-ghost btn-icon" title="Delete" onClick={() => deleteSubcat(sub)}><Trash2 size={14}/></button>
+                      </div>
+                    );
+                  })}
+                </div>
+              ))
+            )}
           </div>
         </div>
       </Modal>

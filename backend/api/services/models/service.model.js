@@ -4,6 +4,10 @@ const { sequelize } = require("../../../utils/dbconnect");
 const Service = sequelize.define("Service", {
   id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
   categoryId: { type: DataTypes.INTEGER, allowNull: false },
+  // Optional second level under the category (Waxing -> Honey / Rica). Nullable: a
+  // service with no subcategory still lists normally under its category, which is
+  // what every service created before subcategories existed relies on.
+  subcategoryId: { type: DataTypes.INTEGER, allowNull: true, defaultValue: null },
   name: { type: DataTypes.STRING(150), allowNull: false },
   description: { type: DataTypes.TEXT, allowNull: true },
   basePrice: { type: DataTypes.DECIMAL(10, 2), allowNull: false },

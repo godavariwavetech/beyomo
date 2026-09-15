@@ -87,6 +87,7 @@ const patchServiceSchema = Joi.object({
   categoryId: Joi.alternatives().try(Joi.string(), Joi.number()),
   description: Joi.string().trim().allow(null, ""),
   basePrice: Joi.number().positive(),
+  subcategoryId: Joi.number().integer().positive().allow(null, ""),
   duration: Joi.number().integer().positive(),
   isActive: Joi.boolean(),
   image: Joi.string().allow(null, ""),
@@ -135,6 +136,26 @@ const categorySchema = Joi.object({
   cityIds: Joi.array().items(Joi.number().integer()).default([]),
 });
 
+// Optional second level under a category (Waxing -> Honey / Rica).
+const subcategorySchema = Joi.object({
+  categoryId: Joi.number().integer().positive().required(),
+  name: Joi.string().trim().required(),
+  description: Joi.string().trim().allow("", null),
+  image: Joi.string().allow(null, ""),
+  isActive: Joi.boolean().default(true),
+  sortOrder: Joi.number().allow(null),
+});
+
+// Every field optional on update so the dashboard can PATCH just isActive or just name.
+const subcategoryUpdateSchema = Joi.object({
+  categoryId: Joi.number().integer().positive(),
+  name: Joi.string().trim(),
+  description: Joi.string().trim().allow("", null),
+  image: Joi.string().allow(null, ""),
+  isActive: Joi.boolean(),
+  sortOrder: Joi.number().allow(null),
+});
+
 // customPrice: per-city price override. null/"" clears it back to the global basePrice;
 // omitting the key entirely leaves whatever the city already had untouched.
 const cityMappingItem = Joi.object({
@@ -148,6 +169,8 @@ const serviceSchema = Joi.object({
   name: Joi.string().trim().required(),
   description: Joi.string().trim().allow("", null),
   basePrice: Joi.number().positive().required(),
+  // Optional second level under the category; null = lists under the category only.
+  subcategoryId: Joi.number().integer().positive().allow(null, ""),
   duration: Joi.number().integer().positive().default(60),
   tags: Joi.array().items(Joi.string()),
   image: Joi.string().allow(null, ""),
@@ -173,6 +196,7 @@ const serviceUpdateSchema = Joi.object({
   name: Joi.string().trim(),
   description: Joi.string().trim().allow("", null),
   basePrice: Joi.number().positive(),
+  subcategoryId: Joi.number().integer().positive().allow(null, ""),
   duration: Joi.number().integer().positive(),
   tags: Joi.array().items(Joi.string()),
   image: Joi.string().allow(null, ""),
@@ -349,7 +373,8 @@ const createUser = catchAsync(async (req, res, next) => {
 // ==================== SERVICE CATEGORIES ====================
 
 const listCategories = catchAsync(async (req, res, next) => {
-  const categories = await adminService.listCategories();
+  const cityId = req.query.cityId ? parseInt(req.query.cityId) : null;
+  const categories = await adminService.listCategories({ cityId });
   res.status(200).json({ status: true, data: categories });
 });
 
@@ -377,6 +402,33 @@ const reorderCategories = catchAsync(async (req, res, next) => {
   if (error) return next(new AppError(error.details[0].message, 400));
   await adminService.reorderCategories(value.order);
   res.status(200).json({ status: true, message: "Category order updated" });
+});
+
+// ==================== SERVICE SUBCATEGORIES ====================
+
+const listSubcategories = catchAsync(async (req, res, next) => {
+  const categoryId = req.query.categoryId ? parseInt(req.query.categoryId) : null;
+  const subcategories = await adminService.listSubcategories({ categoryId });
+  res.status(200).json({ status: true, data: subcategories });
+});
+
+const createSubcategory = catchAsync(async (req, res, next) => {
+  const { error, value } = subcategorySchema.validate(req.body);
+  if (error) return next(new AppError(error.details[0].message, 400));
+  const subcategory = await adminService.createSubcategory(value);
+  res.status(201).json({ status: true, message: "Subcategory created", data: subcategory });
+});
+
+const updateSubcategory = catchAsync(async (req, res, next) => {
+  const { error, value } = subcategoryUpdateSchema.validate(req.body);
+  if (error) return next(new AppError(error.details[0].message, 400));
+  const subcategory = await adminService.updateSubcategory(req.params.id, value);
+  res.status(200).json({ status: true, message: "Subcategory updated", data: subcategory });
+});
+
+const deleteSubcategory = catchAsync(async (req, res, next) => {
+  const result = await adminService.deleteSubcategory(req.params.id);
+  res.status(200).json({ status: true, message: result.message });
 });
 
 // ==================== SERVICES ====================
@@ -1052,6 +1104,7 @@ module.exports = {
   listUsers, getUserById, updateUserStatus, deleteUser, createUser,
   listPartners, getPartnerById, updatePartnerStatus, createPartner, updatePartner,
   listCategories, createCategory, updateCategory, deleteCategory, reorderCategories,
+  listSubcategories, createSubcategory, updateSubcategory, deleteSubcategory,
   listServices, createService, updateService, deleteService, patchService, patchServiceCity, reorderServices,
   createBookingForCustomer,
   listBookings, getBookingDetail, assignPartner, acceptBooking, cancelBooking, rescheduleBooking, editBookingServices, removeBookingPackage, addBookingPackage,

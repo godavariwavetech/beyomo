@@ -14,7 +14,7 @@ import {
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import LinearGradient from 'react-native-linear-gradient';
-import {useDispatch} from 'react-redux';
+import {useDispatch, useSelector} from 'react-redux';
 import {fonts} from '../../config/theme';
 import api from '../../utils/api';
 import {endpoints} from '../../config/config';
@@ -64,6 +64,10 @@ interface PickableService {
 const PackageDetailScreen = ({navigation, route}: {navigation: any; route: any}) => {
   const insets = useSafeAreaInsets();
   const dispatch = useDispatch<any>();
+  const selectedCity = useSelector((state: any) => state.City?.selectedCity);
+  // Appended to service requests so the picker only offers services available in
+  // the user's city (the backend applies each service's city mapping off this).
+  const cityParam = selectedCity?.id ? `&cityId=${selectedCity.id}` : '';
   const pkg: Package = route?.params?.package;
 
   const [fullPkg, setFullPkg] = useState<Package | null>(pkg ?? null);
@@ -101,8 +105,8 @@ const PackageDetailScreen = ({navigation, route}: {navigation: any; route: any})
       return;
     }
     const url = fullPkg.categoryId
-      ? `${endpoints.SERVICES}?categoryId=${fullPkg.categoryId}&limit=50`
-      : `${endpoints.SERVICES}?limit=50`;
+      ? `${endpoints.SERVICES}?categoryId=${fullPkg.categoryId}&limit=50${cityParam}`
+      : `${endpoints.SERVICES}?limit=50${cityParam}`;
     api
       .get(url)
       .then(res => {

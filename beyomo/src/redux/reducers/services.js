@@ -4,9 +4,11 @@ import {endpoints} from '../../config/config';
 
 export const fetchCategories = createAsyncThunk(
   'services/fetchCategories',
-  async (_, {rejectWithValue}) => {
+  // `params` defaults to {} so the existing no-argument callers keep working unchanged;
+  // pass {cityId} to get only the categories offered in that city.
+  async (params = {}, {rejectWithValue}) => {
     try {
-      const response = await api.get(endpoints.CATEGORIES);
+      const response = await api.get(endpoints.CATEGORIES, {params});
       return response.data.data;
     } catch (error) {
       return rejectWithValue(error.response?.data?.message ?? 'Failed to load categories.');

@@ -237,7 +237,9 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
       ? [dispatch(fetchNotifications()) as any, dispatch(fetchUserBookings()) as any]
       : [];
     return Promise.all([
-      dispatch(fetchCategories()),
+      // Same city the popular-services call above already uses, so the category strip
+      // can't offer a category that has nothing available in this city.
+      dispatch(fetchCategories(selectedCity?.id ? {cityId: selectedCity.id} : {})),
       bannersPromise,
       popularPromise,
       packagesPromise,
@@ -559,7 +561,12 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
             ))}
           </View>
 
-          {categories.length > 12 && (
+          {/* Was `> 12` — i.e. only when the 12-item grid above actually truncated the
+              list. That made the button vanish the moment city filtering brought a city
+              down to 12 or fewer categories, which reads as the button being broken.
+              It's a useful way into the full list either way, so it shows whenever
+              there's anything to show. */}
+          {categories.length > 0 && (
             <TouchableOpacity
               style={styles.viewAllRow}
               activeOpacity={0.7}

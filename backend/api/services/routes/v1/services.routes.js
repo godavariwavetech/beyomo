@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const {
   getCategories,
+  getSubcategories,
   getServices,
   getServiceById,
   getNearbyPartners,
@@ -9,6 +10,7 @@ const {
 
 // All routes are public
 router.get("/categories", getCategories);
+router.get("/subcategories", getSubcategories);
 router.get("/nearby", getNearbyPartners);
 router.get("/", getServices);
 router.get("/:id", getServiceById);

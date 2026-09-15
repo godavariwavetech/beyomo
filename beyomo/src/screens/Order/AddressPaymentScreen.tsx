@@ -100,6 +100,9 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
   const dispatch = useDispatch<any>();
   const {profile, error: profileError} = useSelector((state: RootState) => state.User as any);
   const selectedCity = useSelector((state: RootState) => (state as any).City?.selectedCity);
+  // Appended to service requests so the picker only offers services available in
+  // the user's city (the backend applies each service's city mapping off this).
+  const cityParam = selectedCity?.id ? `&cityId=${selectedCity.id}` : '';
   const addresses: SavedAddress[] = profile?.addresses ?? [];
 
   const isLocationAvailable = (city?: string | null) =>
@@ -298,7 +301,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
     setAddSvcSearch('');
     if (allServicesForAdd.length === 0) {
       setLoadingAddSvcs(true);
-      api.get(`${endpoints.SERVICES}?limit=500`)
+      api.get(`${endpoints.SERVICES}?limit=500${cityParam}`)
         .then(res => { if (res.data?.status) setAllServicesForAdd(res.data.data ?? []); })
         .catch(() => {})
         .finally(() => setLoadingAddSvcs(false));
@@ -523,6 +526,9 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
               lng: selectedAddr.lng ?? null,
             },
             scheduledAt: selectedDate.toISOString(),
+            // The city the customer is browsing in. The backend cross-checks it against
+            // the address so a booking can't be filed under a city the customer isn't in.
+            cityId: selectedCity?.id ?? undefined,
             notes: description || undefined,
             couponCode: appliedCoupon?.code || undefined,
             offerId: offerIdToSubmit || undefined,
@@ -544,6 +550,9 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
               lng: selectedAddr.lng ?? null,
             },
             scheduledAt: selectedDate.toISOString(),
+            // The city the customer is browsing in. The backend cross-checks it against
+            // the address so a booking can't be filed under a city the customer isn't in.
+            cityId: selectedCity?.id ?? undefined,
             notes: description || undefined,
             couponCode: appliedCoupon?.code || undefined,
             offerId: offerIdToSubmit || undefined,

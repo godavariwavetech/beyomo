@@ -1,5 +1,6 @@
 const { Op } = require("sequelize");
 const ServiceCategory = require("../../models/serviceCategory.model");
+const ServiceSubcategory = require("../../models/serviceSubcategory.model");
 const Service = require("../../models/service.model");
 const ServiceCityMap = require("../../models/service_city_map.model");
 const Partner = require("../../../partners/models/partner.model");
@@ -19,6 +20,21 @@ const getCategories = async (query = {}) => {
   });
 };
 
+/**
+ * Active subcategories, optionally for one category (Waxing -> Honey / Rica).
+ *
+ * Returns [] for a category that has none, which the app reads as "no subcategory row
+ * to show" — so categories that were never given subcategories look unchanged.
+ */
+const getSubcategories = async (query = {}) => {
+  const where = { isActive: true };
+  if (query.categoryId) where.categoryId = query.categoryId;
+  return ServiceSubcategory.findAll({
+    where,
+    order: [["sortOrder", "ASC"], ["name", "ASC"]],
+  });
+};
+
 // Returns true if the service is available in the requested city.
 // Global = no city mappings; city-specific = has an active mapping for that city.
 const isAvailableInCity = (cityMappings, cityId) => {
@@ -31,6 +47,8 @@ const getServices = async (query, page = 1, limit = 20) => {
   const offset = (page - 1) * limit;
   const where = { isActive: true };
   if (query.categoryId) where.categoryId = query.categoryId;
+  // Optional narrowing within a category; omitted = the category's full list, as before.
+  if (query.subcategoryId) where.subcategoryId = query.subcategoryId;
   if (query.isPopular) where.isPopular = true;
   if (query.showOnHome) where.showOnHome = true;
   if (query.search) {
@@ -127,4 +145,4 @@ const getNearbyPartners = async (lat, lng, serviceId, radiusKm = 10, page = 1, l
   return { data: partnersWithDistance, pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } };
 };
 
-module.exports = { getCategories, getServices, getServiceById, getNearbyPartners };
+module.exports = { getCategories, getSubcategories, getServices, getServiceById, getNearbyPartners };

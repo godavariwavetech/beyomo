@@ -38,6 +38,11 @@ const CustomPackagesScreen = ({navigation}: Props) => {
   const insets = useSafeAreaInsets();
   const dispatch = useDispatch<any>();
   const selectedCity = useSelector((state: RootState) => state.City?.selectedCity);
+  // Appended to service requests so the picker only offers services available in the
+  // user's city (the backend applies each service's city mapping off this). Named
+  // distinctly from the `?cityId=` prefix built inside the effect below, which would
+  // otherwise shadow this and yield a malformed "?limit=50?cityId=..." URL.
+  const citySuffix = selectedCity?.id ? `&cityId=${selectedCity.id}` : '';
 
   const [packages, setPackages] = useState<any[]>([]);
   const [servicesByCategory, setServicesByCategory] = useState<Record<string, any[]>>({});
@@ -73,9 +78,11 @@ const CustomPackagesScreen = ({navigation}: Props) => {
       });
       const results = await Promise.all(
         uniqueKeys.map(key => {
+          // citySuffix keeps this picker to services actually offered in the user's
+          // city — without it a city-specific service could be added to the cart.
           const url = key === 'all'
-            ? `${endpoints.SERVICES}?limit=50`
-            : `${endpoints.SERVICES}?categoryId=${key}&limit=50`;
+            ? `${endpoints.SERVICES}?limit=50${citySuffix}`
+            : `${endpoints.SERVICES}?categoryId=${key}&limit=50${citySuffix}`;
           return api.get(url).then(r => (r.data?.status ? r.data.data ?? [] : [])).catch(() => []);
         }),
       );
