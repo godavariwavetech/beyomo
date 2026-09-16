@@ -17,6 +17,7 @@ import {useDispatch, useSelector} from 'react-redux';
 import {fetchProfile} from '../../redux/reducers/user';
 import {fetchUserBookings} from '../../redux/reducers/bookings';
 import {logoutUser, actionLogout} from '../../redux/reducers/auth';
+import {resetToLogin} from '../../navigation/navigationReset';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
@@ -59,7 +60,7 @@ const ProfileScreen = ({navigation}: Props) => {
         onPress: async () => {
           await dispatch(logoutUser(undefined));
           dispatch(actionLogout());
-          navigation?.navigate('Login');
+          resetToLogin(navigation);
         },
       },
     ]);

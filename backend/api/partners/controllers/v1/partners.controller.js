@@ -180,6 +180,23 @@ const markArrived = catchAsync(async (req, res, next) => {
 });
 
 /**
+ * POST /api/v1/partners/bookings/:id/verify-otp
+ * Body: { otp: "1234" }
+ *
+ * Checks the 4-digit code the customer reads off their booking. Passing this is what
+ * lets the follow-up PATCH /status?in_progress through.
+ */
+const verifyServiceOtp = catchAsync(async (req, res, next) => {
+  const otp = String(req.body?.otp ?? "").trim();
+  if (!/^\d{4}$/.test(otp)) {
+    return next(new AppError("Enter the 4-digit OTP from the customer", 400));
+  }
+
+  const result = await partnersService.verifyServiceOtp(req.partner.userId, req.params.id, otp);
+  res.status(200).json({ status: true, message: "OTP verified", data: result });
+});
+
+/**
  * PATCH /api/v1/partners/device-token
  */
 const updateDeviceToken = catchAsync(async (req, res, next) => {
@@ -188,6 +205,22 @@ const updateDeviceToken = catchAsync(async (req, res, next) => {
 
   const result = await partnersService.updateDeviceToken(req.partner.userId, fcmToken);
   res.status(200).json({ status: true, message: result.message });
+});
+
+/**
+ * PATCH /api/v1/partners/online-status
+ * Body: { isOnline: boolean }
+ * Called when the partner flips the availability toggle, and again every
+ * few minutes while online so lastSeenAt stays fresh (see utils/partnerPresence).
+ */
+const updateOnlineStatus = catchAsync(async (req, res, next) => {
+  const { isOnline } = req.body;
+  if (typeof isOnline !== "boolean") {
+    return next(new AppError("isOnline must be true or false", 400));
+  }
+
+  const result = await partnersService.setOnlineStatus(req.partner.userId, isOnline);
+  res.status(200).json({ status: true, data: result });
 });
 
 /**
@@ -314,10 +347,12 @@ module.exports = {
   updateBookingStatus,
   markArrived,
   updateDeviceToken,
+  updateOnlineStatus,
   getEarnings,
   addExtraServices,
   addBookingPackage,
   removeBookingPackage,
   sendTestNotification,
   getWallet,
+  verifyServiceOtp,
 };

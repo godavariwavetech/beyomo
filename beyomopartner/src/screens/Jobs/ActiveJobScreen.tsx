@@ -19,7 +19,7 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {fonts} from '../../config/theme';
 import SwipeToConfirm from '../../components/SwipeToConfirm/SwipeToConfirm';
-import {resolveImageUrl} from '../../utils/utils';
+import {resolveImageUrl, formatAmount} from '../../utils/utils';
 import networkCall from '../../utils/networkCall';
 import {endpoints} from '../../config/config';
 import {useSelector, useDispatch} from 'react-redux';
@@ -172,7 +172,7 @@ const ActiveJobScreen = ({navigation, route}: any) => {
         setShowAddModal(false);
         showAlert(
           'Services Added',
-          `${n} service(s) added to this booking. New total: ₹${parseFloat(updated.totalAmount).toLocaleString('en-IN')}`,
+          `${n} service(s) added to this booking. New total: ₹${formatAmount(updated.totalAmount)}`,
         );
       } else {
         showAlert('Error', result.response?.message ?? 'Failed to add service. Please try again.');
@@ -188,9 +188,9 @@ const ActiveJobScreen = ({navigation, route}: any) => {
     // the payment never went through. Either way, don't block completion: ask whether the
     // partner collected cash on the spot instead, rather than refusing to close the job.
     const needsPaymentConfirmation = job?.paymentStatus !== 'paid';
-    const title = needsPaymentConfirmation ? 'Confirm Payment Collected' : 'Mark as Completed?';
+    const title = needsPaymentConfirmation ? 'Collect Payment' : 'Mark as Completed?';
     const message = needsPaymentConfirmation
-      ? `Have you collected ₹${totalAmount.toLocaleString('en-IN')} from the customer (cash or otherwise)?`
+      ? `Collect ₹${formatAmount(totalAmount)} from the customer (cash or otherwise), then tap Collect to complete this booking.`
       : 'Confirm that you have completed all services for this booking.';
 
     showAlert(
@@ -199,7 +199,7 @@ const ActiveJobScreen = ({navigation, route}: any) => {
       [
         {text: 'Not Yet', style: 'cancel'},
         {
-          text: needsPaymentConfirmation ? 'Yes, Collected' : 'Confirm',
+          text: needsPaymentConfirmation ? 'Collect' : 'Confirm',
           onPress: async () => {
             setCompleting(true);
             if (job?.id) {
@@ -342,7 +342,7 @@ const ActiveJobScreen = ({navigation, route}: any) => {
                   ))}
                 </View>
               </View>
-              <Text style={styles.servicePrice}>₹{Number(group.price).toLocaleString('en-IN')}</Text>
+              <Text style={styles.servicePrice}>₹{formatAmount(group.price)}</Text>
             </View>
           ))}
 
@@ -390,7 +390,7 @@ const ActiveJobScreen = ({navigation, route}: any) => {
                       <Text style={[styles.serviceMeta, {color: '#9CA3AF'}]}>FREE</Text>
                     ) : (
                       <Text style={[styles.servicePrice, isRemoved && {textDecorationLine: 'line-through', color: '#9CA3AF'}]}>
-                        ₹{Number(svc.price * (svc.qty || 1)).toLocaleString('en-IN')}
+                        ₹{formatAmount(svc.price * (svc.qty || 1))}
                       </Text>
                     )}
                     {status === 'completed' && !isRemoved && (
@@ -409,7 +409,7 @@ const ActiveJobScreen = ({navigation, route}: any) => {
               {myServices.length < services.length ? 'Your Earnings' : 'Total'}
             </Text>
             <Text style={styles.totalVal}>
-              ₹{Number(myServices.length < services.length ? myEarnings : totalAmount).toLocaleString('en-IN')}
+              ₹{formatAmount(myServices.length < services.length ? myEarnings : totalAmount)}
             </Text>
           </View>
         </View>
@@ -442,20 +442,7 @@ const ActiveJobScreen = ({navigation, route}: any) => {
             iconColor="#8B6820"
           />
         ) : (
-          <TouchableOpacity activeOpacity={0.85} onPress={handleDone}>
-            <LinearGradient
-              colors={['#0E5843', '#022723']}
-              style={styles.doneBtn}
-              start={{x: 0, y: 0}}
-              end={{x: 1, y: 0}}>
-              <Ionicons
-                name="checkmark-circle-outline"
-                size={sw(22)}
-                color="#FDD77A"
-              />
-              <Text style={styles.doneBtnText}>Done</Text>
-            </LinearGradient>
-          </TouchableOpacity>
+          <SwipeToConfirm label="Done" onConfirm={handleDone} />
         )}
       </View>
 
@@ -493,7 +480,7 @@ const ActiveJobScreen = ({navigation, route}: any) => {
             {svcCart.length > 0 && (
               <View style={styles.selectedBar}>
                 <Text style={styles.selectedBarName}>{svcCart.length} service(s) selected</Text>
-                <Text style={styles.selectedBarPrice}>₹{cartTotal.toLocaleString('en-IN')}</Text>
+                <Text style={styles.selectedBarPrice}>₹{formatAmount(cartTotal)}</Text>
               </View>
             )}
 
@@ -525,7 +512,7 @@ const ActiveJobScreen = ({navigation, route}: any) => {
                           {item.name}
                         </Text>
                         <Text style={styles.svcItemMeta}>
-                          {item.duration} min  •  ₹{parseFloat(item.basePrice).toLocaleString('en-IN')}
+                          {item.duration} min  •  ₹{formatAmount(item.basePrice)}
                         </Text>
                       </TouchableOpacity>
                       {isSelected ? (
@@ -783,21 +770,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF',
   },
-  doneBtn: {
-    borderRadius: sw(12),
-    height: sw(52),
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: sw(8),
-  },
-  doneBtnText: {
-    fontFamily: fonts.title,
-    fontSize: sw(15),
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-
   // ── UPI QR (shown on completion) ──
   qrCard: {
     marginTop: sw(16),

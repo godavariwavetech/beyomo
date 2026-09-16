@@ -7,6 +7,7 @@ import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { Badge } from '../components/common/Badge';
 import Modal from '../components/common/Modal';
 import api from '../services/api';
+import { formatAmount, formatRupee } from '../utils/format';
 
 const exportCSV = (data, filename) => {
   const headers = ['ID','Customer','User ID','Partner','Partner ID','Service','Amount','Commission','Status','Date','Slot','Payment'];
@@ -19,7 +20,7 @@ const exportCSV = (data, filename) => {
 const ITEMS_PER_PAGE = 8;
 const STATUSES = ['all','pending','confirmed','in_progress','completed','cancelled'];
 
-const fmt = (n) => Number(n || 0).toLocaleString('en-IN');
+const fmt = (n) => formatAmount(n);
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
 const ONE_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
@@ -694,6 +695,11 @@ export default function Bookings() {
         onClose={() => { setSelected(null); setReassignId(''); }}
         title={`Booking — ${selected?.bookingCode || selected?.id}`}
         size="lg"
+        // Not a read-only view: reassigning a partner, editing services, rescheduling
+        // and adding packages all happen in here, so a stray backdrop click threw away
+        // work in progress. Close via the header X or the footer Close button.
+        dismissOnBackdrop={false}
+        dismissOnEscape={false}
         footer={
           <>
             <button className="btn btn-outline" onClick={() => { setSelected(null); setReassignId(''); }}>Close</button>
@@ -752,6 +758,35 @@ export default function Bookings() {
                 </div>
               </InfoBlock>
             </div>
+
+            {/* ── Start-service OTP ──
+                The code the customer reads out and the partner types in to start the
+                job. Shown here so support can read it back to a customer who can't
+                find it, and can see at a glance whether the partner actually verified
+                on site. Absent on bookings created before the OTP feature shipped. */}
+            {selected.serviceOtp && (
+              <InfoBlock label="Start-Service OTP">
+                <div style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
+                  <span style={{ fontFamily:'monospace', fontSize:20, fontWeight:700, letterSpacing:'3px', background:'var(--c-bg-surface, #fff)', border:'1px solid var(--c-border)', borderRadius:'var(--r-sm)', padding:'4px 12px' }}>
+                    {selected.serviceOtp}
+                  </span>
+                  {selected.otpVerifiedAt ? (
+                    <span style={{ fontSize:11, fontWeight:600, padding:'3px 8px', borderRadius:4, background:'#dcfce7', color:'#166534' }}>
+                      ✓ Verified {new Date(selected.otpVerifiedAt).toLocaleString('en-IN', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })}
+                    </span>
+                  ) : (
+                    <span style={{ fontSize:11, fontWeight:600, padding:'3px 8px', borderRadius:4, background:'#fef3c7', color:'#92400e' }}>
+                      Not verified
+                    </span>
+                  )}
+                  {!selected.otpVerifiedAt && selected.otpAttempts > 0 && (
+                    <span style={{ fontSize:11, color:'var(--c-text-muted)' }}>
+                      {selected.otpAttempts} failed attempt{selected.otpAttempts === 1 ? '' : 's'}
+                    </span>
+                  )}
+                </div>
+              </InfoBlock>
+            )}
 
             {selected.fullAddress && (
               <InfoBlock label="Address">
@@ -1086,7 +1121,7 @@ export default function Bookings() {
                                 )}
                               </div>
                               <div style={{ fontSize:11, color:'var(--c-text-muted)' }}>
-                                ₹{parseFloat(s.basePrice || 0).toLocaleString('en-IN')} · {s.duration} min
+                                {formatRupee(s.basePrice)} · {s.duration} min
                               </div>
                               {s.category?.adminPercent != null && (
                                 <div style={{ fontSize:10, color:'var(--c-text-muted)' }}>
@@ -1113,7 +1148,7 @@ export default function Bookings() {
                       <div style={{ fontSize:12, color:'var(--c-text-secondary)', marginBottom:8, display:'flex', justifyContent:'space-between' }}>
                         <span>{svcCart.length} service(s) selected</span>
                         <span style={{ fontWeight:700, color:'var(--c-brand-primary)' }}>
-                          ₹{svcCart.reduce((sum, item) => sum + parseFloat(item.svc.basePrice || 0) * item.qty, 0).toLocaleString('en-IN')}
+                          {formatRupee(svcCart.reduce((sum, item) => sum + parseFloat(item.svc.basePrice || 0) * item.qty, 0))}
                         </span>
                       </div>
                     )}
@@ -1249,7 +1284,7 @@ export default function Bookings() {
               disabled={addingPackage || flexiblePicks.length !== pickingPackage.serviceCount}
               onClick={() => selected && handleAddPackage(selected.id, pickingPackage.id, flexiblePicks.map(id => ({ id, qty: 1 })))}
               style={{ display:'flex', alignItems:'center', gap:6 }}>
-              {addingPackage ? 'Adding…' : <><PlusCircle size={15}/> Add Package — ₹{parseFloat(pickingPackage.price).toLocaleString('en-IN')}</>}
+              {addingPackage ? 'Adding…' : <><PlusCircle size={15}/> Add Package — {formatRupee(pickingPackage.price)}</>}
             </button>
           </>
         ) : null}
@@ -1274,7 +1309,7 @@ export default function Bookings() {
                       </span>
                     </div>
                     <div style={{ fontSize:20, fontWeight:800, color:'var(--c-brand-primary)' }}>
-                      ₹{parseFloat(pkg.price).toLocaleString('en-IN')}
+                      {formatRupee(pkg.price)}
                     </div>
                   </div>
 
@@ -1333,7 +1368,7 @@ export default function Bookings() {
                       <input type="checkbox" checked={picked} disabled={disabled} readOnly style={{ width:16, height:16, flexShrink:0, cursor:'inherit' }} />
                       <div style={{ flex:1, minWidth:0 }}>
                         <div style={{ fontSize:14, fontWeight: picked ? 700 : 500 }}>{s.name}</div>
-                        <div style={{ fontSize:12, color:'var(--c-text-muted)' }}>₹{parseFloat(s.basePrice || 0).toLocaleString('en-IN')} · {s.duration} min</div>
+                        <div style={{ fontSize:12, color:'var(--c-text-muted)' }}>{formatRupee(s.basePrice)} · {s.duration} min</div>
                       </div>
                     </div>
                   );
@@ -1607,7 +1642,7 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
                           style={{ cursor:'pointer', width:15, height:15, flexShrink:0 }} />
                         <div style={{ flex:1, minWidth:0 }}>
                           <div style={{ fontSize:13, fontWeight: cartItem ? 600 : 400 }}>{s.name}</div>
-                          <div style={{ fontSize:11, color:'var(--c-text-muted)' }}>₹{parseFloat(s.basePrice || 0).toLocaleString('en-IN')} · {s.duration} min</div>
+                          <div style={{ fontSize:11, color:'var(--c-text-muted)' }}>{formatRupee(s.basePrice)} · {s.duration} min</div>
                         </div>
                         {cartItem && (
                           <div style={{ display:'flex', alignItems:'center', gap:4 }}>

@@ -7,7 +7,9 @@ const AdminUser = require("../../models/adminUser.model");
 const User = require("../../../users/models/user.model");
 const UserAddress = require("../../../users/models/userAddress.model");
 const Partner = require("../../../partners/models/partner.model");
+const { withPresence } = require("../../../../utils/partnerPresence");
 const ServiceCategory = require("../../../services/models/serviceCategory.model");
+const ServiceSubcategory = require("../../../services/models/serviceSubcategory.model");
 const Service = require("../../../services/models/service.model");
 const ServiceCityMap = require("../../../services/models/service_city_map.model");
 const { cityPriceResolver } = require("../../../services/services/v1/cityPricing");
@@ -117,16 +119,39 @@ const listPartners = async ({ search, status, source, cityIds, page = 1, limit =
       { email: { [Op.like]: `%${search}%` } },
     ];
   }
-  const { count: total, rows: data } = await Partner.findAndCountAll({
+  const { count: total, rows } = await Partner.findAndCountAll({
     where, order: [["createdAt", "DESC"]], offset, limit,
   });
+  // withPresence downgrades a stale isOnline to false, so the dashboard never shows a
+  // partner as available when we haven't heard from their app in ONLINE_TIMEOUT_MINUTES.
+  const data = rows.map(withPresence);
   return { data, pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } };
 };
 
 const getPartnerById = async (partnerId) => {
   const partner = await Partner.findByPk(partnerId);
   if (!partner) throw new AppError("Partner not found", 404);
-  return partner;
+  return withPresence(partner);
+};
+
+/**
+ * Turn a typed city name into the matching cities.id.
+ *
+ * partners.cityId is what the available-bookings feed matches on, but the dashboard's
+ * partner form only ever wrote the free-text locationCity — so changing a partner's
+ * city updated the label and left cityId pointing at the city they used to be in, and
+ * they kept being offered the old city's jobs. Both are written together now.
+ *
+ * Exact name first, substring second, mirroring how a booking's address resolves its
+ * city, so the two sides can't disagree on what "Rajahmundry" means.
+ */
+const resolveCityIdByName = async (name) => {
+  const typed = (name ?? "").trim();
+  if (!typed) return null;
+  const city =
+    (await City.findOne({ where: { name: typed } })) ||
+    (await City.findOne({ where: { name: { [Op.like]: `%${typed}%` } } }));
+  return city ? city.id : null;
 };
 
 const createPartner = async (data) => {
@@ -137,6 +162,7 @@ const createPartner = async (data) => {
     phone: data.phone,
     email: data.email || null,
     locationCity: data.city || null,
+    cityId: await resolveCityIdByName(data.city),
     experience: parseInt(data.experience) || 0,
     gender: data.gender || null,
     professions: data.professions || [],
@@ -165,7 +191,12 @@ const updatePartner = async (partnerId, data) => {
   if (data.name !== undefined) updates.name = data.name;
   if (data.phone !== undefined) updates.phone = data.phone;
   if (data.email !== undefined) updates.email = data.email || null;
-  if (data.city !== undefined) updates.locationCity = data.city || null;
+  if (data.city !== undefined) {
+    updates.locationCity = data.city || null;
+    // Kept in lockstep — a stale cityId is what made a partner moved to Vijayawada
+    // carry on seeing Rajahmundry jobs.
+    updates.cityId = await resolveCityIdByName(data.city);
+  }
   if (data.experience !== undefined) updates.experience = parseInt(data.experience) || 0;
   if (data.gender !== undefined) updates.gender = data.gender || null;
   if (data.professions !== undefined) updates.professions = data.professions || [];
@@ -205,8 +236,25 @@ const updatePartnerStatus = async (partnerId, status) => {
 
 // ==================== SERVICE CATEGORIES ====================
 
-const listCategories = async () =>
-  ServiceCategory.findAll({ order: [["sortOrder", "ASC"], ["name", "ASC"]] });
+/**
+ * Categories for the dashboard, optionally narrowed to one city.
+ *
+ * The dashboard has always sent its selected cityId here, but this ignored it — so the
+ * city switcher filtered the service list while the category list stayed global, and a
+ * Vijayawada-only category still showed while viewing Rajahmundry.
+ *
+ * Same rule the public endpoint uses: an empty cityIds means "all cities". Note there's
+ * no isActive filter — unlike the app, the dashboard must still see hidden categories.
+ */
+const listCategories = async (query = {}) => {
+  const all = await ServiceCategory.findAll({ order: [["sortOrder", "ASC"], ["name", "ASC"]] });
+  if (!query.cityId) return all;
+  const cid = Number(query.cityId);
+  return all.filter((c) => {
+    const ids = c.cityIds ?? [];
+    return ids.length === 0 || ids.map(Number).includes(cid);
+  });
+};
 
 const createCategory = async (data) => {
   data = normalizeSplitInput(data);
@@ -255,6 +303,64 @@ const deleteCategory = async (id) => {
   const deleted = await ServiceCategory.destroy({ where: { id } });
   if (!deleted) throw new AppError("Category not found", 404);
   return { message: "Category deleted" };
+};
+
+// ==================== SERVICE SUBCATEGORIES ====================
+// Optional second level under a category (Waxing -> Honey / Rica). Services point at
+// one via the nullable services.subcategoryId.
+
+const listSubcategories = async (query = {}) => {
+  const where = {};
+  if (query.categoryId) where.categoryId = query.categoryId;
+  return ServiceSubcategory.findAll({
+    where,
+    order: [["categoryId", "ASC"], ["sortOrder", "ASC"], ["name", "ASC"]],
+    include: [{ model: ServiceCategory, as: "category", attributes: ["name"] }],
+  });
+};
+
+const createSubcategory = async (data) => {
+  try {
+    if (data.sortOrder == null) {
+      const last = await ServiceSubcategory.findOne({
+        where: { categoryId: data.categoryId },
+        order: [["sortOrder", "DESC"]],
+      });
+      data = { ...data, sortOrder: last ? last.sortOrder + 1 : 0 };
+    }
+    return await ServiceSubcategory.create(data);
+  } catch (e) {
+    if (e.name === "SequelizeUniqueConstraintError") {
+      throw new AppError(`A subcategory named "${data.name}" already exists in this category`, 400);
+    }
+    throw e;
+  }
+};
+
+const updateSubcategory = async (id, data) => {
+  try {
+    await ServiceSubcategory.update(data, { where: { id } });
+  } catch (e) {
+    if (e.name === "SequelizeUniqueConstraintError") {
+      throw new AppError(`A subcategory named "${data.name}" already exists in this category`, 400);
+    }
+    throw e;
+  }
+  const subcategory = await ServiceSubcategory.findByPk(id);
+  if (!subcategory) throw new AppError("Subcategory not found", 404);
+  return subcategory;
+};
+
+const deleteSubcategory = async (id) => {
+  const sub = await ServiceSubcategory.findByPk(id);
+  if (!sub) throw new AppError("Subcategory not found", 404);
+  // Detach rather than block: the services themselves are untouched and simply fall
+  // back to listing under their category, which is how they behaved before.
+  return sequelize.transaction(async (t) => {
+    await Service.update({ subcategoryId: null }, { where: { subcategoryId: id }, transaction: t });
+    await ServiceSubcategory.destroy({ where: { id }, transaction: t });
+    return { message: "Subcategory deleted" };
+  });
 };
 
 // ==================== SERVICES ====================
@@ -328,6 +434,7 @@ const listServices = async ({ categoryId, search, cityId, page = 1, limit = 20 }
     limit,
     include: [
       { model: ServiceCategory, as: "category", attributes: ["name", "adminPercent", "partnerPercent", "gstPercent"] },
+      { model: ServiceSubcategory, as: "subcategory", attributes: ["id", "name"], required: false },
       { model: ServiceCityMap, as: "cityMappings", required: false },
     ],
   });
@@ -343,8 +450,18 @@ const listServices = async ({ categoryId, search, cityId, page = 1, limit = 20 }
   return { data, pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } };
 };
 
+// The dashboard's subcategory <select> posts "" for "None". Left as-is that would be
+// written to an INT column, so normalise it to a real NULL — which is also what
+// "this service isn't in any subcategory" means everywhere else.
+const normalizeSubcategoryId = (serviceData) => {
+  if (!("subcategoryId" in serviceData)) return serviceData;
+  const raw = serviceData.subcategoryId;
+  return { ...serviceData, subcategoryId: raw === "" || raw == null ? null : parseInt(raw) };
+};
+
 const createService = async (data) => {
-  const { cityIds, cityMappings, ...serviceData } = data;
+  const { cityIds, cityMappings, ...rest } = data;
+  const serviceData = normalizeSubcategoryId(rest);
   // Normalise to [{ cityId, isActive }] regardless of which shape was sent
   const mappings = cityMappings ?? (cityIds ?? []).map((cid) => ({ cityId: cid, isActive: true }));
   return sequelize.transaction(async (t) => {
@@ -376,7 +493,8 @@ const reorderServices = async (categoryId, orderedIds) => {
 };
 
 const updateService = async (id, data) => {
-  const { cityIds, cityMappings, ...serviceData } = data;
+  const { cityIds, cityMappings, ...rest } = data;
+  const serviceData = normalizeSubcategoryId(rest);
   const mappings = cityMappings ?? (cityIds ?? []).map((cid) => ({ cityId: cid, isActive: true }));
   return sequelize.transaction(async (t) => {
     await Service.update(serviceData, { where: { id }, transaction: t });
@@ -616,14 +734,25 @@ const getBookingDetail = async (bookingId) => {
   // These fields let the UI display the up-to-date admin/partner split per booking.
   try {
     const serviceItems = plain.services ?? [];
+    // `packages` comes back from the driver as a JSON string, so an Array.isArray test on
+    // the raw column silently skips the multi-package branch and blends the booking over
+    // its raw per-service prices instead of the package prices it was actually charged —
+    // which reported a different split here than the partner app's stored partnerEarning.
+    const bookingPackages = typeof plain.packages === "string"
+      ? (() => { try { return JSON.parse(plain.packages); } catch { return []; } })()
+      : plain.packages;
     let rates;
-    if (Array.isArray(plain.packages) && plain.packages.length > 0) {
+    if (Array.isArray(bookingPackages) && bookingPackages.length > 0) {
       // Multi-package: each package keeps its own split — blend them by price weight.
+      // The pool must carry `price`; resolveRatesForMultiPackageBooking weights by
+      // price * qty, so omitting it makes every weight NaN. Prefer the price snapshotted
+      // on the booking over the package's current price — that's what the customer paid.
       const ratePools = [];
-      for (const p of plain.packages) {
+      for (const p of bookingPackages) {
         const pkg = await ServicePackage.findByPk(p.packageId);
-        if (pkg) ratePools.push({ package: { adminPercent: pkg.adminPercent, partnerPercent: pkg.partnerPercent, gstPercent: pkg.gstPercent }, qty: p.qty || 1 });
-        else ratePools.push({ package: { adminPercent: DEFAULT_ADMIN_PERCENT, partnerPercent: DEFAULT_PARTNER_PERCENT, gstPercent: DEFAULT_GST_PERCENT }, qty: p.qty || 1 });
+        const price = p.price ?? pkg?.price ?? 0;
+        if (pkg) ratePools.push({ package: { price, adminPercent: pkg.adminPercent, partnerPercent: pkg.partnerPercent, gstPercent: pkg.gstPercent }, qty: p.qty || 1 });
+        else ratePools.push({ package: { price, adminPercent: DEFAULT_ADMIN_PERCENT, partnerPercent: DEFAULT_PARTNER_PERCENT, gstPercent: DEFAULT_GST_PERCENT }, qty: p.qty || 1 });
       }
       rates = await resolveRatesForMultiPackageBooking({ packages: ratePools, serviceItems });
     } else {
@@ -1256,6 +1385,7 @@ module.exports = {
   listUsers, getUserById, updateUserStatus, deleteUser, createUser,
   listPartners, getPartnerById, updatePartnerStatus, createPartner, updatePartner,
   listCategories, createCategory, updateCategory, deleteCategory, reorderCategories,
+  listSubcategories, createSubcategory, updateSubcategory, deleteSubcategory,
   listServices, createService, updateService, deleteService, toggleServiceCityStatus, reorderServices,
   createBookingForCustomer,
   listBookings, getBookingDetail, assignPartner, acceptBooking, cancelBooking, rescheduleBooking, editBookingServices, removeBookingPackage, addBookingPackage,

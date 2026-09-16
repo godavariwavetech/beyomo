@@ -10,8 +10,9 @@ import ServiceTree from '../components/common/ServiceTree';
 import ReorderableServiceList from '../components/common/ReorderableServiceList';
 import api from '../services/api';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
+import { formatAmount } from '../utils/format';
 
-const fmt = (n) => Number(n || 0).toLocaleString('en-IN');
+const fmt = (n) => formatAmount(n);
 
 const emptyForm = () => ({
   title: '',
@@ -459,6 +460,8 @@ export default function Combos() {
         onClose={() => setModal(false)}
         title={editTarget ? 'Edit Combo' : 'New Combo'}
         size="lg"
+        dismissOnBackdrop={false}
+        dismissOnEscape={false}
         footer={
           <>
             <button className="btn btn-outline" onClick={() => setModal(false)}>Cancel</button>

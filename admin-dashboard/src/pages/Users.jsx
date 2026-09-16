@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { useUsers } from '../hooks/useUsers';
 import { useCityFilter } from '../context/CityContext';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
+import { formatRupee } from '../utils/format';
 
 const exportCSV = (data, filename) => {
   const headers = ['ID','Name','Phone','Email','Joined','Bookings','Total Spent','Status'];
@@ -108,7 +109,36 @@ export default function Users() {
     }).length,
   };
 
-  const userBookings = selected?.bookings ?? [];
+  // `selected.bookings` is the booking COUNT from the list endpoint, not the rows.
+  // The detail panel needs the actual bookings, so fetch them when the tab is opened.
+  const [userBookings, setUserBookings] = useState([]);
+  const [bookingsLoading, setBookingsLoading] = useState(false);
+
+  useEffect(() => {
+    if (tab !== 'bookings' || !selected?.id) return;
+    let cancelled = false;
+    setBookingsLoading(true);
+    action('get', '/api/v1/admin/bookings', null, { userId: selected.id, limit: 100 }).then(res => {
+      if (cancelled) return;
+      const raw = res.ok ? (res.data?.data?.data ?? res.data?.data ?? []) : [];
+      setUserBookings(raw.map(b => ({
+        ...b,
+        id: String(b.id ?? ''),
+        code: b.bookingCode ?? String(b.id ?? ''),
+        service: b.service?.name ?? b.services?.[0]?.name ?? '—',
+        partnerName: b.partner?.name ?? b.partnerName ?? 'Unassigned',
+        amount: parseFloat(b.totalAmount ?? b.amount ?? 0),
+        date: b.scheduledAt
+          ? new Date(b.scheduledAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+          : '',
+      })));
+      setBookingsLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [tab, selected?.id, action]);
+
+  // Drop stale rows when switching to a different user.
+  useEffect(() => { setUserBookings([]); }, [selected?.id]);
 
   return (
     <div>
@@ -186,7 +216,7 @@ export default function Users() {
                   <td style={{ color: 'var(--c-text-secondary)', fontSize: 13 }}>{u.phone}</td>
                   <td style={{ fontSize: 13 }}>{new Date(u.joinedDate).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' })}</td>
                   <td style={{ fontWeight: 600, textAlign: 'center' }}>{u.bookings}</td>
-                  <td style={{ fontWeight: 600 }}>₹{u.totalSpent.toLocaleString('en-IN')}</td>
+                  <td style={{ fontWeight: 600 }}>{formatRupee(u.totalSpent)}</td>
                   <td><Badge status={u.status} /></td>
                   <td>
                     <div style={{ display: 'flex', gap: 4 }}>
@@ -226,6 +256,9 @@ export default function Users() {
 
       {/* Add User Modal */}
       <Modal isOpen={adding} onClose={() => setAdding(false)} title="Add New User" size="sm"
+        // A stray backdrop click discarded a half-filled new-user form.
+        dismissOnBackdrop={false}
+        dismissOnEscape={false}
         footer={<><button className="btn btn-outline" onClick={() => setAdding(false)}>Cancel</button><button className="btn btn-primary" onClick={addUser}>Add User</button></>}
       >
         <div className="form-grid">
@@ -292,7 +325,7 @@ export default function Users() {
                     { icon: <Calendar size={14}/>, label:'Joined',   value: new Date(selected.joinedDate).toLocaleDateString('en-IN',{day:'2-digit',month:'long',year:'numeric'}) },
                     { icon: <Calendar size={14}/>, label:'Last Active', value: (selected.updatedAt ?? selected.createdAt) ? new Date(selected.updatedAt ?? selected.createdAt).toLocaleDateString('en-IN',{day:'2-digit',month:'long',year:'numeric'}) : '—' },
                     { icon: <MapPin size={14}/>, label:'Addresses',  value: `${selected.addresses ?? 0} saved address${(selected.addresses ?? 0) !== 1 ? 'es' : ''}` },
-                    { icon: <DollarSign size={14}/>, label:'Avg. Order', value: selected.bookings ? `₹${Math.round(selected.totalSpent/selected.bookings).toLocaleString('en-IN')}` : '—' },
+                    { icon: <DollarSign size={14}/>, label:'Avg. Order', value: selected.bookings ? formatRupee(selected.totalSpent/selected.bookings) : '—' },
                   ].map(item => (
                     <div key={item.label} className="detail-item">
                       <div className="label" style={{ display:'flex', alignItems:'center', gap:4 }}>{item.icon} {item.label}</div>
@@ -304,7 +337,11 @@ export default function Users() {
             )}
 
             {tab === 'bookings' && (
-              userBookings.length === 0 ? (
+              bookingsLoading ? (
+                <div style={{ textAlign:'center', padding: '40px 0', color:'var(--c-text-secondary)' }}>
+                  <p>Loading bookings…</p>
+                </div>
+              ) : userBookings.length === 0 ? (
                 <div style={{ textAlign:'center', padding: '40px 0', color:'var(--c-text-secondary)' }}>
                   <ShoppingBag size={32} style={{ margin: '0 auto 12px', opacity: 0.4 }} />
                   <p>No bookings yet for this user.</p>
@@ -316,10 +353,10 @@ export default function Users() {
                     <tbody>
                       {userBookings.map(b => (
                         <tr key={b.id}>
-                          <td style={{ fontSize:12, color:'var(--c-text-secondary)' }}>{b.id}</td>
+                          <td style={{ fontSize:12, color:'var(--c-text-secondary)' }}>{b.code}</td>
                           <td>{b.service}</td>
                           <td style={{ fontSize:13 }}>{b.partnerName}</td>
-                          <td style={{ fontWeight:600 }}>₹{b.amount.toLocaleString('en-IN')}</td>
+                          <td style={{ fontWeight:600 }}>{formatRupee(b.amount)}</td>
                           <td><Badge status={b.status} /></td>
                           <td style={{ fontSize:13 }}>{b.date}</td>
                         </tr>

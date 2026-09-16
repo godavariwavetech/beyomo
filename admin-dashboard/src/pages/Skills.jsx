@@ -234,7 +234,9 @@ export default function Skills() {
         isOpen={catModal}
         onClose={() => setCatModal(false)}
         title={editingCat ? 'Edit Category' : 'New Skill Category'}
-        size="sm">
+        size="sm"
+        dismissOnBackdrop={false}
+        dismissOnEscape={false}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div className="form-group">
             <label className="form-label">Category Name *</label>

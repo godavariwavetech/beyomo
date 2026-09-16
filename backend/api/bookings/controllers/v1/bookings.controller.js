@@ -41,6 +41,9 @@ const createBookingSchema = Joi.object({
     lng: Joi.number().allow(null),
   }).required(),
   scheduledAt: Joi.date().required(),
+  // The city the customer is currently browsing in. Optional — older app builds don't
+  // send it, and the address remains the authoritative source either way.
+  cityId: Joi.number().integer().positive().allow(null),
   couponCode: Joi.string().trim().uppercase().allow("", null),
   offerId:    Joi.number().integer().allow(null),
   packageId:  Joi.number().integer().positive().allow(null),

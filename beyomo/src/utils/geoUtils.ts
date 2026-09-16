@@ -30,3 +30,24 @@ export const findCityForLocation = (
       c.lng != null &&
       haversineKm(lat, lng, c.lat, c.lng) <= (c.radius ?? 30),
   );
+
+/**
+ * Whether an address sitting in `addressCity` may be used while `selectedCity` is the
+ * chosen service city. Same rule as the website's Checkout: with no city chosen there
+ * is nothing to validate against, so nothing is blocked; once one is chosen, an
+ * address has to fall inside it.
+ *
+ * Debug builds skip the check. The live service area is a single city, so on a test
+ * device anywhere else EVERY address is rejected and the address and checkout flows
+ * can't be exercised at all. `__DEV__` is false in release builds, so production
+ * keeps the real restriction.
+ */
+export const isCityServiceable = (
+  addressCity: string | null | undefined,
+  selectedCity: {name: string} | null | undefined,
+): boolean => {
+  if (__DEV__) return true;
+  if (!selectedCity) return true;
+  if (!addressCity) return false;
+  return addressCity.toLowerCase().includes(selectedCity.name.toLowerCase());
+};

@@ -15,6 +15,7 @@ import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {fonts} from '../../config/theme';
 import {useDispatch} from 'react-redux';
 import {deleteAccount, actionLogout} from '../../redux/reducers/auth';
+import {resetToLogin} from '../../navigation/navigationReset';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
@@ -54,7 +55,7 @@ const DeleteAccountScreen = ({navigation}: Props) => {
     try {
       await dispatch(deleteAccount()).unwrap();
       dispatch(actionLogout());
-      navigation?.navigate('Login');
+      resetToLogin(navigation);
     } catch (error: any) {
       setLoading(false);
       Alert.alert('Something went wrong', typeof error === 'string' ? error : 'Failed to delete account. Please try again.');

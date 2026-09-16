@@ -1,4 +1,4 @@
-import React, {useRef, useEffect} from 'react';
+import React, {useEffect} from 'react';
 import {NavigationContainer} from '@react-navigation/native';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
@@ -32,6 +32,9 @@ import AboutUsScreen from '../screens/Profile/AboutUsScreen';
 import CitySelectorScreen from '../screens/CitySelector/CitySelectorScreen';
 import CustomTabBar from '../components/BottomTabBar/CustomTabBar';
 import {setupForegroundHandler, handleNotificationNavigation} from '../services/NotificationsService';
+import {navigationRef} from './navigationRef';
+
+
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -48,8 +51,6 @@ const MainTabs = () => (
 );
 
 const AppNavigation = () => {
-  const navigationRef = useRef(null);
-
   useEffect(() => {
     const unsubForeground = setupForegroundHandler();
 

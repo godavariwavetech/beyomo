@@ -9,6 +9,7 @@ import { useEarnings } from '../hooks/useEarnings';
 import { useReports } from '../hooks/useReports';
 import { useCityFilter } from '../context/CityContext';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
+import { formatRupee } from '../utils/format';
 
 const exportCSV = (data, filename) => {
   const headers = ['Booking ID','Customer','Partner','Service','Amount','Commission','Partner Payout','Payment Method','Date'];
@@ -18,7 +19,7 @@ const exportCSV = (data, filename) => {
   a.click(); URL.revokeObjectURL(a.href);
 };
 
-const fmtCurrency = v => `₹${v.toLocaleString('en-IN')}`;
+const fmtCurrency = v => formatRupee(v);
 
 // Admin's actual cut is the taxable (pre-tax) amount minus the partner's payout — GST is
 // a pass-through to the government, not part of the admin/partner split, so it must never
@@ -214,9 +215,9 @@ export default function Earnings() {
                     <td style={{ fontSize:13 }}>{t.userName ?? t.user?.name ?? '—'}</td>
                     <td style={{ fontSize:13 }}>{t.partnerName ?? t.partner?.name ?? '—'}</td>
                     <td>{t.service?.name ?? t.service ?? t.services?.[0]?.name ?? '—'}</td>
-                    <td><span style={{ fontWeight:700, color:'var(--c-brand-primary)' }}>₹{amount.toLocaleString('en-IN')}</span></td>
-                    <td><span style={{ color:'var(--c-success)', fontWeight:600 }}>₹{commission.toLocaleString('en-IN')}</span></td>
-                    <td><span style={{ fontWeight:600 }}>₹{payout.toLocaleString('en-IN')}</span></td>
+                    <td><span style={{ fontWeight:700, color:'var(--c-brand-primary)' }}>{formatRupee(amount)}</span></td>
+                    <td><span style={{ color:'var(--c-success)', fontWeight:600 }}>{formatRupee(commission)}</span></td>
+                    <td><span style={{ fontWeight:600 }}>{formatRupee(payout)}</span></td>
                     <td>
                       <span style={{ background:'var(--c-border-light)', padding:'2px 8px', borderRadius:'var(--r-full)', fontSize:12, fontWeight:500 }}>{t.paymentMethod ?? t.payment?.method ?? '—'}</span>
                     </td>

@@ -20,6 +20,7 @@ import {endpoints} from '../../config/config';
 import {addPackageToCart} from '../../redux/reducers/cart';
 import CartBar from '../../components/CartBar/CartBar';
 import type {RootState} from '../../redux/store';
+import {formatAmount} from '../../utils/utils';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
@@ -37,6 +38,11 @@ const CustomPackagesScreen = ({navigation}: Props) => {
   const insets = useSafeAreaInsets();
   const dispatch = useDispatch<any>();
   const selectedCity = useSelector((state: RootState) => state.City?.selectedCity);
+  // Appended to service requests so the picker only offers services available in the
+  // user's city (the backend applies each service's city mapping off this). Named
+  // distinctly from the `?cityId=` prefix built inside the effect below, which would
+  // otherwise shadow this and yield a malformed "?limit=50?cityId=..." URL.
+  const citySuffix = selectedCity?.id ? `&cityId=${selectedCity.id}` : '';
 
   const [packages, setPackages] = useState<any[]>([]);
   const [servicesByCategory, setServicesByCategory] = useState<Record<string, any[]>>({});
@@ -72,9 +78,11 @@ const CustomPackagesScreen = ({navigation}: Props) => {
       });
       const results = await Promise.all(
         uniqueKeys.map(key => {
+          // citySuffix keeps this picker to services actually offered in the user's
+          // city — without it a city-specific service could be added to the cart.
           const url = key === 'all'
-            ? `${endpoints.SERVICES}?limit=50`
-            : `${endpoints.SERVICES}?categoryId=${key}&limit=50`;
+            ? `${endpoints.SERVICES}?limit=50${citySuffix}`
+            : `${endpoints.SERVICES}?categoryId=${key}&limit=50${citySuffix}`;
           return api.get(url).then(r => (r.data?.status ? r.data.data ?? [] : [])).catch(() => []);
         }),
       );
@@ -172,7 +180,7 @@ const CustomPackagesScreen = ({navigation}: Props) => {
                   activeOpacity={0.85}
                   onPress={() => scrollToPackage(pkg.id)}>
                   <Text style={styles.quickCardTitle} numberOfLines={2}>{pkg.title}</Text>
-                  <Text style={styles.quickCardPrice}>₹{Math.round(pkg.price)}</Text>
+                  <Text style={styles.quickCardPrice}>₹{formatAmount(pkg.price)}</Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -220,9 +228,9 @@ const CustomPackagesScreen = ({navigation}: Props) => {
                   ) : null}
 
                   <View style={styles.priceRow}>
-                    <Text style={styles.price}>₹{Math.round(pkg.price)}</Text>
+                    <Text style={styles.price}>₹{formatAmount(pkg.price)}</Text>
                     {pkg.originalPrice > pkg.price && (
-                      <Text style={styles.originalPrice}>₹{Math.round(pkg.originalPrice)}</Text>
+                      <Text style={styles.originalPrice}>₹{formatAmount(pkg.originalPrice)}</Text>
                     )}
                     {discountPct > 0 && (
                       <Text style={styles.discount}>{discountPct}% OFF</Text>

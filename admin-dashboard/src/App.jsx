@@ -11,6 +11,7 @@ import Partners from './pages/Partners';
 import WebsiteRegistrations from './pages/WebsiteRegistrations';
 import Bookings from './pages/Bookings';
 import Services from './pages/Services';
+import Catalog from './pages/Catalog';
 import Earnings from './pages/Earnings';
 import Settlements from './pages/Settlements';
 import Coupons from './pages/Coupons';
@@ -61,6 +62,9 @@ function ProtectedRoutes() {
         <Route path="website-registrations" element={<PermissionGuard page="partners"><WebsiteRegistrations /></PermissionGuard>} />
         <Route path="bookings"      element={<PermissionGuard page="bookings"><Bookings /></PermissionGuard>} />
         <Route path="services"      element={<PermissionGuard page="services"><Services /></PermissionGuard>} />
+        {/* Categories & Subcategories browser — shares the `services` permission, since
+            it manages the same catalog the Services page does. */}
+        <Route path="catalog"       element={<PermissionGuard page="services"><Catalog /></PermissionGuard>} />
         <Route path="earnings"      element={<PermissionGuard page="earnings"><Earnings /></PermissionGuard>} />
         <Route path="settlements"   element={<PermissionGuard page="settlements"><Settlements /></PermissionGuard>} />
         <Route path="coupons"       element={<PermissionGuard page="coupons"><Coupons /></PermissionGuard>} />

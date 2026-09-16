@@ -3,6 +3,7 @@ const { sequelize } = require("../../../../utils/dbconnect");
 const fs = require("fs");
 const path = require("path");
 const Partner = require("../../models/partner.model");
+const { HEARTBEAT_MINUTES, isPartnerOnline } = require("../../../../utils/partnerPresence");
 const PartnerService = require("../../models/partnerService.model");
 const PartnerSkillCategory = require("../../../skills/models/PartnerSkillCategory");
 const Booking = require("../../../bookings/models/booking.model");
@@ -232,7 +233,7 @@ const computeTotalEarned = async (partnerId) => {
 
 const getDashboard = async (partnerId) => {
   const partner = await Partner.findByPk(partnerId, {
-    attributes: ["pendingEarnings", "ratingsAverage", "ratingsCount", "status"],
+    attributes: ["pendingEarnings", "ratingsAverage", "ratingsCount", "status", "isOnline", "lastSeenAt"],
   });
   if (!partner) throw new AppError("Partner not found", 404);
 
@@ -272,6 +273,10 @@ const getDashboard = async (partnerId) => {
     pendingEarnings: partner.pendingEarnings,
     ratings: { average: partner.ratingsAverage, count: partner.ratingsCount },
     status: partner.status,
+    // Availability travels with the dashboard payload the app already fetches, so the
+    // toggle can show the partner's real server-side state instead of assuming "online".
+    isOnline: isPartnerOnline(partner),
+    heartbeatMinutes: HEARTBEAT_MINUTES,
     bookingStats: { total: totalBookings, todayJobs, completedToday, totalCompleted },
   };
 };
@@ -340,6 +345,13 @@ const updateBookingStatus = async (partnerId, bookingId, status, cashCollected =
   if (status === "in_progress") {
     if (!["confirmed", "in_progress"].includes(booking.status)) {
       throw new AppError(`Cannot start a booking with status "${booking.status}"`, 400);
+    }
+    // The customer's 4-digit code has to be verified first — this is the server-side
+    // half of that rule, so a partner can't start a job by calling the API directly
+    // and skipping the OTP screen. Bookings predating the feature (serviceOtp NULL)
+    // are let through rather than being stranded un-startable.
+    if (booking.serviceOtp && !booking.otpVerifiedAt) {
+      throw new AppError("Enter the customer's 4-digit OTP to start this service", 403);
     }
     await booking.update({ status: "in_progress" });
     return booking.reload();
@@ -501,6 +513,24 @@ const updateDeviceToken = async (partnerId, fcmToken) => {
   return { message: "Device token updated" };
 };
 
+/**
+ * Records the partner's availability toggle and refreshes their heartbeat.
+ * The app calls this on toggle AND every HEARTBEAT_MINUTES while online, so
+ * lastSeenAt stays fresh; going offline is recorded immediately.
+ */
+const setOnlineStatus = async (partnerId, isOnline) => {
+  const partner = await Partner.findByPk(partnerId);
+  if (!partner) throw new AppError("Partner not found", 404);
+
+  await partner.update({ isOnline, lastSeenAt: new Date() });
+
+  return {
+    isOnline: partner.isOnline,
+    lastSeenAt: partner.lastSeenAt,
+    heartbeatMinutes: HEARTBEAT_MINUTES,
+  };
+};
+
 const getEarnings = async (partnerId, period = "month") => {
   const now = new Date();
   let startDate = null;
@@ -581,7 +611,7 @@ const getEarnings = async (partnerId, period = "month") => {
 };
 
 const getAvailableBookings = async (partnerId) => {
-  const partner = await Partner.findByPk(partnerId, { attributes: ['locationCity'] });
+  const partner = await Partner.findByPk(partnerId, { attributes: ['cityId', 'locationCity'] });
   // Exclude online-payment bookings whose payment hasn't actually gone through yet
   // (e.g. the customer cancelled Razorpay checkout) — those stay "pending" too, but
   // a partner must never be offered a job that hasn't been paid for.
@@ -589,7 +619,26 @@ const getAvailableBookings = async (partnerId) => {
     status: { [Op.in]: ['pending', 'confirmed'] },
     [Op.or]: [{ paymentMode: 'cod' }, { paymentStatus: 'paid' }],
   };
-  if (partner?.locationCity) where.addressCity = partner.locationCity;
+
+  // ---- Location scope ----
+  // cityId is the dependable side of this on both tables: an exact foreign key set from
+  // the city the customer booked in and the city the partner was registered to.
+  // addressCity/locationCity are free text typed into an address form, so a trailing
+  // space, a lowercase letter or "Rajamahendravaram" instead of "Rajahmundry" silently
+  // stops matching — which is why the string comparison alone wasn't reliable. It stays
+  // as the fallback for partners registered before cityId was captured.
+  if (partner?.cityId) {
+    where.cityId = partner.cityId;
+  } else if (partner?.locationCity) {
+    where.addressCity = partner.locationCity;
+  } else {
+    // Neither is set. This previously fell through with no location filter at all,
+    // which offered that partner every city's jobs — the exact leak this is meant to
+    // stop. Fail closed: a partner we can't place gets nothing until admin sets their
+    // city, rather than everything.
+    logger.warn(`[partners] partner ${partnerId} has no cityId/locationCity — no available bookings can be matched`);
+    return [];
+  }
 
   const bookings = await Booking.findAll({
     where,
@@ -972,8 +1021,68 @@ const removeBookingPackage = async (partnerId, bookingId, packageId) => {
   return booking.reload();
 };
 
+// A 4-digit code is guessable in 10k tries, so cap the attempts. The counter is only
+// reset by a correct entry — a partner who burns through it needs support to step in,
+// which is the right amount of friction for something this easy to brute force.
+const OTP_MAX_ATTEMPTS = 5;
+
+/**
+ * Check the customer's start-service OTP and record the verification.
+ *
+ * Deliberately does NOT move the booking to in_progress: the partner app still calls
+ * PATCH /status for that, and updateBookingStatus enforces otpVerifiedAt. Keeping the
+ * two apart means the existing start-service path stays the single place where a job
+ * actually starts, instead of there being two ways in.
+ */
+const verifyServiceOtp = async (partnerId, bookingId, otp) => {
+  const booking = await Booking.findByPk(bookingId);
+  if (!booking) throw new AppError("Booking not found", 404);
+
+  const svcs = (() => { const s = booking.services; if (Array.isArray(s)) return s; if (typeof s === 'string') { try { return JSON.parse(s); } catch { return []; } } return []; })();
+  const isPrimaryPartner = String(booking.partnerId) === String(partnerId);
+  const hasClaimedServices = svcs.some(s => String(s.assignedPartnerId) === String(partnerId));
+  if (!isPrimaryPartner && !hasClaimedServices) throw new AppError("Booking not found", 404);
+
+  if (!["confirmed", "in_progress"].includes(booking.status)) {
+    throw new AppError(`Cannot verify OTP on a booking with status "${booking.status}"`, 400);
+  }
+
+  // Already verified — return success so a retry after a dropped response doesn't
+  // look like a failure to the partner.
+  if (booking.otpVerifiedAt) {
+    return { verified: true, otpVerifiedAt: booking.otpVerifiedAt, attemptsRemaining: null };
+  }
+
+  // Predates the feature: nothing to check against, so let the job start.
+  if (!booking.serviceOtp) {
+    await booking.update({ otpVerifiedAt: new Date() });
+    return { verified: true, otpVerifiedAt: booking.otpVerifiedAt, attemptsRemaining: null };
+  }
+
+  if (booking.otpAttempts >= OTP_MAX_ATTEMPTS) {
+    throw new AppError("Too many incorrect attempts. Please contact support.", 429);
+  }
+
+  const supplied = String(otp ?? "").trim();
+  if (supplied !== booking.serviceOtp) {
+    const attempts = booking.otpAttempts + 1;
+    await booking.update({ otpAttempts: attempts });
+    const remaining = Math.max(OTP_MAX_ATTEMPTS - attempts, 0);
+    throw new AppError(
+      remaining > 0
+        ? `Incorrect OTP. ${remaining} attempt${remaining === 1 ? "" : "s"} remaining.`
+        : "Incorrect OTP. Too many incorrect attempts. Please contact support.",
+      400
+    );
+  }
+
+  await booking.update({ otpVerifiedAt: new Date(), otpAttempts: 0 });
+  return { verified: true, otpVerifiedAt: booking.otpVerifiedAt, attemptsRemaining: null };
+};
+
 module.exports = {
   getProfile, updateProfile, updateDocuments, deleteAccount,
   getDashboard, getBookings, getBookingById, getAvailableBookings, acceptBooking, claimServices, updateBookingStatus,
-  markArrived, updateDeviceToken, getEarnings, addExtraServices, addBookingPackage, removeBookingPackage,
+  markArrived, updateDeviceToken, setOnlineStatus, getEarnings, addExtraServices, addBookingPackage, removeBookingPackage,
+  verifyServiceOtp,
 };

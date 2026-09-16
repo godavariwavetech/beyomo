@@ -4,6 +4,7 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useSelector} from 'react-redux';
 import {fonts} from '../../config/theme';
+import {useKeyboardVisible} from '../../utils/useKeyboardVisible';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
@@ -32,6 +33,7 @@ type Props = {
 
 const CustomTabBar = ({state, navigation}: Props) => {
   const insets = useSafeAreaInsets();
+  const keyboardVisible = useKeyboardVisible();
   const cartItems = useSelector((s: any) => s.Cart?.items ?? []);
   const cartServices = useSelector((s: any) => s.Cart?.services ?? []);
   const cartCount =
@@ -83,6 +85,10 @@ const CustomTabBar = ({state, navigation}: Props) => {
   };
 
   const profileIndex = state.routes.findIndex((r: any) => r.name === 'Profile');
+
+  // The keypad takes the bottom of the screen (Home's search, for one) — keeping the
+  // bar mounted there just stacks it on top of the keyboard.
+  if (keyboardVisible) return null;
 
   return (
     <View style={[styles.container, {paddingBottom: Math.max(insets.bottom, sw(8))}]}>

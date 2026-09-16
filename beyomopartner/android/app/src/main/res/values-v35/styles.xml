@@ -1,0 +1,26 @@
+<resources>
+
+    <!--
+      Android 15 (API 35) override — applies ONLY on API 35+, so nothing below it changes.
+
+      Apps targeting SDK 35 are forced edge-to-edge on Android 15. In that mode the window
+      no longer shrinks when the keyboard opens, which makes the manifest's
+      android:windowSoftInputMode="adjustResize" a no-op: the IME is drawn OVER the content
+      instead of pushing it up, so the field being typed into ends up behind the keyboard.
+      React Native's KeyboardAvoidingView relies on that same window resize on Android, so it
+      stops compensating too.
+
+      windowOptOutEdgeToEdgeEnforcement restores the pre-Android-15 behaviour while still
+      targeting SDK 35.
+
+      NOTE: Google documents this as a TEMPORARY opt-out — it is ignored from SDK 36 onward.
+      The durable fix is to go properly edge-to-edge and consume the IME insets in JS
+      (see react-native-edge-to-edge / react-native-safe-area-context), which has to happen
+      before this app raises targetSdkVersion to 36.
+    -->
+    <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="android:editTextBackground">@drawable/rn_edit_text_material</item>
+        <item name="android:windowOptOutEdgeToEdgeEnforcement">true</item>
+    </style>
+
+</resources>

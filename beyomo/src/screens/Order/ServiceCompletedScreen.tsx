@@ -19,7 +19,7 @@ import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {fonts} from '../../config/theme';
 import {useDispatch, useSelector} from 'react-redux';
 import {submitReview, fetchBookingById} from '../../redux/reducers/bookings';
-import {resolveImageUrl} from '../../utils/utils';
+import {resolveImageUrl, formatAmount} from '../../utils/utils';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
@@ -152,12 +152,12 @@ const ServiceCompletedScreen = ({navigation, route}: any) => {
                   <Text style={styles.serviceName}>{svc.name}</Text>
                   {!!svc.duration && <Text style={styles.serviceDuration}>{svc.duration}</Text>}
                 </View>
-                {!!svc.price && <Text style={styles.servicePrice}>₹{svc.price}</Text>}
+                {!!svc.price && <Text style={styles.servicePrice}>₹{formatAmount(svc.price)}</Text>}
               </View>
             ))}
             <View style={styles.totalRow}>
               <Text style={styles.totalLabel}>Total Paid</Text>
-              <Text style={styles.totalValue}>₹{total}</Text>
+              <Text style={styles.totalValue}>₹{formatAmount(total)}</Text>
             </View>
           </View>
         )}

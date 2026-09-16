@@ -20,6 +20,7 @@ import {useDispatch, useSelector} from 'react-redux';
 import {fonts} from '../../config/theme';
 import {fetchUserBookings, cancelBooking} from '../../redux/reducers/bookings';
 import type {AppDispatch, RootState} from '../../redux/store';
+import {formatAmount} from '../../utils/utils';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
@@ -229,8 +230,16 @@ const BookingCard = ({
         {/* Row 2: booking code + status badge */}
         <View style={styles.codeRow}>
           <Text style={styles.bookingCode}>{bookingCode}</Text>
-          <View style={[styles.statusBadge, isCompleted && styles.statusBadgeCompleted]}>
-            <Text style={styles.statusText}>{status}</Text>
+          <View style={styles.statusBadgeRow}>
+            {Number(booking.rescheduledCount ?? 0) > 0 && (
+              <View style={styles.rescheduledBadge}>
+                <Ionicons name="repeat" size={sw(11)} color="#B45309" />
+                <Text style={styles.rescheduledBadgeText}>Rescheduled</Text>
+              </View>
+            )}
+            <View style={[styles.statusBadge, isCompleted && styles.statusBadgeCompleted]}>
+              <Text style={styles.statusText}>{status}</Text>
+            </View>
           </View>
         </View>
 
@@ -265,7 +274,7 @@ const BookingCard = ({
 
         {/* Row 4: price + view details */}
         <View style={styles.priceRow}>
-          <Text style={styles.price}>₹{totalAmount}</Text>
+          <Text style={styles.price}>₹{formatAmount(totalAmount)}</Text>
           <TouchableOpacity style={styles.viewDetailsBtn} activeOpacity={0.7} onPress={onViewDetails}>
             <Text style={styles.viewDetailsText}>View Details</Text>
             <Ionicons name="arrow-forward" size={sw(12)} color="#292D32" />
@@ -476,6 +485,22 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#105641',
     lineHeight: sw(17),
+  },
+  statusBadgeRow: {flexDirection: 'row', alignItems: 'center', gap: sw(6)},
+  rescheduledBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: sw(3),
+    backgroundColor: '#FEF3C7',
+    borderRadius: sw(16),
+    paddingHorizontal: sw(8),
+    paddingVertical: sw(4),
+  },
+  rescheduledBadgeText: {
+    fontFamily: fonts.textFont,
+    fontSize: sw(11),
+    color: '#B45309',
+    lineHeight: sw(12),
   },
   statusBadge: {
     backgroundColor: '#105641',

@@ -49,6 +49,7 @@ const {
   listUsers, getUserById, updateUserStatus, deleteUser, createUser,
   listPartners, getPartnerById, updatePartnerStatus, createPartner, updatePartner,
   listCategories, createCategory, updateCategory, deleteCategory, reorderCategories,
+  listSubcategories, createSubcategory, updateSubcategory, deleteSubcategory,
   listServices, createService, updateService, deleteService, patchService, patchServiceCity, reorderServices,
   createBookingForCustomer,
   listBookings, getBookingDetail, assignPartner, acceptBooking, cancelBooking, rescheduleBooking, editBookingServices, removeBookingPackage, addBookingPackage,
@@ -105,6 +106,11 @@ router.post("/services/categories", adminAuthenticate(["super_admin", "admin", "
 router.patch("/services/categories/reorder", adminAuthenticate(["super_admin", "admin", "manager"]), reorderCategories);
 router.put("/services/categories/:id", adminAuthenticate(["super_admin", "admin", "manager"]), updateCategory);
 router.delete("/services/categories/:id", adminAuthenticate(["super_admin", "admin"]), deleteCategory);
+// Optional second level under a category (Waxing -> Honey / Rica)
+router.get("/services/subcategories", adminAuthenticate(), listSubcategories);
+router.post("/services/subcategories", adminAuthenticate(["super_admin", "admin", "manager"]), createSubcategory);
+router.patch("/services/subcategories/:id", adminAuthenticate(["super_admin", "admin", "manager"]), updateSubcategory);
+router.delete("/services/subcategories/:id", adminAuthenticate(["super_admin", "admin"]), deleteSubcategory);
 
 // Services
 router.get("/services", adminAuthenticate(), listServices);

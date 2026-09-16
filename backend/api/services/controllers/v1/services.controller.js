@@ -12,6 +12,16 @@ const getCategories = catchAsync(async (req, res, next) => {
 });
 
 /**
+ * GET /api/v1/services/subcategories?categoryId=4
+ * Public — powers the subcategory row above the filter controls in the app.
+ */
+const getSubcategories = catchAsync(async (req, res, next) => {
+  const categoryId = req.query.categoryId ? parseInt(req.query.categoryId) : null;
+  const subcategories = await servicesService.getSubcategories({ categoryId });
+  res.status(200).json({ status: true, data: subcategories });
+});
+
+/**
  * GET /api/v1/services/nearby
  */
 const getNearbyPartners = catchAsync(async (req, res, next) => {
@@ -41,6 +51,7 @@ const getServices = catchAsync(async (req, res, next) => {
   const limit = parseInt(req.query.limit) || 20;
   const query = {
     categoryId: req.query.categoryId,
+    subcategoryId: req.query.subcategoryId,
     search: req.query.search,
     cityId: req.query.cityId ? parseInt(req.query.cityId) : null,
     isPopular: req.query.isPopular === "true",
@@ -60,4 +71,4 @@ const getServiceById = catchAsync(async (req, res, next) => {
   res.status(200).json({ status: true, data: service });
 });
 
-module.exports = { getCategories, getServices, getServiceById, getNearbyPartners };
+module.exports = { getCategories, getSubcategories, getServices, getServiceById, getNearbyPartners };

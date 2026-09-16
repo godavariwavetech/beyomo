@@ -1,6 +1,11 @@
-// Android emulator: 10.0.2.2 | iOS simulator: localhost | Physical device: your machine IP
-export const BASE_URL = 'https://beyomo.com:3099';
-// export const BASE_URL = 'http://192.168.1.16:3000';
+// Local testing backend, reached over the USB debug bridge:
+//   adb reverse tcp:3000 tcp:3000
+// Re-run that after replugging the phone. Android emulator: 'http://10.0.2.2:3000'.
+// Cleartext http is debug-only (android/app/src/debug/AndroidManifest.xml).
+export const BASE_URL = 'http://localhost:3000';
+
+// Live - swap back before building a release.
+// export const BASE_URL = 'https://beyomo.com:3099';
 
 export const baseURL = BASE_URL;
 
@@ -21,10 +26,14 @@ export const endpoints = {
   PARTNER_BOOKINGS: '/api/v1/partners/bookings',
   PARTNER_AVAILABLE_BOOKINGS: '/api/v1/partners/bookings/available',
   PARTNER_DEVICE_TOKEN: '/api/v1/partners/device-token',
+  PARTNER_ONLINE_STATUS: '/api/v1/partners/online-status',
 
   // Partner booking actions
   PARTNER_BOOKING_DETAIL: (id: string) => `/api/v1/partners/bookings/${id}`,
   PARTNER_BOOKING_STATUS: (id: string) => `/api/v1/partners/bookings/${id}/status`,
+  // Checks the customer's 4-digit code — must pass before PARTNER_BOOKING_STATUS
+  // will accept in_progress.
+  PARTNER_VERIFY_OTP: (id: string) => `/api/v1/partners/bookings/${id}/verify-otp`,
   PARTNER_BOOKING_ARRIVED: (id: string) => `/api/v1/partners/bookings/${id}/arrived`,
   PARTNER_EXTRA_SERVICES: (id: string) => `/api/v1/partners/bookings/${id}/extra-services`,
   PARTNER_ADD_PACKAGE: (id: string) => `/api/v1/partners/bookings/${id}/add-package`,

@@ -1,4 +1,16 @@
-export const BASE_URL = 'https://beyomo.com:3099';
+// Local testing backend, reached over the USB debug bridge:
+//   adb reverse tcp:3000 tcp:3000
+// which maps the phone's own localhost:3000 to this machine's. That beats the LAN IP
+// because it needs no Windows Firewall rule and survives the machine changing subnet.
+// Re-run the adb command after replugging the phone.
+// Wireless instead of USB: use 'http://192.168.0.113:3000' and allow node through the
+// firewall. Android emulator: 'http://10.0.2.2:3000'.
+// Cleartext http is debug-only (android/app/src/debug/AndroidManifest.xml), so none of
+// these work in a release build.
+export const BASE_URL = 'http://localhost:3000';
+
+// Live — swap back before building a release.
+// export const BASE_URL = 'https://beyomo.com:3099';
 
 export const baseURL = BASE_URL;
 
@@ -19,6 +31,9 @@ export const endpoints = {
 
   // Services
   CATEGORIES: '/api/v1/services/categories',
+  // Optional second level under a category (e.g. Waxing -> Honey / Rica). Returns []
+  // for categories that have none, which the listing screen reads as "no row to show".
+  SUBCATEGORIES: '/api/v1/services/subcategories',
   NEARBY_PARTNERS: '/api/v1/services/nearby',
   SERVICES: '/api/v1/services',
 

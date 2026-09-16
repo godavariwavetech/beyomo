@@ -7,8 +7,9 @@ import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { Badge } from '../components/common/Badge';
 import Modal from '../components/common/Modal';
 import api from '../services/api';
+import { formatAmount } from '../utils/format';
 
-const fmt = (n) => Number(n || 0).toLocaleString('en-IN');
+const fmt = (n) => formatAmount(n);
 const ITEMS_PER_PAGE = 10;
 
 const STATUS_BADGE = { unsettled: 'warning', settled: 'success', voided: 'danger' };
@@ -199,7 +200,8 @@ export default function Settlements() {
         </div>
       </div>
 
-      <Modal isOpen={!!selected} onClose={closeDetail} title={`Settlement Ledger — ${selected?.name ?? ''}`} size="lg">
+      <Modal isOpen={!!selected} onClose={closeDetail} title={`Settlement Ledger — ${selected?.name ?? ''}`} size="lg"
+        dismissOnBackdrop={false} dismissOnEscape={false}>
         {detailLoading ? (
           <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--c-text-muted)' }}>Loading ledger…</div>
         ) : ledger && (

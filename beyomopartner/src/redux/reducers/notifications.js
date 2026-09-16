@@ -37,14 +37,16 @@ export const markAllNotificationsRead = createAsyncThunk(
   },
 );
 
+const initialState = {
+  list: [],
+  unreadCount: 0,
+  loading: false,
+  error: null,
+};
+
 const notificationsSlice = createSlice({
   name: 'notifications',
-  initialState: {
-    list: [],
-    unreadCount: 0,
-    loading: false,
-    error: null,
-  },
+  initialState,
   reducers: {
     clearNotificationsError: state => {
       state.error = null;
@@ -52,6 +54,8 @@ const notificationsSlice = createSlice({
   },
   extraReducers: builder => {
     builder
+      // Notifications belong to the partner who was signed in - drop them on logout.
+      .addCase('auth/actionLogout', () => initialState)
       .addCase(fetchNotifications.pending, state => {
         state.loading = true;
         state.error = null;

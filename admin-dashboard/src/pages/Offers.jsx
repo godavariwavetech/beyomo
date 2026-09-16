@@ -8,6 +8,7 @@ import RevenueSplitFields, { revenueSplitPayload } from '../components/common/Re
 import ImageUploader from '../components/common/ImageUploader';
 import api from '../services/api';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
+import { formatAmount } from '../utils/format';
 
 const TRIGGER_LABELS = {
   min_spend:          'Minimum Spend',
@@ -23,7 +24,7 @@ const TRIGGER_DESCRIPTIONS = {
   category:          'User books ≥ N services from the same category',
 };
 
-const fmt = (n) => Number(n || 0).toLocaleString('en-IN');
+const fmt = (n) => formatAmount(n);
 
 const emptyForm = () => ({
   title: '', description: '', image: '',
@@ -60,7 +61,7 @@ export default function Offers() {
     api.get('/api/v1/admin/services', { params: { limit: 500 } })
       .then(r => setServices(r.data?.data?.data ?? r.data?.data ?? []))
       .catch(() => {});
-    api.get('/api/v1/admin/categories')
+    api.get('/api/v1/admin/services/categories')
       .then(r => setCategories(r.data?.data ?? []))
       .catch(() => {});
     api.get('/api/v1/admin/cities')

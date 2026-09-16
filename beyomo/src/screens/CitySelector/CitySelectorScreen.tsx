@@ -17,6 +17,7 @@ import {useDispatch, useSelector} from 'react-redux';
 import {fonts} from '../../config/theme';
 import {BASE_URL, endpoints} from '../../config/config';
 import {setSelectedCity} from '../../redux/reducers/city';
+import {clearCart} from '../../redux/reducers/cart';
 import type {RootState} from '../../redux/store';
 import type {CityGeo} from '../../utils/geoUtils';
 
@@ -33,6 +34,10 @@ const CitySelectorScreen = ({navigation, route}: Props) => {
   const insets = useSafeAreaInsets();
   const token = useSelector((state: RootState) => state.Auth?.token);
   const currentCity = useSelector((state: RootState) => (state as any).City?.selectedCity);
+  // Packages and standalone services are two separate cart lists — both count towards
+  // "you have items in your cart".
+  const cartItems = useSelector((state: RootState) => (state as any).Cart?.items ?? []);
+  const cartServices = useSelector((state: RootState) => (state as any).Cart?.services ?? []);
 
   const [cities, setCities] = useState<CityGeo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -52,17 +57,56 @@ const CitySelectorScreen = ({navigation, route}: Props) => {
       .finally(() => setLoading(false));
   }, []);
 
-  const confirm = () => {
-    if (!selected) {
-      Alert.alert('Select City', 'Please select a city to continue.');
-      return;
-    }
-    dispatch(setSelectedCity(selected));
+  // The actual switch — kept separate so both the plain path and the "clear cart"
+  // confirmation land on exactly the same navigation behaviour as before.
+  const applyCity = (city: CityGeo) => {
+    dispatch(setSelectedCity(city));
     if (returnToHome) {
       navigation?.goBack();
     } else {
       navigation?.replace(nextRoute);
     }
+  };
+
+  const confirm = () => {
+    if (!selected) {
+      Alert.alert('Select City', 'Please select a city to continue.');
+      return;
+    }
+
+    const isSameCity = String(selected.id) === String(currentCity?.id);
+    const cartCount = cartItems.length + cartServices.length;
+
+    // Services and prices are city-specific, so a cart built in one city can't carry
+    // over to another. Only worth asking when the city is genuinely changing and there
+    // is something to lose — a first-time pick (no currentCity) or re-picking the same
+    // city goes straight through, exactly as before.
+    if (currentCity && !isSameCity && cartCount > 0) {
+      Alert.alert(
+        'Change Location?',
+        'You have items in your cart. Do you want to clear the cart and change your location?',
+        [
+          {
+            text: 'No',
+            style: 'cancel',
+            // Location unchanged — put the highlighted selection back on the city the
+            // user is actually in, so the screen doesn't imply a switch that didn't happen.
+            onPress: () => setSelected(currentCity),
+          },
+          {
+            text: 'Yes, Clear Cart',
+            style: 'destructive',
+            onPress: () => {
+              dispatch(clearCart());
+              applyCity(selected);
+            },
+          },
+        ],
+      );
+      return;
+    }
+
+    applyCity(selected);
   };
 
   return (

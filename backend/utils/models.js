@@ -4,6 +4,7 @@ const UserAddress = require("../api/users/models/userAddress.model");
 const Partner = require("../api/partners/models/partner.model");
 const PartnerService = require("../api/partners/models/partnerService.model");
 const ServiceCategory = require("../api/services/models/serviceCategory.model");
+const ServiceSubcategory = require("../api/services/models/serviceSubcategory.model");
 const Service = require("../api/services/models/service.model");
 const ServiceCityMap = require("../api/services/models/service_city_map.model");
 const Booking = require("../api/bookings/models/booking.model");
@@ -43,6 +44,12 @@ PartnerService.belongsTo(ServiceCategory, { foreignKey: "categoryId", as: "categ
 // ---- Service associations ----
 Service.belongsTo(ServiceCategory, { foreignKey: "categoryId", as: "category" });
 ServiceCategory.hasMany(Service, { foreignKey: "categoryId", as: "services" });
+// Optional second level (Waxing -> Honey / Rica); subcategoryId is nullable, so these
+// are plain associations with no constraint on services that don't use one.
+Service.belongsTo(ServiceSubcategory, { foreignKey: "subcategoryId", as: "subcategory" });
+ServiceSubcategory.hasMany(Service, { foreignKey: "subcategoryId", as: "services" });
+ServiceSubcategory.belongsTo(ServiceCategory, { foreignKey: "categoryId", as: "category" });
+ServiceCategory.hasMany(ServiceSubcategory, { foreignKey: "categoryId", as: "subcategories" });
 Service.hasMany(ServiceCityMap, { foreignKey: "serviceId", as: "cityMappings" });
 ServiceCityMap.belongsTo(Service, { foreignKey: "serviceId", as: "service" });
 
@@ -102,7 +109,7 @@ Partner.hasMany(PartnerSettlement, { foreignKey: "partnerId", as: "settlements" 
 
 module.exports = {
   User, UserAddress, Partner, PartnerService,
-  ServiceCategory, Service, ServiceCityMap,
+  ServiceCategory, ServiceSubcategory, Service, ServiceCityMap,
   Booking, Otp, Review, Payment, PaymentQuote, Notification,
   Coupon, ReferralProgram, AdminUser, AppFeedback,
   Banner, ServiceZone, Offer,

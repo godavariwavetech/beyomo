@@ -18,12 +18,13 @@ import {useSelector} from 'react-redux';
 import {fonts} from '../../config/theme';
 import api from '../../utils/api';
 import {endpoints} from '../../config/config';
+import {formatAmount} from '../../utils/utils';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
 
 const formatDiscount = (c: any): string => {
-  if (c.discountType === 'flat' || c.discountType === 'fixed') return `₹${c.discountValue ?? 0}`;
+  if (c.discountType === 'flat' || c.discountType === 'fixed') return `₹${formatAmount(c.discountValue ?? 0)}`;
   return `${c.discountValue ?? 0}%`;
 };
 
@@ -123,7 +124,7 @@ const CouponsScreen = ({navigation, route}: Props) => {
         <View style={styles.pickerBanner}>
           <Ionicons name="pricetag" size={sw(14)} color="#105641" />
           <Text style={styles.pickerBannerText}>
-            Order ₹{orderAmount.toLocaleString('en-IN')} — tap a coupon to apply it instantly
+            Order ₹{formatAmount(orderAmount)} — tap a coupon to apply it instantly
           </Text>
         </View>
       )}
@@ -213,7 +214,7 @@ const CouponsScreen = ({navigation, route}: Props) => {
                   <View style={styles.couponMeta}>
                     {minOrder > 0 && (
                       <Text style={[styles.minOrderText, !meetsMin && {color: '#E05151'}]}>
-                        Min ₹{minOrder.toLocaleString('en-IN')}
+                        Min ₹{formatAmount(minOrder)}
                         {!meetsMin ? ' (order too low)' : ''}
                       </Text>
                     )}

@@ -17,6 +17,7 @@ import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useFocusEffect} from '@react-navigation/native';
 import {fonts} from '../../config/theme';
 import api from '../../utils/api';
+import {formatAmount} from '../../utils/utils';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
@@ -108,7 +109,7 @@ const AvailableBookingsScreen = ({navigation}: any) => {
             <Text style={styles.newBadgeText}>AVAILABLE</Text>
           </View>
           <View style={{flex: 1}} />
-          <Text style={styles.earning}>₹{earning.toLocaleString('en-IN')}</Text>
+          <Text style={styles.earning}>₹{formatAmount(earning)}</Text>
         </View>
 
         <View style={styles.divider} />

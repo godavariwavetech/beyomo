@@ -72,6 +72,10 @@ const ADDITIVE_SCHEMA = [
   "ALTER TABLE partners ADD COLUMN IF NOT EXISTS bankIfsc VARCHAR(20) NULL",
   "ALTER TABLE partners ADD COLUMN IF NOT EXISTS bankName VARCHAR(100) NULL",
   "ALTER TABLE partners ADD COLUMN IF NOT EXISTS bankHolderName VARCHAR(100) NULL",
+  // Partner availability. lastSeenAt goes with isOnline so a partner who force-quits
+  // the app or loses signal ages out of "online" instead of being stuck there.
+  "ALTER TABLE partners ADD COLUMN IF NOT EXISTS isOnline TINYINT(1) NOT NULL DEFAULT 0",
+  "ALTER TABLE partners ADD COLUMN IF NOT EXISTS lastSeenAt DATETIME NULL",
   // Admin-selected packages/combos + categories featured on the app home screen
   "ALTER TABLE service_packages ADD COLUMN IF NOT EXISTS showOnHome TINYINT(1) NOT NULL DEFAULT 0",
   "ALTER TABLE service_categories ADD COLUMN IF NOT EXISTS showOnHome TINYINT(1) NOT NULL DEFAULT 0",
@@ -79,6 +83,10 @@ const ADDITIVE_SCHEMA = [
   "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS createdByAdminId INT NULL",
   // Admin-configurable display order for services within a category
   "ALTER TABLE services ADD COLUMN IF NOT EXISTS sortOrder INT NOT NULL DEFAULT 0",
+  // ...and the same for packages/combos. The model has carried sortOrder for a while
+  // but it never had an ALTER here, so every table created before it was added is
+  // missing the column and every package query dies on "Unknown column 'sortOrder'".
+  "ALTER TABLE service_packages ADD COLUMN IF NOT EXISTS sortOrder INT NOT NULL DEFAULT 0",
   // How many copies of a package/combo were booked (mirrors per-service qty)
   "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS packageQty INT NOT NULL DEFAULT 1",
   // Multi-package bookings — each entry keeps its own price/discount/revenue split
@@ -96,6 +104,32 @@ const ADDITIVE_SCHEMA = [
   "ALTER TABLE cities ADD COLUMN IF NOT EXISTS code VARCHAR(5) NULL",
   // Per-city price override — NULL means "use services.basePrice" for that city
   "ALTER TABLE service_city_map ADD COLUMN IF NOT EXISTS customPrice DECIMAL(10,2) NULL DEFAULT NULL",
+  // Start-service OTP: the customer reads the 4-digit code off their booking and the
+  // partner must type it in before the job can move to in_progress. otpVerifiedAt is
+  // the verification record (NULL = not yet verified); otpAttempts throttles guessing.
+  "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS serviceOtp VARCHAR(4) NULL",
+  "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS otpVerifiedAt DATETIME NULL",
+  "ALTER TABLE bookings ADD COLUMN IF NOT EXISTS otpAttempts INT NOT NULL DEFAULT 0",
+  // Optional second level under a service category (Waxing -> Honey / Rica). The table
+  // is created here rather than left to sync() because sync() never alters an existing
+  // database, same reason the partner columns above need explicit statements.
+  `CREATE TABLE IF NOT EXISTS service_subcategories (
+     id INT NOT NULL AUTO_INCREMENT,
+     categoryId INT NOT NULL,
+     name VARCHAR(100) NOT NULL,
+     description TEXT NULL,
+     image TEXT NULL,
+     isActive TINYINT(1) NOT NULL DEFAULT 1,
+     sortOrder INT NOT NULL DEFAULT 0,
+     createdAt DATETIME NOT NULL,
+     updatedAt DATETIME NOT NULL,
+     PRIMARY KEY (id),
+     UNIQUE KEY uniq_subcategory_per_category (categoryId, name),
+     KEY idx_subcategory_category (categoryId)
+   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  // Nullable on purpose — every service that predates subcategories keeps listing
+  // under its category untouched.
+  "ALTER TABLE services ADD COLUMN IF NOT EXISTS subcategoryId INT NULL DEFAULT NULL",
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -185,6 +219,40 @@ const ONE_TIME_MIGRATIONS = [
       "UPDATE cities SET isActive = 0 WHERE name != 'Nellore'",
       "UPDATE cities SET isActive = 1 WHERE name = 'Nellore'",
     ],
+  },
+  {
+    key: "2026-09-15_backfill_booking_service_otp",
+    description: "Give already-open bookings a start-service OTP",
+    // Bookings created before the OTP feature have serviceOtp NULL. The partner app
+    // requires a code to start, so without this backfill every in-flight job would be
+    // unstartable. Only open bookings need one — completed/cancelled jobs never start.
+    // Unlike new bookings (which get a collision-checked code from the model hook),
+    // this is a plain RAND(): good enough for a one-shot backfill of open rows, and a
+    // repeat here is harmless anyway since the code is only ever checked against the
+    // one booking it belongs to.
+    statements: [`
+      UPDATE bookings
+      SET serviceOtp = LPAD(FLOOR(RAND() * 10000), 4, '0')
+      WHERE serviceOtp IS NULL
+        AND status IN ('pending', 'confirmed', 'in_progress')
+    `],
+  },
+  {
+    key: "2026-09-15_sync_partner_cityid_with_locationcity",
+    description: "Point partners.cityId at the city their locationCity actually names",
+    // The dashboard's partner form only ever wrote locationCity, so cityId kept whatever
+    // it was first created with. A partner moved to another city therefore carried a
+    // cityId for the city they left — and the available-bookings feed, which matches on
+    // cityId, kept offering them the old city's jobs. createPartner/updatePartner now
+    // write both; this repairs the rows written before that.
+    statements: [`
+      UPDATE partners p
+      JOIN cities c ON c.name = p.locationCity
+      SET p.cityId = c.id
+      WHERE p.locationCity IS NOT NULL
+        AND p.locationCity <> ''
+        AND (p.cityId IS NULL OR p.cityId <> c.id)
+    `],
   },
 ];
 

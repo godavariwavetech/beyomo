@@ -1,4 +1,4 @@
-import React, {useState, useCallback} from 'react';
+import React, {useState, useCallback, useEffect} from 'react';
 import {
   View,
   Text,
@@ -19,10 +19,11 @@ import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useFocusEffect} from '@react-navigation/native';
 import {useSelector, useDispatch} from 'react-redux';
 import {fonts} from '../../config/theme';
-import {resolveImageUrl} from '../../utils/utils';
+import {resolveImageUrl, formatAmount} from '../../utils/utils';
 import {markPartnerArrived, fetchPartnerBookings} from '../../redux/reducers/partner';
 import {useAppAlert} from '../../hooks/useAppAlert';
 import AppAlertModal from '../../components/AppAlertModal/AppAlertModal';
+import SwipeToConfirm from '../../components/SwipeToConfirm/SwipeToConfirm';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
@@ -111,6 +112,37 @@ const JobDetailsScreen = ({navigation, route}: any) => {
   // admin/partner split) is the admin's commission on this job.
   const adminCommission = Math.max(0, totalAmount - taxAmount - earnings);
   const notes        = job?.notes ?? '';
+
+  // DEBUG — "Your Earnings" card breakdown. Logs the raw API fields this screen reads
+  // and the values derived from them, so the split can be checked against the backend.
+  useEffect(() => {
+    if (!job) return;
+    const baseAmount = Number(job?.baseAmount ?? 0);
+    const couponDiscount = Number(job?.couponDiscountAmount ?? 0);
+    const taxable = baseAmount - couponDiscount;
+    console.log('===== [JobDetails] Your Earnings calculation =====');
+    console.log('bookingId          :', job?.id);
+    console.log('-- raw fields from API (booking row) --');
+    console.log('baseAmount         :', job?.baseAmount);
+    console.log('couponDiscountAmt  :', job?.couponDiscountAmount);
+    console.log('taxAmount          :', job?.taxAmount);
+    console.log('totalAmount        :', job?.totalAmount);
+    console.log('partnerEarning     :', job?.partnerEarning);
+    console.log('-- values this screen derives --');
+    console.log('earnings           :', earnings, '<- Number(partnerEarning ?? totalAmount ?? 0)');
+    console.log('totalAmount        :', totalAmount, '<- Number(totalAmount ?? 0)');
+    console.log('taxAmount          :', taxAmount, '<- Number(taxAmount ?? 0)');
+    console.log('adminCommission    :', adminCommission,
+      `<- max(0, ${totalAmount} - ${taxAmount} - ${earnings})`);
+    console.log('-- back-calculated rates (from the amounts above) --');
+    console.log('taxable (base-coupon):', taxable);
+    console.log('effective GST %    :', taxable > 0 ? ((taxAmount / taxable) * 100).toFixed(2) : 'n/a');
+    console.log('effective partner % :', taxable > 0 ? ((earnings / taxable) * 100).toFixed(2) : 'n/a');
+    console.log('effective admin %  :', taxable > 0 ? ((adminCommission / taxable) * 100).toFixed(2) : 'n/a');
+    console.log('check: earnings + admin + tax =', earnings + adminCommission + taxAmount,
+      '| totalAmount =', totalAmount);
+    console.log('=================================================');
+  }, [job, earnings, totalAmount, taxAmount, adminCommission]);
 
   const servicesList: any[] = _parsedServices.length > 0
     ? _parsedServices
@@ -247,7 +279,7 @@ const JobDetailsScreen = ({navigation, route}: any) => {
                   ))}
                 </View>
               </View>
-              <Text style={styles.svcPrice}>₹{Number(group.price).toLocaleString('en-IN')}</Text>
+              <Text style={styles.svcPrice}>₹{formatAmount(group.price)}</Text>
             </View>
           ))}
           {otherItems.map((svc: any, idx: number) => {
@@ -280,14 +312,14 @@ const JobDetailsScreen = ({navigation, route}: any) => {
                 {isFree ? (
                   <View style={styles.freeBadge}><Text style={styles.freeBadgeText}>FREE</Text></View>
                 ) : svc.price != null ? (
-                  <Text style={styles.svcPrice}>₹{Number(svc.price * (svc.qty || 1)).toLocaleString('en-IN')}</Text>
+                  <Text style={styles.svcPrice}>₹{formatAmount(svc.price * (svc.qty || 1))}</Text>
                 ) : null}
               </View>
             );
           })}
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>Total Amount</Text>
-            <Text style={styles.totalValue}>₹{totalAmount.toLocaleString('en-IN')}</Text>
+            <Text style={styles.totalValue}>₹{formatAmount(totalAmount)}</Text>
           </View>
         </View>
 
@@ -297,24 +329,24 @@ const JobDetailsScreen = ({navigation, route}: any) => {
           <View style={styles.earningsTopRow}>
             <View>
               <Text style={styles.earningsLabel}>Your Earnings</Text>
-              <Text style={styles.earningsValue}>₹{earnings.toLocaleString('en-IN')}</Text>
+              <Text style={styles.earningsValue}>₹{formatAmount(earnings)}</Text>
             </View>
             <Ionicons name="cash-outline" size={sw(40)} color="rgba(255,255,255,0.2)" />
           </View>
           <View style={styles.earningsBreakdown}>
             <View style={styles.earningsBreakdownRow}>
               <Text style={styles.earningsBreakdownLabel}>Total Booking Amount</Text>
-              <Text style={styles.earningsBreakdownVal}>₹{totalAmount.toLocaleString('en-IN')}</Text>
+              <Text style={styles.earningsBreakdownVal}>₹{formatAmount(totalAmount)}</Text>
             </View>
             {taxAmount > 0 && (
               <View style={styles.earningsBreakdownRow}>
                 <Text style={styles.earningsBreakdownLabel}>GST (pass-through)</Text>
-                <Text style={styles.earningsBreakdownVal}>–₹{taxAmount.toLocaleString('en-IN')}</Text>
+                <Text style={styles.earningsBreakdownVal}>–₹{formatAmount(taxAmount)}</Text>
               </View>
             )}
             <View style={styles.earningsBreakdownRow}>
               <Text style={styles.earningsBreakdownLabel}>Admin Commission</Text>
-              <Text style={styles.earningsBreakdownVal}>–₹{adminCommission.toLocaleString('en-IN')}</Text>
+              <Text style={styles.earningsBreakdownVal}>–₹{formatAmount(adminCommission)}</Text>
             </View>
           </View>
         </LinearGradient>
@@ -407,13 +439,10 @@ const JobDetailsScreen = ({navigation, route}: any) => {
         {/* ── Primary CTA — services can be edited as soon as the booking is confirmed,
              no need to wait for arrival first ── */}
         {rawStatus === 'confirmed' && (
-          <TouchableOpacity onPress={() => navigation.navigate('JobChecklist', {job})} activeOpacity={0.88}>
-            <LinearGradient colors={['#0E5843', '#022723']} style={styles.primaryBtn}
-              start={{x: 0, y: 0}} end={{x: 1, y: 0}}>
-              <Ionicons name="list" size={sw(20)} color="#FDD77A" />
-              <Text style={styles.primaryBtnText}>Continue to Checklist</Text>
-            </LinearGradient>
-          </TouchableOpacity>
+          <SwipeToConfirm
+            label="Continue to Checklist"
+            onConfirm={() => navigation.navigate('JobChecklist', {job})}
+          />
         )}
 
       </ScrollView>
@@ -546,13 +575,6 @@ const styles = StyleSheet.create({
   },
   actionTitle: {fontFamily: fonts.textFont, fontSize: sw(14), fontWeight: '600', color: '#171816'},
   actionSub: {fontFamily: fonts.textFont, fontSize: sw(11), color: '#9CA3AF', marginTop: sw(2)},
-
-  /* Primary CTA */
-  primaryBtn: {
-    borderRadius: sw(14), height: sw(56),
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: sw(10),
-  },
-  primaryBtnText: {fontFamily: fonts.title, fontSize: sw(16), fontWeight: '700', color: '#FFFFFF'},
 });
 
 export default JobDetailsScreen;

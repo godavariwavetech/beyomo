@@ -88,13 +88,26 @@ const SplashScreen = ({navigation}: any) => {
         return {dest: 'ForceUpdate', params: {updateUrl: version.updateUrl, message: version.message}};
       }
 
-      // City already persisted — skip all checks, go straight to the app
-      if (savedCity) return {dest: mainDest};
-
-      // First launch or city was cleared — detect via GPS, falling back to
-      // Nellore (the only serviceable city) if detection fails or the device
-      // is outside it, rather than blocking on a manual picker.
       const cities = await fetchActiveCities();
+
+      // A persisted city has to still be one the backend serves. It can stop being
+      // one — deactivated in admin, or the app pointed at a different backend — and
+      // trusting it forever leaves every request filtering on a city id the API no
+      // longer knows, with no way back short of reinstalling.
+      //
+      // An empty list means the fetch failed (offline), not that the city is gone, so
+      // keep it in that case rather than stranding the user on re-detection.
+      // savedCity comes from a JS reducer whose initial state is null, so TS narrows
+      // it to `never` the moment it's truthy — hence the cast to read .id off it.
+      const savedCityId = (savedCity as any)?.id;
+      const savedCityStillServed =
+        savedCityId != null &&
+        (cities.length === 0 || cities.some((c: any) => c.id === savedCityId));
+      if (savedCityStillServed) return {dest: mainDest};
+
+      // First launch, city cleared, or the saved one is no longer served — detect via
+      // GPS, falling back to Nellore if detection fails or the device is outside every
+      // serviceable city, rather than blocking on a manual picker.
       const fallbackCity = cities.find((c: any) => c.name === 'Nellore') ?? cities[0] ?? null;
 
       try {

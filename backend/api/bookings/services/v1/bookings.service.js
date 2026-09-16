@@ -69,7 +69,7 @@ const buildMultiPackageBooking = async (packagesInput, serviceMap, priceOf = (sv
 // to actually create the Booking row.
 //   No side effects: coupon.increment happens in persistBooking, not here.
 const prepareBooking = async (userId, bookingData) => {
-  const { services: serviceItems = [], extraServices = [], packages: packagesInput = [], partnerId, address, scheduledAt, couponCode, offerId, packageId, packageQty = 1, paymentMode, notes } = bookingData;
+  const { services: serviceItems = [], extraServices = [], packages: packagesInput = [], partnerId, address, scheduledAt, couponCode, offerId, packageId, packageQty = 1, paymentMode, notes, cityId: selectedCityId = null } = bookingData;
   const isMultiPackage = Array.isArray(packagesInput) && packagesInput.length > 0;
 
   // Fetch all requested services in one pass — the package/flexible-pick items (whether
@@ -96,10 +96,30 @@ const prepareBooking = async (userId, bookingData) => {
   // the global basePrice regardless of city. Also gates the service-radius check.
   let cityId = null;
   if (address.city) {
-    const city = await City.findOne({
-      where: { name: { [Op.like]: `%${address.city.trim()}%` }, isActive: true },
-    });
+    // Exact name first, substring only as a fallback. A bare LIKE '%<city>%' matches
+    // any city whose name merely CONTAINS the text — "Delhi" also matches "New Delhi" —
+    // which silently files a booking under the wrong city, and the partner feed then
+    // faithfully shows it to the wrong city's partners.
+    const typed = address.city.trim();
+    const city =
+      (await City.findOne({ where: { name: typed, isActive: true } })) ||
+      (await City.findOne({ where: { name: { [Op.like]: `%${typed}%` }, isActive: true } }));
     cityId = city ? city.id : null;
+
+    // The app sends the city the customer is currently browsing in. If the service
+    // address resolves to a different one, the booking would be stamped with the
+    // address city while the customer believes they booked in the selected city —
+    // exactly the "I made a Vijayawada booking but a Rajahmundry partner sees it"
+    // case. The address is where the work actually happens, so it stays authoritative;
+    // the mismatch is refused rather than silently resolved either way.
+    if (selectedCityId && cityId && Number(selectedCityId) !== Number(cityId)) {
+      const selected = await City.findByPk(selectedCityId, { attributes: ["name"] });
+      throw new AppError(
+        `This address is in ${city.name}, but your selected location is ${selected?.name ?? "another city"}. ` +
+        `Pick an address in ${selected?.name ?? "your selected city"}, or switch your location to ${city.name}.`,
+        400
+      );
+    }
 
     // Validate that address coordinates fall within the city's service radius
     if (city && city.lat && city.lng && address.lat && address.lng) {
@@ -110,6 +130,11 @@ const prepareBooking = async (userId, bookingData) => {
       }
     }
   }
+
+  // Address text matched no known city (free-typed address, spelling, a city that was
+  // deactivated). Without this the booking is saved with cityId NULL, and since the
+  // partner feed matches on cityId it would then be offered to nobody at all.
+  if (!cityId && selectedCityId) cityId = Number(selectedCityId);
 
   // Build enriched services list and calculate base amount
   const serviceMap = Object.fromEntries(foundServices.map(s => [s.id, s]));
