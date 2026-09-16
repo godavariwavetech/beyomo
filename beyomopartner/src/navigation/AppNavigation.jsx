@@ -34,6 +34,8 @@ import CustomTabBar from '../components/BottomTabBar/CustomTabBar';
 import {setupForegroundHandler, handleNotificationNavigation} from '../services/NotificationsService';
 import {navigationRef} from './navigationRef';
 
+
+
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
