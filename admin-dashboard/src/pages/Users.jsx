@@ -34,7 +34,7 @@ export default function Users() {
   const [addForm, setAddForm]     = useState({});
 
   const loadUsers = () => {
-    const params = cityParam ? { cityIds: cityParam } : {};
+    const params = { limit: 1000, ...(cityParam ? { cityIds: cityParam } : {}) };
     fetchList(params).then(res => {
       if (res.ok) setUsers((res.data?.data ?? []).map(u => ({
         ...u,

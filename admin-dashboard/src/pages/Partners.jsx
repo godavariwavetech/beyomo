@@ -165,7 +165,7 @@ export default function Partners() {
   const [savingEdit, setSavingEdit] = useState(false);
 
   const loadPartners = () => {
-    const params = { source: 'app', ...(cityParam ? { cityIds: cityParam } : {}) };
+    const params = { source: 'app', limit: 1000, ...(cityParam ? { cityIds: cityParam } : {}) };
     fetchList(params).then(res => {
       if (res.ok) setPartners((res.data?.data ?? []).map(normalizePartner));
       setPageLoading(false);

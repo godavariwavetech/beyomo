@@ -23,6 +23,7 @@ import {
   removeFreeService,
 } from '../../redux/reducers/cart';
 import {formatAmount} from '../../utils/utils';
+import {deriveVariants, variantKeyOf} from '../../utils/serviceVariants';
 import {BASE_URL, endpoints} from '../../config/config';
 
 const MAX_SERVICE_QTY = 5;
@@ -131,8 +132,10 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
 
   // Subcategories for the active category (e.g. Waxing -> Honey / Rica). Empty for
   // categories that don't use them, in which case no chip row is rendered at all.
-  const [subcategories, setSubcategories] = useState<any[]>([]);
-  const [activeSubcategoryId, setActiveSubcategoryId] = useState<number | null>(null);
+  const [apiSubcategories, setApiSubcategories] = useState<any[]>([]);
+  // Identifies the selected chip in both modes: the row id for a real subcategory, the
+  // lowercased variant for one derived from service names. Null = "All".
+  const [activeSubcategoryKey, setActiveSubcategoryKey] = useState<string | null>(null);
 
   // Keep the free service in sync with whether its offer's condition is currently met —
   // add it once the required items are in the cart, remove it the moment they're not.
@@ -186,16 +189,16 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
   // previous category — its id means nothing here. Failures fall back to an empty list,
   // which renders no row, so the screen behaves exactly as it did before subcategories.
   useEffect(() => {
-    setActiveSubcategoryId(null);
+    setActiveSubcategoryKey(null);
     if (offerType === 'specific_services' || !activeCategoryId) {
-      setSubcategories([]);
+      setApiSubcategories([]);
       return;
     }
     let cancelled = false;
     fetch(`${BASE_URL}${endpoints.SUBCATEGORIES}?categoryId=${activeCategoryId}`)
       .then(r => r.json())
-      .then(j => { if (!cancelled) setSubcategories(Array.isArray(j?.data) ? j.data : []); })
-      .catch(() => { if (!cancelled) setSubcategories([]); });
+      .then(j => { if (!cancelled) setApiSubcategories(Array.isArray(j?.data) ? j.data : []); })
+      .catch(() => { if (!cancelled) setApiSubcategories([]); });
     return () => { cancelled = true; };
   }, [activeCategoryId]);
 
@@ -227,6 +230,27 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
 
   const currentServices = rawServices.map(normalizeService);
 
+  // Real subcategory rows win wherever the category has them. Where it has none, fall
+  // back to the variant each service name carries ("Back Wax (Honey)"), which is the
+  // only subcategory information the catalogue holds for that category. Both produce
+  // the same {key, name} shape, so the chip row below doesn't care which it got.
+  const subcategories = useMemo(() => {
+    if (apiSubcategories.length > 0) {
+      return apiSubcategories.map((sub: any) => ({
+        key: String(sub.id),
+        name: sub.name,
+        subcategoryId: sub.id,
+      }));
+    }
+    // Off rawServices, not currentServices: the latter is a fresh array every render,
+    // which would recompute this on each one. Only `name` is read either way.
+    return deriveVariants(rawServices).map(v => ({
+      key: v.key,
+      name: v.name,
+      subcategoryId: null,
+    }));
+  }, [apiSubcategories, rawServices]);
+
   const displayServices = (() => {
     let list = [...currentServices];
     // Offer filter — only for specific_services: show required services only
@@ -238,8 +262,13 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
       list = list.filter(s => String(s.id) !== freeServiceItem.id);
     }
     // Subcategory chip (Honey / Rica). Null = "All", which leaves the list untouched.
-    if (activeSubcategoryId != null) {
-      list = list.filter(s => Number(s.subcategoryId) === Number(activeSubcategoryId));
+    if (activeSubcategoryKey != null) {
+      const chip = subcategories.find(sub => sub.key === activeSubcategoryKey);
+      // A real subcategory matches on the foreign key; a derived one has no row to point
+      // at, so it matches on the variant its own name ends with.
+      list = chip?.subcategoryId != null
+        ? list.filter(s => Number(s.subcategoryId) === Number(chip.subcategoryId))
+        : list.filter(s => variantKeyOf(s.name) === activeSubcategoryKey);
     }
     // Standard filters
     if (filterDiscount) list = list.filter(s => s.discountPct > 0);
@@ -379,17 +408,17 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
           contentContainerStyle={styles.subcatContent}>
           <TouchableOpacity
             activeOpacity={0.8}
-            onPress={() => setActiveSubcategoryId(null)}
-            style={[styles.subcatChip, activeSubcategoryId == null && styles.subcatChipActive]}>
-            <Text style={[styles.subcatText, activeSubcategoryId == null && styles.subcatTextActive]}>All</Text>
+            onPress={() => setActiveSubcategoryKey(null)}
+            style={[styles.subcatChip, activeSubcategoryKey == null && styles.subcatChipActive]}>
+            <Text style={[styles.subcatText, activeSubcategoryKey == null && styles.subcatTextActive]}>All</Text>
           </TouchableOpacity>
           {subcategories.map((sub: any) => {
-            const active = Number(activeSubcategoryId) === Number(sub.id);
+            const active = activeSubcategoryKey === sub.key;
             return (
               <TouchableOpacity
-                key={sub.id}
+                key={sub.key}
                 activeOpacity={0.8}
-                onPress={() => setActiveSubcategoryId(active ? null : sub.id)}
+                onPress={() => setActiveSubcategoryKey(active ? null : sub.key)}
                 style={[styles.subcatChip, active && styles.subcatChipActive]}>
                 <Text style={[styles.subcatText, active && styles.subcatTextActive]} numberOfLines={1}>
                   {sub.name}
