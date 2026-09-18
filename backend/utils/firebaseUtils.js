@@ -1,24 +1,61 @@
+const fs = require("fs");
+const path = require("path");
 const admin = require("firebase-admin");
 const logger = require("./logger");
 const { FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY } = require("../config");
 
 let firebaseInitialized = false;
 
+// Second, simpler way to supply credentials: drop the service-account JSON that the
+// Firebase console hands you straight into the backend folder. Nothing has to be pasted
+// into .env and the key never has to be reflowed onto one line, which is where the
+// "\n" escaping usually goes wrong. The env vars still take precedence, so any existing
+// deployment configured that way is unaffected.
+//
+// The filename is git-ignored - this file must never be committed.
+const SERVICE_ACCOUNT_FILE = path.join(__dirname, "..", "firebase-service-account.json");
+
+const credentialsFromFile = () => {
+  try {
+    if (!fs.existsSync(SERVICE_ACCOUNT_FILE)) return null;
+    const parsed = JSON.parse(fs.readFileSync(SERVICE_ACCOUNT_FILE, "utf8"));
+    if (!parsed.project_id || !parsed.client_email || !parsed.private_key) {
+      logger.warn("firebase-service-account.json is missing project_id/client_email/private_key.");
+      return null;
+    }
+    return {
+      projectId: parsed.project_id,
+      clientEmail: parsed.client_email,
+      privateKey: parsed.private_key,
+    };
+  } catch (error) {
+    logger.error(`Could not read firebase-service-account.json: ${error.message}`);
+    return null;
+  }
+};
+
 const initializeFirebase = () => {
   if (firebaseInitialized) return;
 
   try {
-    if (!FIREBASE_PROJECT_ID || !FIREBASE_CLIENT_EMAIL || !FIREBASE_PRIVATE_KEY) {
-      logger.warn("Firebase credentials not configured. Push notifications will be disabled.");
+    const fromEnv = FIREBASE_PROJECT_ID && FIREBASE_CLIENT_EMAIL && FIREBASE_PRIVATE_KEY
+      ? { projectId: FIREBASE_PROJECT_ID, clientEmail: FIREBASE_CLIENT_EMAIL, privateKey: FIREBASE_PRIVATE_KEY }
+      : null;
+    const credentials = fromEnv || credentialsFromFile();
+
+    if (!credentials) {
+      logger.warn(
+        "Firebase credentials not configured. Push notifications will be disabled. " +
+        "Set FIREBASE_PROJECT_ID/FIREBASE_CLIENT_EMAIL/FIREBASE_PRIVATE_KEY, or place the " +
+        "service-account JSON at backend/firebase-service-account.json."
+      );
       return;
     }
 
+    logger.info(`Firebase credentials loaded from ${fromEnv ? ".env" : "firebase-service-account.json"} (project ${credentials.projectId})`);
+
     admin.initializeApp({
-      credential: admin.credential.cert({
-        projectId: FIREBASE_PROJECT_ID,
-        clientEmail: FIREBASE_CLIENT_EMAIL,
-        privateKey: FIREBASE_PRIVATE_KEY,
-      }),
+      credential: admin.credential.cert(credentials),
     });
 
     firebaseInitialized = true;

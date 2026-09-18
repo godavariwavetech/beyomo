@@ -236,11 +236,16 @@ export default function Notifications() {
   const [sending, setSending]  = useState(false);
   const [preview, setPreview]  = useState(null);
 
+  // These values ARE the API's `segment` - the broadcast endpoint accepts exactly
+  // all_users | all_partners | all, and broadcastNotification branches on nothing else.
+  // 'Online Partners Only' used to sit here as a fourth option, but no online segment
+  // exists server-side, so choosing it always failed validation. It is not mapped onto
+  // all_partners instead: that would quietly notify every partner when the admin asked
+  // for only the online ones.
   const targetOptions = [
     { value:'all_users',    label:'All Users',              icon:<Users size={18}/>,     desc:'2,847 recipients' },
     { value:'all_partners', label:'All Partners',           icon:<UserCog size={18}/>,   desc:'186 recipients' },
     { value:'all',          label:'Everyone',               icon:<Globe size={18}/>,     desc:'3,033 recipients' },
-    { value:'online',       label:'Online Partners Only',   icon:<Bell size={18}/>,      desc:'34 recipients' },
   ];
 
   const handleSend = async () => {

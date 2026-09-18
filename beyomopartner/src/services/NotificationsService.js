@@ -30,13 +30,13 @@ export const createNotificationChannels = async () => {
     },
     {
       id: CH_PAYMENT, name: 'Earnings & Payments',
-      importance: AndroidImportance.HIGH, sound: 'beyomo_notification',
+      importance: AndroidImportance.HIGH, sound: 'default',
       vibrationPattern: [400, 100, 200, 100],
       visibility: AndroidVisibility.PUBLIC, lights: true, lightColor: '#F5C842',
     },
     {
       id: CH_DEFAULT, name: 'General Notifications',
-      importance: AndroidImportance.HIGH, sound: 'beyomo_notification',
+      importance: AndroidImportance.HIGH, sound: 'default',
       vibrationPattern: [300, 200, 300, 200],
       visibility: AndroidVisibility.PUBLIC,
     },
@@ -86,9 +86,13 @@ const pickChannel = (data = {}) => {
   return CH_DEFAULT;
 };
 
-const pickSound = (_data = {}) => {
-  // Single custom sound for all notification types.
-  return 'beyomo_notification';
+const pickSound = (data = {}) => {
+  // Custom sound plays only for order (booking) notifications; everything
+  // else uses the device's default notification sound.
+  const type = data?.type ?? '';
+  if (type === 'new_booking') return 'beyomo_notification';
+  if (type.includes('booking') || type.includes('service')) return 'beyomo_notification';
+  return 'default';
 };
 
 const displayNotification = async (notification, data = {}) => {
