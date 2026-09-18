@@ -80,7 +80,11 @@ const EarningsDashboardScreen = ({navigation}: any) => {
     setRefreshing(false);
   };
 
-  const balance = wallet?.partner?.walletBalance ?? 0;
+  // Rounded outstanding, summed per entry by the API, so this card and the Settlement
+  // History screen it links to never print two different figures for the same debt.
+  const balance =
+    wallet?.partner?.roundedOutstandingBalance ??
+    Math.round(Number(wallet?.partner?.walletBalance ?? 0));
   const settlementLabel = balance > 0
     ? `You'll receive ₹${formatAmount(balance)}`
     : balance < 0
@@ -265,6 +269,15 @@ const EarningsDashboardScreen = ({navigation}: any) => {
             Cash-on-delivery jobs: you collect payment and owe admin their commission share.
             Online jobs: admin holds payment and owes you your earning share.
           </Text>
+
+          <TouchableOpacity
+            style={styles.settlementHistoryBtn}
+            activeOpacity={0.7}
+            onPress={() => navigation.navigate('SettlementHistory')}>
+            <Ionicons name="receipt-outline" size={sw(16)} color="#105641" />
+            <Text style={styles.settlementHistoryText}>Settlement History</Text>
+            <Ionicons name="chevron-forward" size={sw(16)} color="#105641" />
+          </TouchableOpacity>
         </View>
 
       </ScrollView>
@@ -506,6 +519,22 @@ const styles = StyleSheet.create({
     fontFamily: fonts.title,
     fontSize: sw(18),
     fontWeight: '800',
+  },
+  settlementHistoryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: sw(8),
+    marginTop: sw(12),
+    paddingTop: sw(12),
+    borderTopWidth: 1,
+    borderTopColor: '#EFEFEF',
+  },
+  settlementHistoryText: {
+    flex: 1,
+    fontFamily: fonts.textFont,
+    fontSize: sw(13),
+    fontWeight: '600',
+    color: '#105641',
   },
   settlementHint: {
     fontFamily: fonts.textFont,

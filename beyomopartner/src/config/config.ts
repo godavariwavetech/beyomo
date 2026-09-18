@@ -9,8 +9,8 @@
 // in the app. `__DEV__` is false in release builds, so a release can only ever get the
 // live URL. To test against a different local host (LAN IP, or 10.0.2.2 on the emulator)
 // change LOCAL_BASE_URL; leave LIVE_BASE_URL alone.
-// const LOCAL_BASE_URL = 'http://localhost:3000';
-const LOCAL_BASE_URL = 'http://192.168.1.42:3000';
+const LOCAL_BASE_URL = 'http://localhost:3000';
+//const LOCAL_BASE_URL = 'http://192.168.1.42:3000';
 const LIVE_BASE_URL = 'https://beyomo.com:3099';
 
 // Debug-only: point a debug build at the live backend to check it against real data.
@@ -22,8 +22,8 @@ const DEV_POINT_AT_LIVE = false;//local
 export const BASE_URL =
   __DEV__ && !DEV_POINT_AT_LIVE ? LOCAL_BASE_URL : LIVE_BASE_URL;
 
-//export const baseURL =BASE_URL;
-export const baseURL = 'http://192.168.1.42:3000';
+export const baseURL =BASE_URL;
+//export const baseURL = 'http://192.168.1.42:3000';
 
 export const endpoints = {
   // Auth (userType will be passed as 'partner')

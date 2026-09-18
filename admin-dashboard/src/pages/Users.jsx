@@ -90,7 +90,10 @@ export default function Users() {
     if (!addForm.name || !addForm.phone) { showToast('Name and phone are required.','danger'); return; }
     action('post', '/api/v1/admin/users', addForm).then(res => {
       if (res.ok) {
-        fetchList().then(r => { if (r.ok) setUsers((r.data?.data ?? []).map(u => ({ ...u, id: String(u.id ?? ''), name: u.name ?? '—', email: u.email ?? '', phone: u.phone ?? '', status: u.status ?? 'active', joinedDate: u.joinedDate ?? u.createdAt?.slice(0,10) ?? '', bookings: u.bookings ?? 0, totalSpent: parseFloat(u.totalSpent ?? u.walletBalance ?? 0), avatar: u.avatar ?? (u.name?.[0]?.toUpperCase() ?? 'U') }))); });
+        // Refresh through loadUsers so the full-record limit and the selected city filter
+        // are reapplied. Calling fetchList() bare passed no params at all, so the backend
+        // fell back to its 10-row default and the list collapsed after every add.
+        loadUsers();
         showToast('User added successfully!','success');
       } else {
         showToast(res.error, 'danger');

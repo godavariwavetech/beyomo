@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Search, Wallet, ArrowDownCircle, ArrowUpCircle, XCircle } from 'lucide-react';
+import { Search, Wallet, ArrowDownCircle, ArrowUpCircle, XCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { useSettlements } from '../hooks/useSettlements';
 import { useAuth } from '../context/AuthContext';
 import { useCityFilter } from '../context/CityContext';
@@ -10,6 +10,22 @@ import api from '../services/api';
 import { formatAmount } from '../utils/format';
 
 const fmt = (n) => formatAmount(n);
+
+// Every amount here is whole rupees. The catch is that rounding each entry and rounding
+// the exact total give different answers (11 open entries display as 6664, their exact sum
+// 6663.30 rounds to 6663), so every TOTAL on this page is summed from already-rounded
+// entries - never rounded after summing. That is what makes a column of entries add up to
+// the figure printed beside it. `rup` does that per-entry rounding.
+const rup = (n) => Math.round(Number(n) || 0);
+
+// Date + time for settlement history. Mirrors the dashboard's existing en-IN datetime
+// format (Analytics.jsx fmtTime, ContactInquiries.jsx) so a settlement never reads one
+// way here and another way on those screens.
+const fmtDateTime = (d) => d
+  ? new Date(d).toLocaleString('en-IN', {
+      day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+    })
+  : '—';
 const ITEMS_PER_PAGE = 10;
 
 const STATUS_BADGE = { unsettled: 'warning', settled: 'success', voided: 'danger' };
@@ -28,6 +44,9 @@ export default function Settlements() {
   const [detailLoading, setDetailLoading] = useState(false);
 
   const [settleType, setSettleType] = useState('payout');
+  // empty = settle the whole balance oldest-first; otherwise the ledger entries being settled
+  const [settleEntryIds, setSettleEntryIds] = useState([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [settleAmount, setSettleAmount] = useState('');
   const [settleMethod, setSettleMethod] = useState('');
   const [settleNote, setSettleNote] = useState('');
@@ -55,21 +74,27 @@ export default function Settlements() {
   const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE);
   const pageData = filtered.slice((page - 1) * ITEMS_PER_PAGE, page * ITEMS_PER_PAGE);
 
+  // Rounded per-partner outstanding (falls back to the wallet balance on older payloads),
+  // so these cards total exactly what the rows beneath them show.
+  const rowBalance = (p) => p.roundedOutstandingBalance ?? rup(p.walletBalance);
+
   const stats = {
-    owedToPartners: partners.reduce((s, p) => s + Math.max(0, p.walletBalance), 0),
-    owedByPartners: partners.reduce((s, p) => s + Math.max(0, -p.walletBalance), 0),
-    partnersWithDues: partners.filter(p => p.walletBalance !== 0).length,
+    owedToPartners: partners.reduce((s, p) => s + Math.max(0, rowBalance(p)), 0),
+    owedByPartners: partners.reduce((s, p) => s + Math.max(0, -rowBalance(p)), 0),
+    partnersWithDues: partners.filter(p => rowBalance(p) !== 0).length,
   };
 
   const openDetail = async (p) => {
     setSelected(p);
     setLedger(null);
+    setSettleEntryIds([]);
+    setPickerOpen(false);
     setSettleAmount('');
     setSettleMethod('');
     setSettleNote('');
     setDetailLoading(true);
     try {
-      const res = await api.get(`/api/v1/admin/settlements/partners/${p.id}`);
+      const res = await api.get(`/api/v1/admin/settlements/partners/${p.id}?limit=200`);
       const data = res.data?.data;
       setLedger(data);
       setSettleType((data?.partner?.walletBalance ?? 0) >= 0 ? 'payout' : 'collection');
@@ -82,18 +107,37 @@ export default function Settlements() {
   const closeDetail = () => { setSelected(null); setLedger(null); };
 
   const handleSettle = async () => {
-    const amount = parseFloat(settleAmount);
-    const balance = ledger?.partner?.walletBalance ?? 0;
-    const maxAmount = settleType === 'payout' ? Math.max(0, balance) : Math.max(0, -balance);
+    const picked = (ledger?.entries ?? []).filter(e => settleEntryIds.includes(e.id));
+    // Picked bookings settle for their own ledger amounts, never a hand-typed figure — the
+    // backend re-derives the total from those entries so the balance and the entries move
+    // in lockstep. One settlement row covers the whole selection, so no duplicates.
+    const amount = picked.length
+      ? picked.reduce((s, e) => s + parseFloat(e.amount), 0)
+      : parseFloat(settleAmount);
     if (!amount || amount <= 0) { showToast('Enter a valid amount.', 'warning'); return; }
-    if (amount > maxAmount) { showToast(`Amount cannot exceed ₹${fmt(maxAmount)}.`, 'warning'); return; }
+    if (!picked.length) {
+      // Only the free-amount path needs a ceiling — a picked booking is bounded by its own
+      // ledger amount and can be settled exactly once, so it needs no balance headroom.
+      const balance = ledger?.partner?.walletBalance ?? 0;
+      const maxAmount = settleType === 'payout' ? Math.max(0, balance) : Math.max(0, -balance);
+      if (amount > maxAmount + 0.005) { showToast(`Amount cannot exceed ₹${fmt(maxAmount)}.`, 'warning'); return; }
+    }
 
     setSettling(true);
     try {
       await api.post(`/api/v1/admin/settlements/partners/${selected.id}/settle`, {
-        type: settleType, amount, method: settleMethod || undefined, note: settleNote || undefined,
+        type: settleType,
+        ...(picked.length ? { entryIds: picked.map(e => e.id) } : { amount }),
+        method: settleMethod || undefined, note: settleNote || undefined,
       });
-      showToast('Settlement recorded successfully.', 'success');
+      showToast(
+        picked.length === 1
+          ? `Settled ${picked[0].bookingCode ?? `entry ${picked[0].id}`} — ₹${fmt(amount)}.`
+          : picked.length > 1
+            ? `Settled ${picked.length} bookings — ₹${fmt(amount)}.`
+            : 'Settlement recorded successfully.',
+        'success');
+      setSettleEntryIds([]); setPickerOpen(false);
       setSettleAmount(''); setSettleMethod(''); setSettleNote('');
       await openDetail(selected);
       loadPartners();
@@ -115,7 +159,27 @@ export default function Settlements() {
     }
   };
 
+  // Exact figures, used for validation and the data-integrity check below.
   const balance = ledger?.partner?.walletBalance ?? 0;
+  const outstanding = ledger?.partner?.outstandingBalance ?? balance;
+  const drift = parseFloat((balance - outstanding).toFixed(2));
+  // The figure actually displayed: open entries rounded individually, then summed, so it
+  // equals what the Ledger Entries column below adds up to.
+  const shownBalance = ledger?.partner?.roundedOutstandingBalance ?? rup(outstanding);
+
+  const settleableEntries = useMemo(() => {
+    const dir = settleType === 'payout' ? 'credit' : 'debit';
+    return (ledger?.entries ?? []).filter(e => e.status === 'unsettled' && e.direction === dir);
+  }, [ledger, settleType]);
+
+  const pickedEntries = settleableEntries.filter(e => settleEntryIds.includes(e.id));
+  // Summed from rounded entries so these totals match the rows the admin can see.
+  const pickedTotal = pickedEntries.reduce((s, e) => s + rup(e.amount), 0);
+  const openTotal = settleableEntries.reduce((s, e) => s + rup(e.amount), 0);
+
+  const toggleEntry = (id) => setSettleEntryIds(ids =>
+    ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id]
+  );
 
   return (
     <div>
@@ -170,13 +234,13 @@ export default function Settlements() {
                   </td>
                   <td>{p.city || '—'}</td>
                   <td>₹{fmt(p.totalEarnings)}</td>
-                  <td style={{ fontWeight: 700, color: p.walletBalance > 0 ? '#22C55E' : p.walletBalance < 0 ? '#EF4444' : 'var(--c-text-muted)' }}>
-                    {p.walletBalance > 0 ? '+' : ''}₹{fmt(p.walletBalance)}
+                  <td style={{ fontWeight: 700, color: rowBalance(p) > 0 ? '#22C55E' : rowBalance(p) < 0 ? '#EF4444' : 'var(--c-text-muted)' }}>
+                    {rowBalance(p) > 0 ? '+' : ''}₹{fmt(rowBalance(p))}
                   </td>
                   <td>
-                    {p.walletBalance === 0
+                    {rowBalance(p) === 0
                       ? <Badge status="success" label="Settled" />
-                      : p.walletBalance > 0
+                      : rowBalance(p) > 0
                         ? <Badge status="warning" label="Owed to partner" />
                         : <Badge status="danger" label="Owed by partner" />}
                   </td>
@@ -209,27 +273,87 @@ export default function Settlements() {
             <div style={{ background: 'linear-gradient(135deg,var(--c-brand-teal-mid),var(--c-brand-teal-dark))', borderRadius: 'var(--r-md)', padding: 16, color: 'white' }}>
               <div style={{ fontSize: 11, fontWeight: 700, opacity: 0.7, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>Current Balance</div>
               <div style={{ fontSize: 24, fontWeight: 800 }}>
-                {balance === 0 ? 'Settled' : balance > 0 ? `Owe partner ₹${fmt(balance)}` : `Partner owes ₹${fmt(-balance)}`}
+                {shownBalance === 0 ? 'Settled' : shownBalance > 0 ? `Owe partner ₹${fmt(shownBalance)}` : `Partner owes ₹${fmt(-shownBalance)}`}
               </div>
-              <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>Lifetime earnings: ₹{fmt(ledger.partner.totalEarnings)}</div>
+              <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
+                {settleableEntries.length > 0 && `${settleableEntries.length} open booking${settleableEntries.length > 1 ? 's' : ''} · ₹${fmt(openTotal)} · `}
+                Lifetime earnings: ₹{fmt(ledger.partner.totalEarnings)}
+              </div>
+              {drift !== 0 && (
+                <div style={{ fontSize: 11, opacity: 0.9, marginTop: 6 }}>
+                  {drift > 0
+                    ? `₹${fmt(drift)} already collected in advance of the open bookings`
+                    : `₹${fmt(-drift)} of open bookings still collected short`}
+                </div>
+              )}
             </div>
 
-            {balance !== 0 && (
+            {(outstanding !== 0 || balance !== 0) && (
               <div style={{ background: 'var(--c-border-light)', borderRadius: 'var(--r-md)', padding: 16 }}>
                 <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--c-text-secondary)', marginBottom: 10 }}>Record Settlement</div>
                 <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                  <select value={settleType} onChange={e => setSettleType(e.target.value)} style={{ border: '1px solid var(--c-border)', borderRadius: 'var(--r-sm)', padding: '6px 10px', fontSize: 13, background: 'var(--c-bg-card)', color: 'var(--c-text-primary)' }}>
+                  <select value={settleType} onChange={e => { setSettleType(e.target.value); setSettleEntryIds([]); }} style={{ border: '1px solid var(--c-border)', borderRadius: 'var(--r-sm)', padding: '6px 10px', fontSize: 13, background: 'var(--c-bg-card)', color: 'var(--c-text-primary)' }}>
                     <option value="payout">Pay out to partner</option>
                     <option value="collection">Collect from partner</option>
                   </select>
-                  <input type="number" placeholder="Amount" value={settleAmount} onChange={e => setSettleAmount(e.target.value)}
-                    style={{ flex: 1, border: '1px solid var(--c-border)', borderRadius: 'var(--r-sm)', padding: '6px 10px', fontSize: 13, background: 'var(--c-bg-card)', color: 'var(--c-text-primary)' }} />
+                  {/* Collapsible in-flow picker rather than a floating panel: .modal-body
+                      scrolls, so an absolutely positioned dropdown would be clipped by it. */}
+                  <button type="button" onClick={() => setPickerOpen(o => !o)}
+                    disabled={settleableEntries.length === 0}
+                    style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, border: '1px solid var(--c-border)', borderRadius: 'var(--r-sm)', padding: '6px 10px', fontSize: 13, background: 'var(--c-bg-card)', color: 'var(--c-text-primary)', textAlign: 'left', cursor: settleableEntries.length === 0 ? 'not-allowed' : 'pointer' }}>
+                    <span>
+                      {settleableEntries.length === 0
+                        ? 'No open bookings'
+                        : pickedEntries.length === 0
+                          ? 'Select bookings…'
+                          : `${pickedEntries.length} of ${settleableEntries.length} selected · ₹${fmt(pickedTotal)}`}
+                    </span>
+                    {pickerOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                  </button>
+                </div>
+
+                {pickerOpen && settleableEntries.length > 0 && (
+                  <div style={{ border: '1px solid var(--c-border)', borderRadius: 'var(--r-sm)', background: 'var(--c-bg-card)', marginBottom: 8, maxHeight: 190, overflowY: 'auto' }}>
+                    <div style={{ display: 'flex', gap: 8, padding: '6px 10px', borderBottom: '1px solid var(--c-border-light)', position: 'sticky', top: 0, background: 'var(--c-bg-card)' }}>
+                      <button type="button" className="btn btn-ghost btn-sm" style={{ padding: '2px 6px', fontSize: 11 }}
+                        onClick={() => setSettleEntryIds(settleableEntries.map(en => en.id))}>Select all</button>
+                      <button type="button" className="btn btn-ghost btn-sm" style={{ padding: '2px 6px', fontSize: 11 }}
+                        onClick={() => setSettleEntryIds([])}>Clear</button>
+                    </div>
+                    {settleableEntries.map(e => (
+                      <label key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', fontSize: 13, cursor: 'pointer', borderBottom: '1px solid var(--c-border-light)' }}>
+                        <input type="checkbox" checked={settleEntryIds.includes(e.id)} onChange={() => toggleEntry(e.id)} />
+                        <span style={{ flex: 1 }}>{e.bookingCode ?? `Entry ${e.id}`}</span>
+                        <span style={{ fontWeight: 700 }}>&#8377;{fmt(e.amount)}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                  {/* Shows the selected bookings' exact ledger total, to the paise, so it
+                      equals what the backend will settle and what the entries below add up
+                      to. Rounding it was what made a column of entries sum to a different
+                      figure than the total printed beside them. */}
+                  <input type="number" placeholder="Amount"
+                    value={pickedEntries.length ? pickedTotal : settleAmount}
+                    readOnly={pickedEntries.length > 0}
+                    title={pickedEntries.length ? 'Locked to the selected bookings' : 'Amount to settle'}
+                    onChange={e => setSettleAmount(e.target.value)}
+                    style={{ flex: 1, border: '1px solid var(--c-border)', borderRadius: 'var(--r-sm)', padding: '6px 10px', fontSize: 13, background: pickedEntries.length ? 'var(--c-border-light)' : 'var(--c-bg-card)', color: 'var(--c-text-primary)', cursor: pickedEntries.length ? 'not-allowed' : 'text' }} />
                   <select value={settleMethod} onChange={e => setSettleMethod(e.target.value)} style={{ border: '1px solid var(--c-border)', borderRadius: 'var(--r-sm)', padding: '6px 10px', fontSize: 13, background: 'var(--c-bg-card)', color: 'var(--c-text-primary)' }}>
-                    <option value="">Method…</option>
+                    <option value="">Method&#8230;</option>
                     <option value="bank_transfer">Bank Transfer</option>
                     <option value="upi">UPI</option>
                     <option value="cash">Cash</option>
                   </select>
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--c-text-muted)', marginBottom: 8 }}>
+                  {pickedEntries.length === 1
+                    ? `Settles ${pickedEntries[0].bookingCode ?? `entry ${pickedEntries[0].id}`} only. No other booking is touched.`
+                    : pickedEntries.length > 1
+                      ? `Settles these ${pickedEntries.length} bookings only, in one settlement. No other booking is touched.`
+                      : 'No booking selected — settles open bookings oldest-first, only those the amount fully covers.'}
                 </div>
                 <input type="text" placeholder="Note (optional)…" value={settleNote} onChange={e => setSettleNote(e.target.value)}
                   style={{ width: '100%', border: '1px solid var(--c-border)', borderRadius: 'var(--r-sm)', padding: '6px 10px', fontSize: 13, background: 'var(--c-bg-card)', color: 'var(--c-text-primary)', boxSizing: 'border-box', marginBottom: 8 }} />
@@ -278,8 +402,11 @@ export default function Settlements() {
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {ledger.settlements.map(s => (
-                    <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: 13 }}>
-                      <span>{s.type === 'payout' ? 'Paid to partner' : 'Collected from partner'} {s.method ? `(${s.method})` : ''}</span>
+                    <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, padding: '6px 0', fontSize: 13, borderBottom: '1px solid var(--c-border-light)' }}>
+                      <div style={{ flex: 1 }}>
+                        <div>{s.type === 'payout' ? 'Paid to partner' : 'Collected from partner'} {s.method ? `(${s.method})` : ''}</div>
+                        <div style={{ fontSize: 11, color: 'var(--c-text-muted)', marginTop: 2 }}>{fmtDateTime(s.createdAt)}</div>
+                      </div>
                       <span style={{ fontWeight: 700 }}>₹{fmt(s.amount)}</span>
                     </div>
                   ))}

@@ -63,7 +63,9 @@ const saveBase64Image = (base64DataUri, partnerId) => {
 const updateProfile = async (partnerId, updateData) => {
   const allowed = ["name", "email", "profilePicture", "bio", "experience", "cityId",
     "locationLat", "locationLng", "locationAddress", "locationCity", "locationState", "locationPincode",
-    "serviceCategoryIds", "professions", "gender", "homeServicesConsent"];
+    "serviceCategoryIds", "professions", "gender", "homeServicesConsent",
+    // Partners maintain their own payout account from the app's Bank Details screen.
+    "bankHolderName", "bankName", "bankAccountNo", "bankIfsc"];
   const filtered = {};
   allowed.forEach((f) => { if (updateData[f] !== undefined) filtered[f] = updateData[f]; });
 
@@ -611,7 +613,16 @@ const getEarnings = async (partnerId, period = "month") => {
 };
 
 const getAvailableBookings = async (partnerId) => {
-  const partner = await Partner.findByPk(partnerId, { attributes: ['cityId', 'locationCity'] });
+  const partner = await Partner.findByPk(partnerId, {
+    attributes: ['cityId', 'locationCity', 'isOnline', 'lastSeenAt'],
+  });
+
+  // Offline partners are offered nothing. isPartnerOnline is the same presence rule the
+  // dashboard and the partner's own dashboard already use: the toggle AND a fresh
+  // heartbeat, so a force-quit or dead-battery app ages out instead of staying
+  // eligible. Enforced here rather than in the app because this is the one place both
+  // the list and the accept call are served from.
+  if (!isPartnerOnline(partner)) return [];
   // Exclude online-payment bookings whose payment hasn't actually gone through yet
   // (e.g. the customer cancelled Razorpay checkout) — those stay "pending" too, but
   // a partner must never be offered a job that hasn't been paid for.
@@ -758,6 +769,16 @@ const claimServices = async (partnerId, bookingId, serviceIndices) => {
 };
 
 const acceptBooking = async (partnerId, bookingId) => {
+  // Hiding the job is not enough on its own: a partner who goes offline with the list
+  // already on screen could still accept from it, which is exactly the assignment this
+  // is meant to prevent. Same presence rule as the listing above.
+  const acceptingPartner = await Partner.findByPk(partnerId, {
+    attributes: ['isOnline', 'lastSeenAt'],
+  });
+  if (!isPartnerOnline(acceptingPartner)) {
+    throw new AppError('You are offline. Go online to accept bookings.', 403);
+  }
+
   const svcsResult = await Booking.findByPk(bookingId);
   if (!svcsResult) throw new AppError('Booking not found', 404);
 

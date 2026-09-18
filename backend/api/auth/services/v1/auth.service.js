@@ -6,6 +6,7 @@ const { sendOtp } = require("../../../../utils/smsUtils");
 const { signToken } = require("../../../../utils/jwtUtils");
 const AppError = require("../../../../utils/errorHandlers/appError");
 const logger = require("../../../../utils/logger");
+const { MOCK_SMS, NODE_ENV } = require("../../../../config");
 
 const OTP_EXPIRY_MINUTES = 5;
 const MAX_ATTEMPTS = 3;
@@ -13,8 +14,25 @@ const RATE_LIMIT_MINUTES = 0;
 
 const TEST_PHONE_NUMBERS = ["7997753587"];
 
+const MOCK_OTP = "1234";
+
+/**
+ * Local/dev only: when SMS is mocked, every number gets the same OTP so the apps can be
+ * tested without a real handset. Deliberately double-gated:
+ *
+ *   1. MOCK_SMS  - already false unless the env literally says "true" (config/index.js),
+ *      and when it is on no SMS is sent at all: the OTP is only written to the log. So a
+ *      fixed code exposes nothing that the log did not already show.
+ *   2. NODE_ENV !== "production" - a second, independent lock, so even a live server that
+ *      wrongly shipped MOCK_SMS=true still issues random OTPs.
+ *
+ * Both must hold. Production therefore keeps the original behaviour untouched.
+ */
+const mockOtpEnabled = () => MOCK_SMS === true && NODE_ENV !== "production";
+
 const generateOtp = (phone) => {
-  if (TEST_PHONE_NUMBERS.includes(String(phone))) return "1234";
+  if (mockOtpEnabled()) return MOCK_OTP;
+  if (TEST_PHONE_NUMBERS.includes(String(phone))) return MOCK_OTP;
   return String(Math.floor(1000 + Math.random() * 9000));
 };
 

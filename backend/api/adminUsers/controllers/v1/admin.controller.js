@@ -650,7 +650,10 @@ const getPartnerLedger = catchAsync(async (req, res, next) => {
 
 const recordSettlementSchema = Joi.object({
   type: Joi.string().valid("payout", "collection").required(),
-  amount: Joi.number().positive().required(),
+  // Optional: the exact ledger entries being settled. When present the service derives the
+  // amount from those entries and settles only them, so `amount` becomes optional here.
+  entryIds: Joi.array().items(Joi.number().integer().positive()).min(1).single(),
+  amount: Joi.number().positive().when("entryIds", { is: Joi.exist(), then: Joi.optional(), otherwise: Joi.required() }),
   method: Joi.string().trim().max(30).allow("", null),
   note: Joi.string().trim().max(500).allow("", null),
 });

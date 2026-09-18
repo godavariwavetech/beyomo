@@ -14,6 +14,7 @@ import AccountStatusScreen from '../screens/Auth/AccountStatusScreen';
 import HomeScreen from '../screens/Home/HomeScreen';
 import BookingsScreen from '../screens/Bookings/BookingsScreen';
 import EarningsDashboardScreen from '../screens/Earnings/EarningsDashboardScreen';
+import SettlementHistoryScreen from '../screens/Earnings/SettlementHistoryScreen';
 import ProfileScreen from '../screens/Profile/ProfileScreen';
 
 import IncomingRequestScreen from '../screens/Jobs/IncomingRequestScreen';
@@ -31,6 +32,7 @@ import AboutUsScreen from '../screens/Profile/AboutUsScreen';
 
 import CitySelectorScreen from '../screens/CitySelector/CitySelectorScreen';
 import CustomTabBar from '../components/BottomTabBar/CustomTabBar';
+import AccountSuspendedModal from '../components/AccountSuspendedModal/AccountSuspendedModal';
 import {setupForegroundHandler, handleNotificationNavigation} from '../services/NotificationsService';
 import {navigationRef} from './navigationRef';
 
@@ -84,6 +86,7 @@ const AppNavigation = () => {
         <Stack.Screen name="JobDetails" component={JobDetailsScreen} />
         <Stack.Screen name="JobChecklist" component={JobChecklistScreen} />
         <Stack.Screen name="ActiveJob" component={ActiveJobScreen} />
+        <Stack.Screen name="SettlementHistory" component={SettlementHistoryScreen} />
         <Stack.Screen name="Notifications" component={NotificationsScreen} />
         <Stack.Screen name="EditProfile" component={EditProfileScreen} />
         <Stack.Screen name="DeleteAccount" component={DeleteAccountScreen} />
@@ -91,6 +94,7 @@ const AppNavigation = () => {
         <Stack.Screen name="HelpSupport" component={HelpSupportScreen} />
         <Stack.Screen name="AboutUs" component={AboutUsScreen} />
       </Stack.Navigator>
+      <AccountSuspendedModal />
     </NavigationContainer>
   );
 };
