@@ -42,8 +42,21 @@ const addBookingPackageSchema = Joi.object({
   })).min(1).required(),
 });
 
+// Bank details. Same rules the admin dashboard validates with, applied here too so a
+// malformed account/IFSC cannot reach the column regardless of which client sends it:
+// IFSC is RBI's fixed shape (4 letters, a reserved 0, 6 alphanumerics) and Indian
+// account numbers are 9-18 digits. Each stays optional, and "" clears the field.
+const IFSC_PATTERN = /^[A-Z]{4}0[A-Z0-9]{6}$/;
+const ACCOUNT_PATTERN = /^\d{9,18}$/;
+
 const updateProfileSchema = Joi.object({
   name: Joi.string().trim().min(2).max(60),
+  bankHolderName: Joi.string().trim().max(60).allow("", null),
+  bankName: Joi.string().trim().max(60).allow("", null),
+  bankAccountNo: Joi.string().trim().pattern(ACCOUNT_PATTERN).allow("", null)
+    .messages({ "string.pattern.base": "Account number must be 9-18 digits, numbers only." }),
+  bankIfsc: Joi.string().trim().uppercase().pattern(IFSC_PATTERN).allow("", null)
+    .messages({ "string.pattern.base": "IFSC must be 11 characters, e.g. SBIN0001234." }),
   email: Joi.string().email().trim().lowercase(),
   profilePicture: Joi.string().allow(null, ""), // accepts both https:// URLs and data: base64 URIs
   bio: Joi.string().trim().max(500).allow("", null),

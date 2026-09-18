@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Search, UserPlus, Download, Eye, Ban, CheckCircle, ShieldCheck, Phone, Mail, MapPin, Star, Briefcase, XCircle, Clock, Check, Pencil, User, Tag } from 'lucide-react';
+import { Search, UserPlus, Download, Eye, Ban, CheckCircle, ShieldCheck, Phone, Mail, MapPin, Star, Briefcase, XCircle, Clock, Check, Pencil, User, Tag, Building2, CreditCard, Landmark } from 'lucide-react';
 import { usePartners } from '../hooks/usePartners';
 import { useAuth } from '../context/AuthContext';
 import { useCityFilter } from '../context/CityContext';
@@ -43,9 +43,44 @@ const parseArr = (val) => {
   }
 };
 
+// partners.source is ENUM('app','website') NOT NULL in the DB, so every row carries one.
+// Nothing is inferred here - an unexpected/absent value renders as an em dash rather than
+// being guessed into one of the two buckets.
+const SOURCE_LABELS = { app: 'Partner App', website: 'Website' };
+
+// Bank detail validation. Both fields stay optional - a partner who has given no bank
+// details is not blocked - but anything entered must be well formed. Partner 17 was
+// stored with account 'SBI247887908734049' and IFSC 'IFC33729E2000-=R3939', which is
+// what unvalidated input lets through.
+//
+// IFSC is RBI's fixed format: 4 letters (bank), a reserved '0', then 6 alphanumerics.
+const IFSC_RE = /^[A-Z]{4}0[A-Z0-9]{6}$/;
+// Indian account numbers are digits only and run 9-18 long across banks.
+const ACCOUNT_RE = /^\d{9,18}$/;
+
+// Returns an error string, or null when the bank fields are acceptable.
+const hasBankDetails = (p) => Boolean(
+  (p?.bankAccountNo ?? '').trim() || (p?.bankIfsc ?? '').trim() ||
+  (p?.bankName ?? '').trim() || (p?.bankHolderName ?? '').trim()
+);
+
+// Returns an error string, or null when the bank fields are acceptable.
+const validateBankDetails = ({ bankAccountNo, bankIfsc }) => {
+  const acc = (bankAccountNo ?? '').trim();
+  const ifsc = (bankIfsc ?? '').trim().toUpperCase();
+  if (acc && !ACCOUNT_RE.test(acc)) {
+    return 'Account number must be 9-18 digits, numbers only.';
+  }
+  if (ifsc && !IFSC_RE.test(ifsc)) {
+    return 'IFSC must be 11 characters, e.g. SBIN0001234 (4 letters, 0, then 6 letters/digits).';
+  }
+  return null;
+};
+
 const normalizePartner = (p) => ({
   ...p,
   id: String(p.id ?? ''),
+  source: p.source ?? null,
   name: p.name ?? '',
   phone: p.phone ?? '',
   email: p.email ?? '',
@@ -56,7 +91,11 @@ const normalizePartner = (p) => ({
   totalEarnings: parseFloat(p.totalEarnings ?? 0),
   isOnline: Boolean(p.isOnline),
   lastSeenAt: p.lastSeenAt ?? null,
-  services: Array.isArray(p.services) ? p.services : [],
+  // The partner API has no `services` field: what the partner picked at registration is
+  // stored in the `professions` JSON column, which is also what the edit form below reads.
+  // Reading p.services meant this was always [] and the Services section rendered empty.
+  // parseArr handles MariaDB handing the JSON column back as text.
+  services: parseArr(p.services ?? p.professions),
   avatar: p.avatar ?? (p.name?.[0]?.toUpperCase() ?? 'P'),
   experience: typeof p.experience === 'number' ? `${p.experience} yrs` : (p.experience ?? '—'),
   status: p.status === 'approved' ? 'active' : (p.status ?? 'pending'),
@@ -135,6 +174,11 @@ export default function Partners() {
   const [page, setPage]           = useState(1);
   const [selected, setSelected]   = useState(null);
   const [tab, setTab]             = useState('info');
+  // Reviews for the partner currently open. Same payload the partner app's My Reviews
+  // screen renders, from the same public endpoint, so the two never disagree.
+  const [reviews, setReviews]         = useState([]);
+  const [reviewStats, setReviewStats] = useState(null);
+  const [reviewsLoading, setReviewsLoading] = useState(false);
   const [partners, setPartners]   = useState([]);
   const [pageLoading, setPageLoading] = useState(true);
   const [adding, setAdding]       = useState(false);
@@ -164,8 +208,28 @@ export default function Partners() {
   const [editCats, setEditCats] = useState([]);
   const [savingEdit, setSavingEdit] = useState(false);
 
+  // Fetched only when the Reviews tab is actually opened, so browsing partners does not
+  // pull review history for every one of them.
+  useEffect(() => {
+    if (!selected || tab !== 'reviews') return;
+    let cancelled = false;
+    setReviewsLoading(true);
+    api.get(`/api/v1/reviews/partner/${selected.id}`, { params: { limit: 100 } })
+      .then(res => {
+        if (cancelled) return;
+        setReviews(res.data?.data ?? []);
+        setReviewStats(res.data?.stats ?? null);
+      })
+      .catch(() => { if (!cancelled) { setReviews([]); setReviewStats(null); } })
+      .finally(() => { if (!cancelled) setReviewsLoading(false); });
+    return () => { cancelled = true; };
+  }, [selected, tab]);
+
   const loadPartners = () => {
-    const params = { source: 'app', ...(cityParam ? { cityIds: cityParam } : {}) };
+    // No `source` filter: the list now holds both app partners and website registrations,
+    // told apart by the Source column. listPartners only narrows by source when the param
+    // is sent, so omitting it returns every record.
+    const params = { limit: 1000, ...(cityParam ? { cityIds: cityParam } : {}) };
     fetchList(params).then(res => {
       if (res.ok) setPartners((res.data?.data ?? []).map(normalizePartner));
       setPageLoading(false);
@@ -232,6 +296,11 @@ export default function Partners() {
       showToast('Name and phone are required.', 'danger');
       return;
     }
+    const bankError = validateBankDetails(editForm);
+    if (bankError) {
+      showToast(bankError, 'danger');
+      return;
+    }
     setSavingEdit(true);
     // `professions` and `categories` are the names the backend's updatePartner expects
     // (it maps categories -> serviceCategoryIds).
@@ -272,13 +341,22 @@ export default function Partners() {
       setAddStep(1);
       return;
     }
+    const bankError = validateBankDetails(addForm);
+    if (bankError) {
+      showToast(bankError, 'danger');
+      setAddStep(5); // Bank Details step, mirroring the jump to step 1 above
+      return;
+    }
     const res = await action('post', '/api/v1/admin/partners', {
       ...addForm,
       professions: selectedProfessions,
       categories: selectedCats,
     });
     if (res.ok) {
-      fetchList().then(r => { if (r.ok) setPartners((r.data?.data ?? []).map(normalizePartner)); });
+      // Refresh through loadPartners so the full-record limit, the source:'app' filter and
+      // the selected city are all reapplied. Calling fetchList() bare passed none of them,
+      // so the backend fell back to its 10-row default and the list collapsed after an add.
+      loadPartners();
       showToast('Partner added! Pending verification.', 'success');
       setAdding(false);
       resetAdd();
@@ -450,7 +528,7 @@ export default function Partners() {
           </div>
           <div style={{ flex:1 }}>
             <div style={{ fontSize:14, fontWeight:700, color:'white' }}>{pendingPartners.length} Partner Application{pendingPartners.length > 1 ? 's' : ''} Awaiting Review</div>
-            <div style={{ fontSize:12, color:'rgba(255,255,255,0.8)', marginTop:2 }}>New applications from the app, waiting for approval. Website sign-ups are under Website Registrations.</div>
+            <div style={{ fontSize:12, color:'rgba(255,255,255,0.8)', marginTop:2 }}>New applications waiting for approval, from both the partner app and the website — see the Source column.</div>
           </div>
           <button className="btn btn-sm" style={{ background:'white', color:'#92400e', fontWeight:700, border:'none' }} onClick={() => setStatus('pending')}>
             Review Now
@@ -507,6 +585,7 @@ export default function Partners() {
                 <th>Rating</th>
                 <th>Total Jobs</th>
                 <th>Monthly Earnings</th>
+                <th>Source</th>
                 <th>Online</th>
                 <th>Status</th>
                 <th>Actions</th>
@@ -514,7 +593,7 @@ export default function Partners() {
             </thead>
             <tbody>
               {pageData.length === 0 ? (
-                <tr><td colSpan={8} className="table-empty">
+                <tr><td colSpan={9} className="table-empty">
                   <Search size={32} style={{ color:'var(--c-text-muted)', display:'block', margin:'0 auto 8px' }} />
                   <p>No partners match your filters.</p>
                 </td></tr>
@@ -539,6 +618,11 @@ export default function Partners() {
                   <td><StarRating rating={p.rating} size={13} /></td>
                   <td style={{ fontWeight:600, textAlign:'center' }}>{p.totalJobs}</td>
                   <td style={{ fontWeight:600 }}>{formatRupee(p.monthlyEarnings)}</td>
+                  <td>
+                    <span style={{ display:'inline-block', background:'var(--c-border-light)', borderRadius:'var(--r-full)', padding:'2px 10px', fontSize:11, fontWeight:600, whiteSpace:'nowrap' }}>
+                      {SOURCE_LABELS[p.source] ?? '—'}
+                    </span>
+                  </td>
                   <td>
                     <span style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize:12, fontWeight:600, color: p.isOnline ? 'var(--c-success)' : 'var(--c-text-muted)' }}>
                       <span style={{ width:8, height:8, borderRadius:'50%', background: p.isOnline ? 'var(--c-success)' : 'var(--c-border)', display:'inline-block' }} />
@@ -767,9 +851,9 @@ export default function Partners() {
             </div>
 
             <div className="detail-tabs">
-              {['info','documents','jobs','earnings'].map(t => (
+              {['info','documents','jobs','earnings','reviews'].map(t => (
                 <div key={t} className={`detail-tab ${tab===t?'active':''}`} onClick={() => setTab(t)}>
-                  {t.charAt(0).toUpperCase() + t.slice(1)}
+                  {t === 'reviews' ? 'Rate & Review' : t.charAt(0).toUpperCase() + t.slice(1)}
                 </div>
               ))}
             </div>
@@ -779,7 +863,7 @@ export default function Partners() {
                 <div className="mini-stats" style={{ marginBottom:20 }}>
                   <div className="mini-stat"><div className="value">{selected.totalJobs}</div><div className="label">Total Jobs</div></div>
                   <div className="mini-stat"><div className="value">★{selected.rating}</div><div className="label">Rating</div></div>
-                  <div className="mini-stat"><div className="value">₹{(selected.totalEarnings/1000).toFixed(0)}k</div><div className="label">Total Earned</div></div>
+                  <div className="mini-stat"><div className="value">{formatRupee(selected.totalEarnings)}</div><div className="label">Total Earned</div></div>
                 </div>
                 <div className="detail-grid">
                   {[
@@ -791,6 +875,14 @@ export default function Partners() {
                     { icon:<Tag size={14}/>,       label:'Profession', value:(selected.professions ?? []).join(', ') || '—' },
                     { icon:<Star size={14}/>,      label:'Services',   value:selected.services.join(', ') || '—' },
                     { icon:<ShieldCheck size={14}/>,label:'Verified',  value:selected.verifiedAt ? new Date(selected.verifiedAt).toLocaleDateString('en-IN') : 'Not Verified Yet' },
+                    // Bank rows appear only for a partner who actually provided them, so a
+                    // partner without bank details sees the grid exactly as before.
+                    ...(hasBankDetails(selected) ? [
+                      { icon:<User size={14}/>,   label:'Account Holder', value:selected.bankHolderName || '—' },
+                      { icon:<Building2 size={14}/>, label:'Bank',        value:selected.bankName || '—' },
+                      { icon:<CreditCard size={14}/>, label:'Account No.', value:selected.bankAccountNo || '—' },
+                      { icon:<Landmark size={14}/>, label:'IFSC',         value:selected.bankIfsc || '—' },
+                    ] : []),
                   ].map(item => (
                     <div key={item.label} className="detail-item">
                       <div className="label" style={{ display:'flex', alignItems:'center', gap:4 }}>{item.icon} {item.label}</div>
@@ -851,6 +943,94 @@ export default function Partners() {
                 <div style={{ background:'var(--c-border-light)', borderRadius:'var(--r-md)', padding:16, textAlign:'center', color:'var(--c-text-secondary)', fontSize:14 }}>
                   Detailed payout history available in the Earnings section.
                 </div>
+              </div>
+            )}
+
+            {tab === 'reviews' && (
+              <div>
+                {reviewsLoading ? (
+                  <div style={{ textAlign:'center', padding:'24px 0', color:'var(--c-text-muted)', fontSize:14 }}>Loading reviews…</div>
+                ) : (
+                  <>
+                    {/* Summary — average, count and the 5→1 distribution, as the app shows it */}
+                    <div style={{ display:'flex', gap:20, alignItems:'center', background:'var(--c-border-light)', borderRadius:'var(--r-md)', padding:16, marginBottom:20 }}>
+                      <div style={{ textAlign:'center', minWidth:90 }}>
+                        <div style={{ fontSize:30, fontWeight:800, lineHeight:1.1 }}>
+                          {(reviewStats?.average ?? 0).toFixed(1)}
+                        </div>
+                        <StarRating rating={reviewStats?.average ?? 0} size={13} />
+                        <div style={{ fontSize:12, color:'var(--c-text-muted)', marginTop:4 }}>
+                          {reviewStats?.total ?? 0} review{(reviewStats?.total ?? 0) === 1 ? '' : 's'}
+                        </div>
+                      </div>
+                      <div style={{ flex:1, display:'flex', flexDirection:'column', gap:4 }}>
+                        {[5,4,3,2,1].map(star => {
+                          const count = reviewStats?.distribution?.[star] ?? 0;
+                          const total = reviewStats?.total ?? 0;
+                          const pct = total > 0 ? (count / total) * 100 : 0;
+                          return (
+                            <div key={star} style={{ display:'flex', alignItems:'center', gap:8, fontSize:12 }}>
+                              <span style={{ width:34, color:'var(--c-text-secondary)' }}>{star} ★</span>
+                              <div style={{ flex:1, height:6, background:'var(--c-bg-card)', borderRadius:3, overflow:'hidden' }}>
+                                <div style={{ width:`${pct}%`, height:'100%', background:'#F5A623' }} />
+                              </div>
+                              <span style={{ width:22, textAlign:'right', color:'var(--c-text-muted)' }}>{count}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* One card per review: customer, date · booking, service, stars, comment */}
+                    {reviews.length === 0 ? (
+                      <div style={{ background:'var(--c-border-light)', borderRadius:'var(--r-md)', padding:24, textAlign:'center', color:'var(--c-text-secondary)', fontSize:14 }}>
+                        No reviews yet for this partner.
+                      </div>
+                    ) : (
+                      <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+                        {reviews.map(r => {
+                          const customerName = r.user?.name ?? 'Customer';
+                          const orderId = r.booking?.bookingCode ?? (r.bookingId ? `#${r.bookingId}` : '');
+                          const date = r.createdAt
+                            ? new Date(r.createdAt).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' })
+                            : '';
+                          return (
+                            <div key={r.id} style={{ border:'1px solid var(--c-border-light)', borderRadius:'var(--r-md)', padding:14 }}>
+                              <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                                <div style={{ width:34, height:34, borderRadius:'50%', background:'var(--c-border-light)', display:'flex', alignItems:'center', justifyContent:'center', fontWeight:700, fontSize:14 }}>
+                                  {customerName.charAt(0).toUpperCase()}
+                                </div>
+                                <div style={{ flex:1 }}>
+                                  <div style={{ fontSize:13, fontWeight:600 }}>{customerName}</div>
+                                  <div style={{ fontSize:11, color:'var(--c-text-muted)' }}>
+                                    {date}{orderId ? `  ·  ${orderId}` : ''}
+                                  </div>
+                                </div>
+                                <div style={{ display:'flex', alignItems:'center', gap:4, background:'#FFF6E5', color:'#B8761A', borderRadius:'var(--r-sm)', padding:'3px 8px', fontSize:12, fontWeight:700 }}>
+                                  <Star size={12} fill="#F5A623" color="#F5A623" />{Number(r.rating).toFixed(1)}
+                                </div>
+                              </div>
+
+                              {!!r.service?.name && (
+                                <div style={{ display:'inline-block', marginTop:10, background:'var(--c-border-light)', borderRadius:'var(--r-sm)', padding:'3px 8px', fontSize:11, fontWeight:600, color:'var(--c-text-secondary)' }}>
+                                  {r.service.name}
+                                </div>
+                              )}
+
+                              <div style={{ marginTop:8 }}>
+                                <StarRating rating={Number(r.rating) || 0} size={13} />
+                              </div>
+
+                              {!!r.comment && (
+                                <div style={{ marginTop:8, fontSize:13, color:'var(--c-text-secondary)', lineHeight:1.5 }}>{r.comment}</div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             )}
           </div>

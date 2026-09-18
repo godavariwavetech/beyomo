@@ -42,7 +42,12 @@ export const fetchPartnerBookings = createAsyncThunk(
   'partner/fetchBookings',
   async (params = {}, {rejectWithValue}) => {
     try {
-      const response = await api.get(endpoints.PARTNER_BOOKINGS, {params});
+      // The Jobs screen slices this one response into Available/Upcoming/Completed on the
+      // client, so it needs the partner's whole history, not the API's default first page.
+      // With the default 10 - ordered by scheduledAt DESC - a partner whose ten most recent
+      // jobs are all completed saw "No upcoming jobs found" while still holding confirmed
+      // work. An explicit param from a caller still wins.
+      const response = await api.get(endpoints.PARTNER_BOOKINGS, {params: {limit: 200, ...params}});
       return response.data.data;
     } catch (error) {
       return rejectWithValue(error.response?.data?.message ?? 'Failed to load bookings.');

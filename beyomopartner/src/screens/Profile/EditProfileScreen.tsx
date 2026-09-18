@@ -74,6 +74,25 @@ const Field = ({
   </View>
 );
 
+// Same rules the admin dashboard validates with, so a value accepted there is accepted
+// here. IFSC is RBI's fixed shape (4 letters, a reserved 0, then 6 alphanumerics) and
+// Indian account numbers are digits only, 9-18 long. Both stay optional - a partner who
+// has not added bank details is never blocked from saving the rest of their profile.
+const IFSC_RE = /^[A-Z]{4}0[A-Z0-9]{6}$/;
+const ACCOUNT_RE = /^\d{9,18}$/;
+
+const validateBankDetails = (accountNo: string, ifsc: string): string | null => {
+  const acc = (accountNo ?? '').trim();
+  const code = (ifsc ?? '').trim().toUpperCase();
+  if (acc && !ACCOUNT_RE.test(acc)) {
+    return 'Account number must be 9-18 digits, numbers only.';
+  }
+  if (code && !IFSC_RE.test(code)) {
+    return 'IFSC must be 11 characters, e.g. SBIN0001234 (4 letters, 0, then 6 letters/digits).';
+  }
+  return null;
+};
+
 const EditProfileScreen = ({navigation}: {navigation: any}) => {
   const dispatch = useDispatch<AppDispatch>();
   const profile = useSelector((s: RootState) => s.Partner?.profile as any);
@@ -85,6 +104,12 @@ const EditProfileScreen = ({navigation}: {navigation: any}) => {
   const [bio, setBio] = useState(profile?.bio ?? '');
   const [city, setCity] = useState(profile?.locationCity ?? profile?.city ?? '');
   const [state, setState] = useState(profile?.locationState ?? profile?.state ?? '');
+  // Bank details come off the same partner profile record the admin dashboard shows -
+  // nothing is stored separately for the app.
+  const [bankHolderName, setBankHolderName] = useState(profile?.bankHolderName ?? '');
+  const [bankName, setBankName] = useState(profile?.bankName ?? '');
+  const [bankAccountNo, setBankAccountNo] = useState(profile?.bankAccountNo ?? '');
+  const [bankIfsc, setBankIfsc] = useState(profile?.bankIfsc ?? '');
   const [loading, setLoading] = useState(false);
   const {alertConfig, showAlert, hideAlert} = useAppAlert();
 
@@ -114,6 +139,11 @@ const EditProfileScreen = ({navigation}: {navigation: any}) => {
       showAlert('Required', 'Name cannot be empty.');
       return;
     }
+    const bankError = validateBankDetails(bankAccountNo, bankIfsc);
+    if (bankError) {
+      showAlert('Check bank details', bankError);
+      return;
+    }
     setLoading(true);
     try {
       const result = await dispatch(
@@ -127,6 +157,12 @@ const EditProfileScreen = ({navigation}: {navigation: any}) => {
             city: city.trim() || undefined,
             state: state.trim() || undefined,
           },
+          // Sent unconditionally (unlike the optional fields above) so clearing a bank
+          // field actually clears it rather than silently keeping the old value.
+          bankHolderName: bankHolderName.trim(),
+          bankName: bankName.trim(),
+          bankAccountNo: bankAccountNo.trim(),
+          bankIfsc: bankIfsc.trim().toUpperCase(),
         }),
       );
       if (updatePartnerProfile.fulfilled.match(result)) {
@@ -211,6 +247,43 @@ const EditProfileScreen = ({navigation}: {navigation: any}) => {
               placeholder="e.g. Telangana"
               editable={false}
               hint="Contact support to change your city or state."
+            />
+
+            <View style={styles.sectionDivider} />
+            <Text style={styles.sectionTitle}>Bank Details</Text>
+
+            {/* Same Field component as the rest of the form, so saved values read like
+                Full Name / Email do and empty ones fall back to the placeholder as the
+                add state. Admin settles earnings to this account. */}
+            <Field
+              icon="person-circle-outline"
+              label="Account Holder"
+              value={bankHolderName}
+              onChangeText={setBankHolderName}
+              placeholder="Name as per bank records"
+            />
+            <Field
+              icon="business-outline"
+              label="Bank"
+              value={bankName}
+              onChangeText={setBankName}
+              placeholder="e.g. State Bank of India"
+            />
+            <Field
+              icon="card-outline"
+              label="Account Number"
+              value={bankAccountNo}
+              onChangeText={setBankAccountNo}
+              placeholder="9-18 digits"
+              keyboardType="number-pad"
+            />
+            <Field
+              icon="key-outline"
+              label="IFSC Code"
+              value={bankIfsc}
+              onChangeText={(v: string) => setBankIfsc(v.toUpperCase())}
+              placeholder="e.g. SBIN0001234"
+              hint="Used by admin to settle your earnings."
             />
           </View>
 

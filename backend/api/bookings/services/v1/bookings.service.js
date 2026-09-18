@@ -13,6 +13,7 @@ const Payment = require("../../../payments/models/payment.model");
 const City = require("../../../cities/models/city.model");
 const AppError = require("../../../../utils/errorHandlers/appError");
 const { sendPushNotification } = require("../../../../utils/firebaseUtils");
+const { isPartnerOnline } = require("../../../../utils/partnerPresence");
 const { haversineKm } = require("../../../../utils/geoUtils");
 const { resolveRatesForBooking, resolveRatesForMultiPackageBooking } = require("../../../../utils/revenueSplit");
 const { cityPriceResolver } = require("../../../services/services/v1/cityPricing");
@@ -352,11 +353,15 @@ const persistBooking = async (prepared, overrides = {}) => {
   });
 
   if (!partnerId && booking.addressCity) {
+    // Only partners who are actually online are alerted to a new job. isOnline is the
+    // toggle they set in the app; isPartnerOnline additionally requires a recent
+    // heartbeat, so a partner whose app was force-quit while "online" is not paged for
+    // work they cannot see or accept.
     const cityPartners = await Partner.findAll({
-      where: { status: "approved", locationCity: booking.addressCity },
-      attributes: ["id", "fcmToken"],
+      where: { status: "approved", locationCity: booking.addressCity, isOnline: true },
+      attributes: ["id", "fcmToken", "isOnline", "lastSeenAt"],
     });
-    const tokens = cityPartners.map(p => p.fcmToken).filter(Boolean);
+    const tokens = cityPartners.filter(isPartnerOnline).map(p => p.fcmToken).filter(Boolean);
     if (tokens.length > 0) {
       await sendPushNotification(
         tokens,

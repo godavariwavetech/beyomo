@@ -136,6 +136,11 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
       } else {
         stopHeartbeat();
       }
+      // Eligibility for new jobs changes the instant availability does, so re-read the
+      // count here. Without this it is only refreshed on mount and on focus, which left
+      // the "New Booking" badge showing the jobs from before going offline - the card
+      // still advertised 7 available while the card above it read "You are Offline".
+      fetchAvailableCount();
     } catch (error) {
       setIsOnline(!next); // revert - the server never recorded it
       stopHeartbeat();
