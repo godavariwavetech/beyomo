@@ -6,8 +6,11 @@ export const fetchNotifications = createAsyncThunk(
   'notifications/fetchNotifications',
   async (_, {rejectWithValue}) => {
     try {
+      // Return the whole body: it carries BOTH the rows (data) and unreadCount, and the
+      // reducer needs both. Returning response.data.data handed back a bare array, whose
+      // .unreadCount/.notifications are undefined - which is why the bell list stayed empty.
       const response = await api.get(endpoints.NOTIFICATIONS);
-      return response.data.data;
+      return response.data;
     } catch (error) {
       return rejectWithValue(error.response?.data?.message ?? 'Failed to load notifications.');
     }
@@ -62,7 +65,7 @@ const notificationsSlice = createSlice({
       })
       .addCase(fetchNotifications.fulfilled, (state, action) => {
         state.loading = false;
-        state.list = action.payload?.notifications ?? [];
+        state.list = action.payload?.data ?? [];
         state.unreadCount = action.payload?.unreadCount ?? 0;
       })
       .addCase(fetchNotifications.rejected, (state, action) => {
