@@ -7,6 +7,21 @@ const CH_BOOKING_UPD = 'beyomo_partner_booking_update';
 const CH_PAYMENT     = 'beyomo_partner_payment';
 const CH_DEFAULT     = 'beyomo_partner_default';
 
+// res/raw/beyomo_notification.mp3. CH_NEW_BOOKING is the ONLY channel that carries it —
+// on Android 8+ the channel's sound wins over anything set per-notification, so a second
+// channel configured with this sound is the same thing as "custom sound for everything".
+const CUSTOM_SOUND = 'beyomo_notification';
+
+// The only notifications that get the custom sound: a new job offered to the partner
+// ("New Job Available") and one assigned to them by admin ("New Booking Assigned").
+// Everything else — booking updates, cancellations, reschedules, payments and account
+// messages — rings with the device's default notification sound.
+//
+// Kept as one helper because the channel, the sound and the accent colour below all have
+// to agree on what counts as an order; three separate type tests drifted apart before.
+const ORDER_TYPES = ['new_booking', 'available_booking'];
+const isOrderNotification = (data = {}) => ORDER_TYPES.includes(data?.type ?? '');
+
 export const createNotificationChannels = async () => {
   await Promise.allSettled([
     notifee.deleteChannel(CH_NEW_BOOKING),
@@ -18,13 +33,15 @@ export const createNotificationChannels = async () => {
   const channels = [
     {
       id: CH_NEW_BOOKING, name: 'New Booking Requests',
-      importance: AndroidImportance.HIGH, sound: 'beyomo_notification',
+      importance: AndroidImportance.HIGH, sound: CUSTOM_SOUND,
       vibrationPattern: [500, 200, 500, 200, 500, 200, 500, 200, 500, 200],
       visibility: AndroidVisibility.PUBLIC, lights: true, lightColor: '#FDD77A',
     },
     {
+      // Updates to a job the partner already has — cancelled, rescheduled, services
+      // changed. Default system sound: only a new order is worth the custom alert.
       id: CH_BOOKING_UPD, name: 'Booking Updates',
-      importance: AndroidImportance.HIGH, sound: 'beyomo_notification',
+      importance: AndroidImportance.HIGH, sound: 'default',
       vibrationPattern: [300, 150, 300, 150],
       visibility: AndroidVisibility.PUBLIC, lights: true, lightColor: '#065E2C',
     },
@@ -80,26 +97,23 @@ export const setupForegroundHandler = () => {
 
 const pickChannel = (data = {}) => {
   const type = data?.type ?? '';
-  if (type === 'new_booking')                                  return CH_NEW_BOOKING;
+  // Order first: 'available_booking' also contains 'booking', so testing the generic
+  // booking branch before this one would send every new job to the updates channel.
+  if (isOrderNotification(data))                              return CH_NEW_BOOKING;
   if (type.includes('payment') || type.includes('earning'))   return CH_PAYMENT;
   if (type.includes('booking') || type.includes('service'))   return CH_BOOKING_UPD;
   return CH_DEFAULT;
 };
 
-const pickSound = (data = {}) => {
-  // Custom sound plays only for order (booking) notifications; everything
-  // else uses the device's default notification sound.
-  const type = data?.type ?? '';
-  if (type === 'new_booking') return 'beyomo_notification';
-  if (type.includes('booking') || type.includes('service')) return 'beyomo_notification';
-  return 'default';
-};
+// Android 8+ ignores this in favour of the channel's own sound, so the channel table
+// above is what actually decides. It still matters on Android 7 and on iOS.
+const pickSound = (data = {}) => (isOrderNotification(data) ? CUSTOM_SOUND : 'default');
 
 const displayNotification = async (notification, data = {}) => {
   try {
     const channelId = pickChannel(data);
     const sound = pickSound(data);
-    const isNewBooking = (data?.type ?? '') === 'new_booking';
+    const isNewBooking = isOrderNotification(data);
     console.log(`[NOTIF] displayNotification called — channel=${channelId} sound=${sound} title="${notification.title}" body="${notification.body}"`);
 
     await notifee.displayNotification({

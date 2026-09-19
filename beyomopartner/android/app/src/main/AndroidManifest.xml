@@ -23,11 +23,17 @@
 
       <!-- Firebase fallback channel — used when a background/killed-app FCM message
            doesn't carry android.notification.channel_id. Without this, Firebase
-           creates its own "Miscellaneous" channel with the default system sound,
-           and our custom sound never plays for background notifications. -->
+           creates its own "Miscellaneous" channel.
+
+           This MUST stay the plain default channel. Pointing it at the new-booking
+           channel made every background notification — cancellations, reschedules,
+           account messages, broadcasts — play the new-order alert sound, because the
+           channel decides the sound on Android 8+ and this is the channel they all
+           landed on. New-order pushes ask for the custom channel explicitly by
+           sending android.notification.channel_id, so they are unaffected. -->
       <meta-data
         android:name="com.google.firebase.messaging.default_notification_channel_id"
-        android:value="beyomo_partner_new_booking"
+        android:value="beyomo_partner_default"
         tools:replace="android:value"/>
 
       <activity
