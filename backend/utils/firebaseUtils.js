@@ -164,4 +164,14 @@ const sendSinglePushNotification = async (token, title, body, data = {}, channel
   return sendPushNotification([token], title, body, data, channelId);
 };
 
-module.exports = { sendPushNotification, sendSinglePushNotification };
+// The partner app's one custom-sound channel (see its NotificationsService.js). Pass it
+// as channelId ONLY for a new job offered to or assigned to a partner — the app's manifest
+// falls everything else back to the plain default channel, which is what keeps the custom
+// alert sound exclusive to orders. Anything sent without a channelId rings the default.
+const PARTNER_NEW_BOOKING_CHANNEL = "beyomo_partner_new_booking";
+
+module.exports = {
+  sendPushNotification,
+  sendSinglePushNotification,
+  PARTNER_NEW_BOOKING_CHANNEL,
+};

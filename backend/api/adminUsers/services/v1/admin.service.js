@@ -23,7 +23,7 @@ const Review = require("../../../reviews/models/review.model");
 const Notification = require("../../../notifications/models/notification.model");
 const AppFeedback = require("../../../feedback/models/feedback.model");
 const { signToken } = require("../../../../utils/jwtUtils");
-const { sendPushNotification } = require("../../../../utils/firebaseUtils");
+const { sendPushNotification, PARTNER_NEW_BOOKING_CHANNEL } = require("../../../../utils/firebaseUtils");
 const { haversineKm } = require("../../../../utils/geoUtils");
 const {
   resolveRatesForBooking,
@@ -674,7 +674,8 @@ const createBookingForCustomer = async (adminId, data) => {
         tokens,
         "New Job Available",
         `New booking for ${primaryServiceName} near you. Open the app to accept.`,
-        { bookingId: String(booking.id), type: "available_booking" }
+        { bookingId: String(booking.id), type: "available_booking" },
+        PARTNER_NEW_BOOKING_CHANNEL
       ).catch(() => {});
     }
   }
@@ -813,8 +814,13 @@ const assignPartner = async (bookingId, partnerId) => {
   // Notify partner about the new assignment
   const msg = `You have been assigned to booking ${booking.bookingCode}. Scheduled: ${new Date(booking.scheduledAt).toLocaleString("en-IN")}.`;
   if (partner.fcmToken) {
+    // type "new_booking", not the generic "booking": this IS a new job for the partner,
+    // and the app routes the custom alert sound (and the tap-through to the job) off
+    // that distinction. The stored Notification row below keeps type "booking", which
+    // is what the in-app list groups on.
     await sendPushNotification([partner.fcmToken], "New Booking Assigned", msg,
-      { bookingId: String(booking.id), type: "booking" }).catch(() => {});
+      { bookingId: String(booking.id), type: "new_booking" },
+      PARTNER_NEW_BOOKING_CHANNEL).catch(() => {});
   }
   await Notification.create({
     partnerId: partner.id,

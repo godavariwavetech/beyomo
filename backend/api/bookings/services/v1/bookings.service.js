@@ -12,7 +12,7 @@ const Notification = require("../../../notifications/models/notification.model")
 const Payment = require("../../../payments/models/payment.model");
 const City = require("../../../cities/models/city.model");
 const AppError = require("../../../../utils/errorHandlers/appError");
-const { sendPushNotification } = require("../../../../utils/firebaseUtils");
+const { sendPushNotification, PARTNER_NEW_BOOKING_CHANNEL } = require("../../../../utils/firebaseUtils");
 const { isPartnerOnline } = require("../../../../utils/partnerPresence");
 const { haversineKm } = require("../../../../utils/geoUtils");
 const { resolveRatesForBooking, resolveRatesForMultiPackageBooking } = require("../../../../utils/revenueSplit");
@@ -367,7 +367,8 @@ const persistBooking = async (prepared, overrides = {}) => {
         tokens,
         "New Job Available",
         `New booking for ${primaryServiceName} near you. Open the app to accept.`,
-        { bookingId: String(booking.id), type: "available_booking" }
+        { bookingId: String(booking.id), type: "available_booking" },
+        PARTNER_NEW_BOOKING_CHANNEL
       );
     }
   }
