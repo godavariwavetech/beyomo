@@ -1,6 +1,7 @@
-import React from 'react';
+import React, {useContext} from 'react';
 import {View, Text, TouchableOpacity, StyleSheet, Dimensions} from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import {BottomTabBarHeightContext} from '@react-navigation/bottom-tabs';
 import {useSelector} from 'react-redux';
 import {fonts} from '../../config/theme';
 import type {RootState} from '../../redux/store';
@@ -15,6 +16,14 @@ const sw = (px: number) => (px / 393) * width;
 // so it stacks below whatever else a screen has at the bottom instead of covering it.
 export default function CartBar({navigation}: {navigation: any}) {
   const insets = useSafeAreaInsets();
+  // On a tab screen the tab bar sits below this and already pads past the Android
+  // navigation bar (CustomTabBar does Math.max(insets.bottom, …)), so adding the inset
+  // again would just open a gap. On a plain stack screen — the packages/combos screens —
+  // nothing is below us, so the bar (and the View Cart button with it) ran under the
+  // three-button navigation bar and couldn't be tapped. This context is undefined
+  // outside a tab navigator, which is exactly the case that needs the inset.
+  const tabBarHeight = useContext(BottomTabBarHeightContext);
+  const bottomInset = tabBarHeight == null ? insets.bottom : 0;
   const cartItems = useSelector((state: RootState) => (state as any).Cart?.items ?? []);
   const cartServices = useSelector((state: RootState) => (state as any).Cart?.services ?? []);
   if (cartItems.length === 0 && cartServices.length === 0) return null;
@@ -27,7 +36,7 @@ export default function CartBar({navigation}: {navigation: any}) {
     cartServices.reduce((sum: number, s: any) => sum + (s.isFree ? 0 : s.price * s.qty), 0);
 
   return (
-    <View style={[styles.cartBar, {paddingBottom: sw(6)}]}>
+    <View style={[styles.cartBar, {paddingBottom: bottomInset + sw(6)}]}>
       <View>
         <Text style={styles.cartPrice}>₹{formatAmount(totalPrice)}</Text>
         <View style={styles.cartSubRow}>

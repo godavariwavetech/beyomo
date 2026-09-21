@@ -1,4 +1,4 @@
-import React, {useState, useCallback} from 'react';
+import React, {useState, useCallback, useEffect} from 'react';
 import {
   View, Text, Image, ScrollView, TouchableOpacity, StyleSheet,
   Dimensions, StatusBar, Modal, TextInput, FlatList,
@@ -46,6 +46,27 @@ const JobChecklistScreen = ({navigation, route}: any) => {
   const [otp, setOtp] = useState('');
   const [otpError, setOtpError] = useState('');
   const [verifyingOtp, setVerifyingOtp] = useState(false);
+
+  // The gate on "Start Service". Read off the booking rather than kept as its own
+  // flag, so a job already verified in an earlier session comes back in past this
+  // step. A job with no id is a local/preview one that was never persisted — there's
+  // nothing to verify against, so it keeps its old straight-to-start behaviour.
+  const needsOtp = !!job?.id && !job?.otpVerifiedAt;
+
+  const openOtpModal = () => {
+    setOtp('');
+    setOtpError('');
+    setShowOtpModal(true);
+  };
+
+  // Arriving from "Reached to Customer Location" on the job details screen — go
+  // straight to the OTP prompt, the next step in the flow. Skipped when this booking
+  // is already verified (the partner backed out and came in again) so the code isn't
+  // asked for twice. Entry only: re-running this would trap the partner in the sheet.
+  useEffect(() => {
+    if (route?.params?.promptOtp && needsOtp) openOtpModal();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Add Service modal — either pick from the catalog, or key in a free-form add-on charge
   const [showModal, setShowModal] = useState(false);
@@ -149,18 +170,7 @@ const JobChecklistScreen = ({navigation, route}: any) => {
     ]);
   };
 
-  // Recalculate total from local (visible, non-removed) services
-  const recalcTotal = (svcs: any[]) => {
-    const visible = svcs.filter(s => !s._removed);
-    const base = visible.reduce((s, i) => s + (parseFloat(i.price) || 0) * (i.qty || 1), 0);
-    const coupon = parseFloat(job?.couponDiscountAmount || 0);
-    const taxable = base - coupon;
-    const tax = taxable * 0.05; // GST — backend recomputes the authoritative weighted rate on submit
-    return parseFloat((taxable + tax).toFixed(2));
-  };
-
   const visibleServices = services.filter(s => !s._removed);
-  const displayTotal = recalcTotal(services);
 
   // Group items that were part of a package/combo into a single card instead of
   // listing each of their services as its own line — matching the customer app/website.
@@ -183,6 +193,18 @@ const JobChecklistScreen = ({navigation, route}: any) => {
           items: packageItems,
         }]
       : [];
+
+  // Total, on the same basis as the rows listed above it: a package is billed at its own
+  // price (₹999 for "Any 3 @ ₹999"), not the sum of its services' à-la-carte prices. This
+  // used to sum every visible service, so a package booking's services were counted at
+  // their individual prices — NLR2600041 showed ₹2,056 (360+899+699, +5%) against a real
+  // total of ₹1,049, while the package card right above it correctly read ₹999.
+  const packagesTotal = packageGroups.reduce((sum, g) => sum + (Number(g.price) || 0), 0);
+  const coupon = parseFloat(job?.couponDiscountAmount || 0);
+  const taxable = packagesTotal + otherVisibleTotal - coupon;
+  const tax = taxable * 0.05; // GST — backend recomputes the authoritative weighted rate on submit
+  const displayTotal = parseFloat((taxable + tax).toFixed(2));
+
   // A package already on the booking can't be added again (the backend rejects it) —
   // filter it out of the picker up front instead of letting the partner hit that error.
   const existingPackageIds = new Set<number>([
@@ -313,24 +335,10 @@ const JobChecklistScreen = ({navigation, route}: any) => {
     ]);
   };
 
-  // Swiping "Start Service" no longer starts the job on its own — it asks for the
-  // customer's 4-digit code first. A job with no id is a local/preview one that was
-  // never persisted, so there's nothing to verify against.
-  const handleStartService = async () => {
-    if (!job?.id) {
-      navigation.navigate('ActiveJob', {job: {...job, services: visibleServices, totalAmount}});
-      return;
-    }
-    setOtp('');
-    setOtpError('');
-    setShowOtpModal(true);
-  };
-
-  // The booking only actually moves to "in_progress" here — once the partner has
-  // reviewed/confirmed the checklist AND entered the customer's OTP, not at
-  // "Arrived at Location". The backend re-checks verification on the status call, so
-  // the two requests can't be reordered or the first one skipped.
-  const handleVerifyAndStart = async () => {
+  // Step 2 of "reached → OTP → start": the sheet now only *verifies* the customer's
+  // code, it no longer starts the job. Starting is a separate deliberate swipe
+  // afterwards, so the partner gets a last look at the checklist in between.
+  const handleVerifyOtp = async () => {
     if (!/^\d{4}$/.test(otp)) {
       setOtpError('Enter the 4-digit code from the customer.');
       return;
@@ -338,23 +346,41 @@ const JobChecklistScreen = ({navigation, route}: any) => {
     setVerifyingOtp(true);
     setOtpError('');
     try {
-      await api.post(endpoints.PARTNER_VERIFY_OTP(String(job.id)), {otp});
+      const res = await api.post(endpoints.PARTNER_VERIFY_OTP(String(job.id)), {otp});
+      // Mirror the server's own timestamp so a later reload of this booking agrees
+      // with what the screen is showing. Verification is idempotent server-side, so
+      // a retry after a dropped response still lands here rather than failing.
+      const verifiedAt = res.data?.data?.otpVerifiedAt ?? new Date().toISOString();
+      setJob((prev: any) => ({...prev, otpVerifiedAt: verifiedAt}));
+      setShowOtpModal(false);
+      setOtp('');
     } catch (e: any) {
       // Wrong code, or too many tries — keep the sheet open so it can be retyped.
       setOtpError(e.response?.data?.message ?? 'Could not verify the OTP. Please try again.');
-      setVerifyingOtp(false);
+    }
+    setVerifyingOtp(false);
+  };
+
+  // Step 3: the booking only ever moves to "in_progress" here, and only after the OTP
+  // is verified. The backend enforces the same rule on this call (403 without
+  // otpVerifiedAt), so the steps can't be reordered or the first one skipped — if
+  // verification is somehow missing, reopen the sheet rather than fire a doomed
+  // request. A job with no id is a local/preview one that was never persisted, so
+  // there's nothing to verify or start against.
+  const handleStartService = async () => {
+    if (!job?.id) {
+      navigation.navigate('ActiveJob', {job: {...job, services: visibleServices, totalAmount}});
       return;
     }
+    if (needsOtp) { openOtpModal(); return; }
 
     setStarting(true);
     try {
       await api.patch(endpoints.PARTNER_BOOKING_STATUS(String(job.id)), {status: 'in_progress'});
-      setShowOtpModal(false);
       navigation.navigate('ActiveJob', {job: {...job, services: visibleServices, totalAmount, status: 'in_progress'}});
     } catch (e: any) {
-      setOtpError(e.response?.data?.message ?? 'Failed to start service. Please try again.');
+      showAlert('Error', e.response?.data?.message ?? 'Failed to start service. Please try again.');
     }
-    setVerifyingOtp(false);
     setStarting(false);
   };
 
@@ -610,6 +636,14 @@ const JobChecklistScreen = ({navigation, route}: any) => {
               <Text style={styles.btnText}>Save Changes</Text></>
             )}
           </TouchableOpacity>
+        ) : needsOtp ? (
+          // "Start Service" isn't offered until the customer's code is verified. This
+          // swipe reopens that step instead of sitting there as a dead disabled
+          // button — the partner who dismissed the sheet needs a way back into it.
+          <SwipeToConfirm
+            label="Verify Customer OTP"
+            onConfirm={openOtpModal}
+          />
         ) : (
           <SwipeToConfirm
             label="Start Service"
@@ -621,8 +655,9 @@ const JobChecklistScreen = ({navigation, route}: any) => {
       </View>
 
       {/* Start-Service OTP Modal — the customer reads the code off their booking in
-          the Beyomo app. No dismiss-on-backdrop here: the swipe is already done, so a
-          stray tap shouldn't silently drop the partner back to the checklist. */}
+          the Beyomo app. Verification only: passing it unlocks the "Start Service"
+          swipe below rather than starting the job outright. No dismiss-on-backdrop
+          here, so a stray tap can't silently drop the partner out of the step. */}
       <Modal visible={showOtpModal} animationType="slide" transparent onRequestClose={() => setShowOtpModal(false)}>
         <View style={styles.overlay} />
         <View style={[styles.sheet, {paddingBottom: insets.bottom + sw(16)}]}>
@@ -649,12 +684,12 @@ const JobChecklistScreen = ({navigation, route}: any) => {
 
           <TouchableOpacity
             style={[styles.btn, styles.otpVerifyBtn, (verifyingOtp || otp.length !== 4) && {opacity: 0.6}]}
-            onPress={handleVerifyAndStart}
+            onPress={handleVerifyOtp}
             disabled={verifyingOtp || otp.length !== 4}
             activeOpacity={0.88}>
             {verifyingOtp ? <ActivityIndicator color="#FFFFFF" /> : (
-              <><Ionicons name="play-circle-outline" size={sw(18)} color="#FFFFFF" />
-              <Text style={styles.btnText}>Verify & Start Service</Text></>
+              <><Ionicons name="checkmark-circle-outline" size={sw(18)} color="#FFFFFF" />
+              <Text style={styles.btnText}>Verify OTP</Text></>
             )}
           </TouchableOpacity>
 

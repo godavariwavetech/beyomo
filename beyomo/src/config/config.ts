@@ -24,8 +24,8 @@ const DEV_POINT_AT_LIVE = true;//live
 //const DEV_POINT_AT_LIVE = false;//local
 
 export const BASE_URL =
-  __DEV__ && !DEV_POINT_AT_LIVE ? LOCAL_BASE_URL : LIVE_BASE_URL;
-
+ __DEV__ && !DEV_POINT_AT_LIVE ? LOCAL_BASE_URL : LIVE_BASE_URL;
+//const BASE_URL='http://192.168.1.16:3000';
 export const baseURL = BASE_URL;
 
 export const endpoints = {

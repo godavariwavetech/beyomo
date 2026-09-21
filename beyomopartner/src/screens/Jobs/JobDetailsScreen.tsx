@@ -436,12 +436,15 @@ const JobDetailsScreen = ({navigation, route}: any) => {
           </View>
         )}
 
-        {/* ── Primary CTA — services can be edited as soon as the booking is confirmed,
-             no need to wait for arrival first ── */}
+        {/* ── Primary CTA — the partner confirms they're at the customer's door, which
+             opens the checklist with the start-service OTP prompt already showing.
+             Verifying that code is what unlocks "Start Service" over there, so the
+             order is fixed: reached → OTP → start. Services stay editable from the
+             checklist as soon as the booking is confirmed, as before. ── */}
         {rawStatus === 'confirmed' && (
           <SwipeToConfirm
-            label="Continue to Checklist"
-            onConfirm={() => navigation.navigate('JobChecklist', {job})}
+            label="Reached to Customer Location"
+            onConfirm={() => navigation.navigate('JobChecklist', {job, promptOtp: true})}
           />
         )}
 
