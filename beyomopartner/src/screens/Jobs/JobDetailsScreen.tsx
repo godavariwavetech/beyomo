@@ -189,18 +189,24 @@ const JobDetailsScreen = ({navigation, route}: any) => {
 
   // Marking arrival only records arrivedAt + notifies the customer — independent of
   // reaching the checklist, which is now reachable as soon as the booking is confirmed.
-  const handleArrived = () =>
-    showAlert('Arrived at Location', "Confirm you have arrived at the customer's location.", [
-      {text: 'Not Yet', style: 'cancel'},
-      {
-        text: 'Confirm Arrival',
-        onPress: async () => {
-          setArriving(true);
-          await dispatch(markPartnerArrived(job.id));
-          setArriving(false);
-        },
-      },
-    ]);
+  //
+  // Commented out, not deleted, alongside the "Mark as Arrived" action row it opens
+  // (see the ── Actions ── card below). Uncomment both together to bring the arrival
+  // confirmation back; the `arriving` state and the markPartnerArrived import are
+  // intentionally left in place so this needs no other edits.
+  //
+  // const handleArrived = () =>
+  //   showAlert('Arrived at Location', "Confirm you have arrived at the customer's location.", [
+  //     {text: 'Not Yet', style: 'cancel'},
+  //     {
+  //       text: 'Confirm Arrival',
+  //       onPress: async () => {
+  //         setArriving(true);
+  //         await dispatch(markPartnerArrived(job.id));
+  //         setArriving(false);
+  //       },
+  //     },
+  //   ]);
 
   return (
     <View style={[styles.root, {paddingBottom: insets.bottom}]}>
@@ -411,6 +417,12 @@ const JobDetailsScreen = ({navigation, route}: any) => {
               <Ionicons name="chevron-forward" size={sw(18)} color="#CCCCCC" />
             </TouchableOpacity>
 
+            {/* ── "Mark as Arrived" action row — commented out, not deleted, so it can
+                 be restored by uncommenting this block. Arrival is no longer surfaced
+                 here; the partner now confirms they're on site with the "Reached to
+                 Customer Location" swipe below, which leads into OTP verification.
+                 `handleArrived` and its `arriving` state are kept in place too.
+
             {rawStatus === 'confirmed' && (
               <>
                 <View style={styles.actionDivider} />
@@ -433,6 +445,7 @@ const JobDetailsScreen = ({navigation, route}: any) => {
                 </TouchableOpacity>
               </>
             )}
+            ── */}
           </View>
         )}
 

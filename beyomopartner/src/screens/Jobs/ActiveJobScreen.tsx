@@ -13,9 +13,11 @@ import {
   TextInput,
   FlatList,
   ActivityIndicator,
+  BackHandler,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import {useFocusEffect} from '@react-navigation/native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {fonts} from '../../config/theme';
 import SwipeToConfirm from '../../components/SwipeToConfirm/SwipeToConfirm';
@@ -225,6 +227,22 @@ const ActiveJobScreen = ({navigation, route}: any) => {
     navigation.navigate('Main');
   };
 
+  // Both in-progress and completed, this screen means the job has already been
+  // started — going back to "Start Service" or the earlier order screens doesn't make
+  // sense from here, so the Android hardware back button goes straight Home instead of
+  // the default pop.
+  useFocusEffect(
+    useCallback(() => {
+      const onBackPress = () => {
+        handleDone();
+        return true;
+      };
+      const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+      return () => subscription.remove();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []),
+  );
+
   const filteredServices = availableServices.filter(s =>
     s.name.toLowerCase().includes(searchQuery.toLowerCase()),
   );
@@ -238,7 +256,9 @@ const ActiveJobScreen = ({navigation, route}: any) => {
       <LinearGradient
         colors={['#0E5843', '#022723']}
         style={[styles.header, {paddingTop: insets.top + sw(12)}]}>
-        <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7}>
+        {/* Goes Home, not back — this screen means the job is already started, so
+            "Start Service"/the earlier order screens aren't a sensible place to return to. */}
+        <TouchableOpacity onPress={handleDone} activeOpacity={0.7}>
           <Ionicons name="arrow-back" size={sw(22)} color="#FFFFFF" />
         </TouchableOpacity>
         <View style={styles.headerCenter}>

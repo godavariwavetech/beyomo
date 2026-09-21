@@ -29,3 +29,21 @@ export const resetToLogin = () => {
     }),
   );
 };
+
+/**
+ * Sends the user into the app and DISCARDS the entire auth-flow history (Login, OTP,
+ * Register, AccountStatus), for the same reason resetToLogin exists above:
+ * navigation.replace('Main') only swaps the current screen, leaving those auth screens
+ * underneath — the hardware back button then pops straight back into the phone-number
+ * screen instead of exiting the app.
+ */
+export const resetToMain = () => {
+  if (!navigationRef.isReady()) return;
+
+  navigationRef.dispatch(
+    CommonActions.reset({
+      index: 0,
+      routes: [{name: 'Main'}],
+    }),
+  );
+};

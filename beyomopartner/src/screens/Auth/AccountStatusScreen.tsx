@@ -13,7 +13,7 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import {useDispatch, useSelector} from 'react-redux';
 import {fonts} from '../../config/theme';
 import {refreshPartnerStatus, actionLogout} from '../../redux/reducers/auth';
-import {resetToLogin} from '../../navigation/navigationRef';
+import {resetToLogin, resetToMain} from '../../navigation/navigationRef';
 import type {AppDispatch, RootState} from '../../redux/store';
 
 const {width} = Dimensions.get('window');
@@ -81,7 +81,8 @@ const AccountStatusScreen = ({navigation}: any) => {
     if (refreshPartnerStatus.fulfilled.match(result)) {
       const updated = result.payload;
       if (updated?.status === 'approved') {
-        navigation.replace('Main');
+        // Not replace() — see resetToMain's own comment for why.
+        resetToMain();
       }
     }
   }, [dispatch, navigation]);
@@ -153,7 +154,7 @@ const AccountStatusScreen = ({navigation}: any) => {
             <TouchableOpacity
               style={styles.primaryBtn}
               activeOpacity={0.85}
-              onPress={() => navigation.replace('Main')}>
+              onPress={resetToMain}>
               <LinearGradient
                 colors={['#E4BA69', '#FDD77A', '#E3BB67']}
                 style={styles.btnGradient}

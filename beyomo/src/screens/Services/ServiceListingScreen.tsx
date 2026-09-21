@@ -10,6 +10,7 @@ import {
   StatusBar,
   Modal,
   ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -23,13 +24,19 @@ import {
   removeFreeService,
 } from '../../redux/reducers/cart';
 import {formatAmount} from '../../utils/utils';
-import {deriveVariants, variantKeyOf} from '../../utils/serviceVariants';
+import {deriveVariants} from '../../utils/serviceVariants';
+import {getCachedServices, setCachedServices, clearCachedServices} from '../../utils/servicesCache';
 import {BASE_URL, endpoints} from '../../config/config';
 
 const MAX_SERVICE_QTY = 5;
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
+
+// 3 subcategory cards per row, laid out the same way PackageListingScreen sizes its
+// combo grid — screen width minus the row's side padding and the two gaps between cards.
+const SUBCAT_GAP = sw(10);
+const SUBCAT_CARD_W = (width - sw(16) * 2 - SUBCAT_GAP * 2) / 3;
 
 const normalizeService = (s: any) => ({
   id:            s._id ?? s.id ?? '',
@@ -42,8 +49,7 @@ const normalizeService = (s: any) => ({
   discountPct:   s.discountPercent ?? s.discountPct ?? (s.originalPrice && s.price ? Math.round(((s.originalPrice - s.price) / s.originalPrice) * 100) : 0),
   image:         s.image ?? s.photo ?? s.thumbnail ?? '',
   priceStartsFrom: s.priceStartsFrom ?? false,
-  // null for services not filed under a subcategory — they simply never match a
-  // selected chip, and show whenever "All" is selected.
+  // null for services not filed under a subcategory.
   subcategoryId: s.subcategoryId ?? null,
 });
 
@@ -131,11 +137,19 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
   const [filterDuration, setFilterDuration] = useState<'all'|'short'|'medium'|'long'>('all');
 
   // Subcategories for the active category (e.g. Waxing -> Honey / Rica). Empty for
-  // categories that don't use them, in which case no chip row is rendered at all.
+  // categories that don't use them, in which case no grid is rendered at all. Tapping
+  // one navigates to SubcategoryServicesScreen rather than filtering in place, so there's
+  // no "selected chip" state to track here any more.
   const [apiSubcategories, setApiSubcategories] = useState<any[]>([]);
-  // Identifies the selected chip in both modes: the row id for a real subcategory, the
-  // lowercased variant for one derived from service names. Null = "All".
-  const [activeSubcategoryKey, setActiveSubcategoryKey] = useState<string | null>(null);
+
+  // This screen's own copy of the active category's services (not the shared redux
+  // array — that gets overwritten by whatever screen last fetched into it, e.g. Home
+  // or SubcategoryServicesScreen). Backed by a session cache keyed by category+city, so
+  // switching back to an already-visited category shows instantly instead of refetching.
+  // null = "haven't resolved this category yet" (cache miss, fetch in flight).
+  const [localServices, setLocalServices] = useState<any[] | null>(null);
+  const [localLoading, setLocalLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   // Keep the free service in sync with whether its offer's condition is currently met —
   // add it once the required items are in the cart, remove it the moment they're not.
@@ -178,18 +192,36 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
   // Fetch services when categoryId is known (skip when offer loads all services).
   // cityId is what makes the backend honour each service's city mapping — without it
   // every city-specific service (e.g. a Vijayawada-only one) came back everywhere.
+  //
+  // Cache-first: a category already visited this session shows immediately with no
+  // network round trip and no loading flicker — only a genuinely new category triggers
+  // a fetch. Pull-to-refresh is the deliberate way to force a fresh copy.
   useEffect(() => {
     if (offerType === 'specific_services') return;
-    if (activeCategoryId) {
-      dispatch(fetchServices({categoryId: activeCategoryId, ...cityParam}));
+    if (!activeCategoryId) return;
+    const cached = getCachedServices(activeCategoryId, selectedCityId);
+    if (cached) {
+      setLocalServices(cached);
+      setLocalLoading(false);
+      return;
     }
+    let cancelled = false;
+    setLocalServices(null);
+    setLocalLoading(true);
+    dispatch(fetchServices({categoryId: activeCategoryId, ...cityParam}))
+      .then((action: any) => {
+        if (cancelled) return;
+        const data = Array.isArray(action?.payload) ? action.payload : [];
+        setCachedServices(activeCategoryId, selectedCityId, data);
+        setLocalServices(data);
+      })
+      .finally(() => { if (!cancelled) setLocalLoading(false); });
+    return () => { cancelled = true; };
   }, [activeCategoryId, selectedCityId]);
 
-  // Load the active category's subcategories, and drop any chip selected under the
-  // previous category — its id means nothing here. Failures fall back to an empty list,
+  // Load the active category's subcategories. Failures fall back to an empty list,
   // which renders no row, so the screen behaves exactly as it did before subcategories.
   useEffect(() => {
-    setActiveSubcategoryKey(null);
     if (offerType === 'specific_services' || !activeCategoryId) {
       setApiSubcategories([]);
       return;
@@ -228,7 +260,13 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
     id: c.id ?? c._id ?? null,
   }));
 
-  const currentServices = rawServices.map(normalizeService);
+  // The offer flow still reads the shared redux fetch directly (it loads a fixed batch
+  // once, not per category); ordinary category browsing reads this screen's own cache
+  // instead, so it can't be clobbered by another screen fetching into the shared array.
+  const effectiveRawServices = offerType === 'specific_services' ? rawServices : (localServices ?? []);
+  const effectiveLoading = offerType === 'specific_services' ? loading : localLoading;
+
+  const currentServices = effectiveRawServices.map(normalizeService);
 
   // Real subcategory rows win wherever the category has them. Where it has none, fall
   // back to the variant each service name carries ("Back Wax (Honey)"), which is the
@@ -240,16 +278,20 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
         key: String(sub.id),
         name: sub.name,
         subcategoryId: sub.id,
+        image: sub.image ?? null,
       }));
     }
-    // Off rawServices, not currentServices: the latter is a fresh array every render,
-    // which would recompute this on each one. Only `name` is read either way.
-    return deriveVariants(rawServices).map(v => ({
+    // Off effectiveRawServices, not currentServices: the latter is a fresh array every
+    // render, which would recompute this on each one. Only `name` is read either way.
+    // Derived (name-variant) subcategories carry no image of their own — the card falls
+    // back.
+    return deriveVariants(effectiveRawServices).map(v => ({
       key: v.key,
       name: v.name,
       subcategoryId: null,
+      image: null,
     }));
-  }, [apiSubcategories, rawServices]);
+  }, [apiSubcategories, effectiveRawServices]);
 
   const displayServices = (() => {
     let list = [...currentServices];
@@ -260,15 +302,6 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
     // Exclude the free service from the regular list (we pin it at top separately)
     if (freeServiceItem) {
       list = list.filter(s => String(s.id) !== freeServiceItem.id);
-    }
-    // Subcategory chip (Honey / Rica). Null = "All", which leaves the list untouched.
-    if (activeSubcategoryKey != null) {
-      const chip = subcategories.find(sub => sub.key === activeSubcategoryKey);
-      // A real subcategory matches on the foreign key; a derived one has no row to point
-      // at, so it matches on the variant its own name ends with.
-      list = chip?.subcategoryId != null
-        ? list.filter(s => Number(s.subcategoryId) === Number(chip.subcategoryId))
-        : list.filter(s => variantKeyOf(s.name) === activeSubcategoryKey);
     }
     // Standard filters
     if (filterDiscount) list = list.filter(s => s.discountPct > 0);
@@ -289,6 +322,27 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
   const handleCategoryChange = (cat: {label: string; id: any}) => {
     setActiveCategory(cat.label);
     setActiveCategoryId(cat.id);
+  };
+
+  // Pull-to-refresh — the deliberate way to force a fresh copy of this page's data,
+  // now that switching categories/subcategories no longer does that automatically.
+  // Re-fetches both this category's services and its subcategory list.
+  const onRefresh = async () => {
+    if (offerType === 'specific_services' || !activeCategoryId) return;
+    setRefreshing(true);
+    clearCachedServices(activeCategoryId, selectedCityId);
+    try {
+      const action: any = await dispatch(fetchServices({categoryId: activeCategoryId, ...cityParam}));
+      const data = Array.isArray(action?.payload) ? action.payload : [];
+      setCachedServices(activeCategoryId, selectedCityId, data);
+      setLocalServices(data);
+    } catch {}
+    try {
+      const res = await fetch(`${BASE_URL}${endpoints.SUBCATEGORIES}?categoryId=${activeCategoryId}`);
+      const j = await res.json();
+      setApiSubcategories(Array.isArray(j?.data) ? j.data : []);
+    } catch {}
+    setRefreshing(false);
   };
 
   const increment = (id: string) => {
@@ -397,89 +451,111 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
         </ScrollView>
       )}
 
-      {/* ── Subcategory chips (e.g. Waxing -> Honey / Rica) ──
+      {/* ── Subcategory grid (e.g. Waxing -> Honey / Rica) ──
           Only rendered when the active category actually has subcategories, so every
-          other category's layout is unchanged. Sits above the Filter / Sort By row. */}
+          other category's layout is unchanged. Sits above the Filter / Sort By row.
+          Card layout (image on top, name below) follows the shared reference design;
+          rating/price aren't part of subcategory data, so the card carries only what
+          the API actually returns. Tapping a card opens a dedicated screen scoped to
+          that subcategory instead of filtering this screen's own list in place. */}
       {subcategories.length > 0 && (
         <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
+          showsVerticalScrollIndicator={false}
           style={styles.subcatScroll}
-          contentContainerStyle={styles.subcatContent}>
-          <TouchableOpacity
-            activeOpacity={0.8}
-            onPress={() => setActiveSubcategoryKey(null)}
-            style={[styles.subcatChip, activeSubcategoryKey == null && styles.subcatChipActive]}>
-            <Text style={[styles.subcatText, activeSubcategoryKey == null && styles.subcatTextActive]}>All</Text>
-          </TouchableOpacity>
-          {subcategories.map((sub: any) => {
-            const active = activeSubcategoryKey === sub.key;
-            return (
-              <TouchableOpacity
-                key={sub.key}
-                activeOpacity={0.8}
-                onPress={() => setActiveSubcategoryKey(active ? null : sub.key)}
-                style={[styles.subcatChip, active && styles.subcatChipActive]}>
-                <Text style={[styles.subcatText, active && styles.subcatTextActive]} numberOfLines={1}>
-                  {sub.name}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
+          contentContainerStyle={styles.subcatGrid}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#105641']} tintColor="#105641" />
+          }>
+          {subcategories.map((sub: any) => (
+            <TouchableOpacity
+              key={sub.key}
+              activeOpacity={0.85}
+              onPress={() => navigation?.navigate('SubcategoryServices', {
+                categoryId: activeCategoryId,
+                categoryName: activeCategory,
+                subcategoryId: sub.subcategoryId,
+                subcategoryKey: sub.key,
+                subcategoryName: sub.name,
+              })}
+              style={styles.subcatCard}>
+              {sub.image ? (
+                <Image source={{uri: sub.image}} style={styles.subcatCardImg} resizeMode="cover" />
+              ) : (
+                <View style={[styles.subcatCardImg, styles.subcatCardImgPlaceholder]}>
+                  <Ionicons name="image-outline" size={sw(20)} color="#C5C5C5" />
+                  <Text style={styles.subcatCardImgPlaceholderText}>No image found</Text>
+                </View>
+              )}
+              <Text style={styles.subcatCardName} numberOfLines={1}>
+                {sub.name}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </ScrollView>
       )}
 
-      <View style={styles.filterRow}>
-        <View style={styles.filterLeft}>
-          <TouchableOpacity
-            style={[styles.filterBtn, activeFilterCount > 0 && styles.filterBtnActive]}
-            activeOpacity={0.7}
-            onPress={() => setShowFilterSheet(true)}>
-            <Ionicons name="options-outline" size={sw(16)} color={activeFilterCount > 0 ? '#105641' : '#292D32'} />
-            <Text style={[styles.filterText, activeFilterCount > 0 && styles.filterTextActive]}>
-              Filter{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
+      {/* Filter / Sort By / count + the service list itself only apply to a flat
+          category (no subcategories). Once a category has subcategories, browsing its
+          services happens exclusively via SubcategoryServicesScreen after tapping a
+          card above — showing the same services again here would just duplicate them. */}
+      {subcategories.length === 0 && (
+        <>
+          <View style={styles.filterRow}>
+            <View style={styles.filterLeft}>
+              <TouchableOpacity
+                style={[styles.filterBtn, activeFilterCount > 0 && styles.filterBtnActive]}
+                activeOpacity={0.7}
+                onPress={() => setShowFilterSheet(true)}>
+                <Ionicons name="options-outline" size={sw(16)} color={activeFilterCount > 0 ? '#105641' : '#292D32'} />
+                <Text style={[styles.filterText, activeFilterCount > 0 && styles.filterTextActive]}>
+                  Filter{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.filterBtn, sortBy !== 'default' && styles.filterBtnActive]}
+                activeOpacity={0.7}
+                onPress={() => setShowSortSheet(true)}>
+                <Ionicons name="swap-vertical-outline" size={sw(16)} color={sortBy !== 'default' ? '#105641' : '#292D32'} />
+                <Text style={[styles.filterText, sortBy !== 'default' && styles.filterTextActive]}>Sort by</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.resultCount}>
+              {effectiveLoading ? '...' : `${displayServices.length} Results`}
             </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.filterBtn, sortBy !== 'default' && styles.filterBtnActive]}
-            activeOpacity={0.7}
-            onPress={() => setShowSortSheet(true)}>
-            <Ionicons name="swap-vertical-outline" size={sw(16)} color={sortBy !== 'default' ? '#105641' : '#292D32'} />
-            <Text style={[styles.filterText, sortBy !== 'default' && styles.filterTextActive]}>Sort by</Text>
-          </TouchableOpacity>
-        </View>
-        <Text style={styles.resultCount}>
-          {loading ? '...' : `${displayServices.length} Results`}
-        </Text>
-      </View>
+          </View>
 
-      {loading && displayServices.length === 0 ? (
-        <ActivityIndicator size="large" color="#105641" style={{marginTop: sw(40)}} />
-      ) : (
-        <ScrollView
-          style={styles.scroll}
-          contentContainerStyle={[
-            styles.scrollContent,
-            {paddingBottom: addedCount > 0 ? sw(100) : sw(24)},
-          ]}
-          showsVerticalScrollIndicator={false}>
-          {displayServices.length === 0 ? (
-            <Text style={{textAlign: 'center', color: '#A3A3A3', marginTop: sw(40), fontFamily: fonts.textFont, fontSize: sw(13)}}>
-              No services available in this category.
-            </Text>
+          {effectiveLoading && displayServices.length === 0 ? (
+            <ActivityIndicator size="large" color="#105641" style={{marginTop: sw(40)}} />
           ) : (
-            displayServices.map((item: any) => (
-              <ServiceCard
-                key={item.id}
-                item={item}
-                qty={quantities[String(item.id)] ?? 0}
-                onIncrement={() => increment(String(item.id))}
-                onDecrement={() => decrement(String(item.id))}
-                onViewDetails={() => setDetailItem(item)}
-              />
-            ))
+            <ScrollView
+              style={styles.scroll}
+              contentContainerStyle={[
+                styles.scrollContent,
+                {paddingBottom: addedCount > 0 ? sw(100) : sw(24)},
+              ]}
+              showsVerticalScrollIndicator={false}
+              refreshControl={
+                <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#105641']} tintColor="#105641" />
+              }>
+              {displayServices.length === 0 ? (
+                <Text style={{textAlign: 'center', color: '#A3A3A3', marginTop: sw(40), fontFamily: fonts.textFont, fontSize: sw(13)}}>
+                  No services available in this category.
+                </Text>
+              ) : (
+                displayServices.map((item: any) => (
+                  <ServiceCard
+                    key={item.id}
+                    item={item}
+                    qty={quantities[String(item.id)] ?? 0}
+                    onIncrement={() => increment(String(item.id))}
+                    onDecrement={() => decrement(String(item.id))}
+                    onViewDetails={() => setDetailItem(item)}
+                  />
+                ))
+              )}
+            </ScrollView>
           )}
-        </ScrollView>
+        </>
       )}
 
       {(addedCount > 0 || freeServiceItem) && (
@@ -846,21 +922,57 @@ const styles = StyleSheet.create({
   },
   categoryTextActive: {color: '#FEFEFE', marginTop: sw(2)},
 
-  // Subcategory chips — pill row above the Filter / Sort By controls. Deliberately
-  // lighter than the category strip above it so the hierarchy stays readable.
-  subcatScroll: {flexGrow: 0, marginBottom: sw(12)},
-  subcatContent: {paddingHorizontal: sw(16), gap: sw(8)},
-  subcatChip: {
+  // Subcategory grid — image-forward cards above the Filter / Sort By controls,
+  // matching the shared reference design (image on top, name below), 3 per row.
+  // Deliberately lighter than the category strip above it so the hierarchy stays
+  // readable. No fixed width/height here — `flex: 1` lets it take up whatever space
+  // remains below the header/category strip, and its own ScrollView scrolls through
+  // every subcategory the API returns, however many that is.
+  subcatScroll: {flex: 1},
+  subcatGrid: {
     paddingHorizontal: sw(16),
-    paddingVertical: sw(8),
-    borderRadius: sw(20),
+    paddingBottom: sw(24),
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    rowGap: sw(12),
+    columnGap: SUBCAT_GAP,
+  },
+  subcatCard: {
+    width: SUBCAT_CARD_W,
+    borderRadius: sw(14),
+    overflow: 'hidden',
     borderWidth: 1,
     borderColor: '#E0E0E0',
     backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 1,
   },
-  subcatChipActive: {backgroundColor: '#105641', borderColor: '#105641'},
-  subcatText: {fontFamily: fonts.title, fontSize: sw(13), fontWeight: '600', color: '#292D32'},
-  subcatTextActive: {color: '#FFFFFF'},
+  subcatCardImg: {width: '100%', height: SUBCAT_CARD_W * 0.8, backgroundColor: '#F4E1CC'},
+  subcatCardImgPlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F5F5F5',
+    gap: sw(4),
+  },
+  subcatCardImgPlaceholderText: {
+    fontFamily: fonts.textFont,
+    fontSize: sw(9),
+    color: '#B5B5B5',
+    textAlign: 'center',
+    paddingHorizontal: sw(4),
+  },
+  subcatCardName: {
+    fontFamily: fonts.title,
+    fontSize: sw(12),
+    fontWeight: '600',
+    color: '#292D32',
+    textAlign: 'center',
+    paddingVertical: sw(8),
+    paddingHorizontal: sw(6),
+  },
 
   filterRow: {
     flexDirection: 'row',
@@ -1333,4 +1445,7 @@ const styles = StyleSheet.create({
   },
 });
 
+// Exported for reuse by SubcategoryServicesScreen, so its service list, cards, cart
+// controls, filter/sort logic and styling stay in lockstep with this screen's.
+export {normalizeService, ServiceCard, MAX_SERVICE_QTY, styles as serviceListingStyles};
 export default ServiceListingScreen;

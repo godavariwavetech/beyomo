@@ -296,6 +296,20 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
   const decrementCartItem = (key: string) => dispatch(decrementItemQty(key));
   const removeCartItem = (key: string) => dispatch(removeItemFromCart(key));
 
+  // "Add More Services" sends the customer to the Home screen, so they can add
+  // services, combos OR packages using the screens that already exist — the sheet
+  // below could only ever offer plain individual services.
+  //
+  // Home is the first tab of the `Main` navigator, which sits *below* this screen in
+  // the stack, so navigating to it pops back rather than pushing a second copy. That
+  // costs nothing here: the cart is Redux state, not this screen's, so every package,
+  // combo and service already chosen survives the trip untouched. The customer comes
+  // back the same way they got here in the first place — the CartBar's "View Cart" on
+  // Home, or the cart tab — both of which re-open this screen off the same cart.
+  const handleAddMoreServices = () => {
+    navigation?.navigate('Main', {screen: 'Home'});
+  };
+
   const openAddSvcModal = () => {
     setAddSvcCart([]);
     setAddSvcSearch('');
@@ -922,7 +936,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
         ))}
 
         {/* ── Add more services ── */}
-        <TouchableOpacity style={styles.addMoreBtn} activeOpacity={0.8} onPress={openAddSvcModal}>
+        <TouchableOpacity style={styles.addMoreBtn} activeOpacity={0.8} onPress={handleAddMoreServices}>
           <Ionicons name="add-circle-outline" size={sw(18)} color="#105641" />
           <Text style={styles.addMoreBtnText}>Add More Services</Text>
         </TouchableOpacity>
