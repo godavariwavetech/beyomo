@@ -86,6 +86,7 @@ const patchServiceSchema = Joi.object({
   name: Joi.string().trim(),
   categoryId: Joi.alternatives().try(Joi.string(), Joi.number()),
   description: Joi.string().trim().allow(null, ""),
+  websiteDescription: Joi.string().trim().allow(null, ""),
   basePrice: Joi.number().positive(),
   subcategoryId: Joi.number().integer().positive().allow(null, ""),
   duration: Joi.number().integer().positive(),
@@ -168,6 +169,8 @@ const serviceSchema = Joi.object({
   categoryId: Joi.alternatives().try(Joi.number(), Joi.string()).required(),
   name: Joi.string().trim().required(),
   description: Joi.string().trim().allow("", null),
+  // Website-only description, separate from `description` above (Customer/Partner apps).
+  websiteDescription: Joi.string().trim().allow("", null),
   basePrice: Joi.number().positive().required(),
   // Optional second level under the category; null = lists under the category only.
   subcategoryId: Joi.number().integer().positive().allow(null, ""),
@@ -195,6 +198,7 @@ const serviceUpdateSchema = Joi.object({
   categoryId: Joi.alternatives().try(Joi.number(), Joi.string()),
   name: Joi.string().trim(),
   description: Joi.string().trim().allow("", null),
+  websiteDescription: Joi.string().trim().allow("", null),
   basePrice: Joi.number().positive(),
   subcategoryId: Joi.number().integer().positive().allow(null, ""),
   duration: Joi.number().integer().positive(),

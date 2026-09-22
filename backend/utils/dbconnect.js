@@ -130,6 +130,9 @@ const ADDITIVE_SCHEMA = [
   // Nullable on purpose — every service that predates subcategories keeps listing
   // under its category untouched.
   "ALTER TABLE services ADD COLUMN IF NOT EXISTS subcategoryId INT NULL DEFAULT NULL",
+  // Separate from `description` (Customer/Partner apps) — the website's own
+  // description, edited independently from the admin dashboard.
+  "ALTER TABLE services ADD COLUMN IF NOT EXISTS websiteDescription TEXT NULL",
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────

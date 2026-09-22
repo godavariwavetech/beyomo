@@ -17,6 +17,7 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import {useDispatch, useSelector} from 'react-redux';
 import {fonts} from '../../config/theme';
 import {verifyLoginOtp, requestLoginOtp, clearMessage} from '../../redux/reducers/auth';
+import {resetToMain} from '../../navigation/navigationRef';
 import type {AppDispatch, RootState} from '../../redux/store';
 
 const {width} = Dimensions.get('window');
@@ -73,7 +74,9 @@ const OTPScreen = ({navigation, route}: any) => {
       if (isNewUser || !partner?.name) {
         navigation.replace('Register', {phone});
       } else if (partner?.status === 'approved') {
-        navigation.replace('Main');
+        // Not replace() — that only swaps this screen, leaving Login/OTP reachable via
+        // the hardware back button. Reset so entering the app clears that history.
+        resetToMain();
       } else {
         navigation.replace('AccountStatus');
       }

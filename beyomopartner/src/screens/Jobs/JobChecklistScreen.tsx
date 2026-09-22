@@ -68,9 +68,12 @@ const JobChecklistScreen = ({navigation, route}: any) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Add Service modal — either pick from the catalog, or key in a free-form add-on charge
+  // Add Service modal — pick from the catalog, pick a combo/package, or key in a
+  // free-form add-on charge. Combo and package picking reuse the same state/handlers
+  // as the standalone Add Package modal below (same underlying `/packages` API,
+  // split by packageType: 'fixed' = combo, 'flexible' = package).
   const [showModal, setShowModal] = useState(false);
-  const [addMode, setAddMode] = useState<'catalog' | 'addon'>('catalog');
+  const [addMode, setAddMode] = useState<'catalog' | 'combo' | 'package' | 'addon'>('catalog');
   const [allServices, setAllServices] = useState<any[]>([]);
   const [loadingSvcs, setLoadingSvcs] = useState(false);
   const [search, setSearch] = useState('');
@@ -103,7 +106,9 @@ const JobChecklistScreen = ({navigation, route}: any) => {
     setAddMode('catalog');
     setSelectedSvc(null); setAddQty(1); setSearch('');
     setAddonName(''); setAddonPrice('');
+    setPickingPackage(null); setFlexiblePicks([]);
     if (allServices.length === 0) fetchAllServices();
+    fetchPackages();
     setShowModal(true);
   };
 
@@ -213,6 +218,13 @@ const JobChecklistScreen = ({navigation, route}: any) => {
   ]);
   const addablePackages = availablePackages.filter((p: any) => !existingPackageIds.has(p.id));
 
+  // Same split, for the Combos / Packages tabs inside the Add Service modal —
+  // 'fixed' packages are marketed as combos, 'flexible' ones as (custom) packages.
+  const addableCombos = addablePackages.filter((p: any) => p.packageType === 'fixed');
+  const addablePackagesOnly = addablePackages.filter((p: any) => p.packageType === 'flexible');
+  const allCombosCount = availablePackages.filter((p: any) => p.packageType === 'fixed').length;
+  const allPackagesOnlyCount = availablePackages.filter((p: any) => p.packageType === 'flexible').length;
+
   // Diff against the last-saved baseline to build the API payload
   const pendingAdds = services.filter(s => s._origIndex == null && !s._removed);
   const pendingRemoveIndices = services.filter(s => s._origIndex != null && s._removed).map(s => s._origIndex);
@@ -284,7 +296,10 @@ const JobChecklistScreen = ({navigation, route}: any) => {
       const res = await api.patch(endpoints.PARTNER_ADD_PACKAGE(String(job.id)), {packageId, services: items});
       if (res.data?.status) {
         syncFromBooking(res.data.data);
+        // Closes whichever modal is currently driving this add — the standalone Add
+        // Package modal, or the Combos/Packages tab inside the Add Service modal.
         setShowAddPackageModal(false);
+        setShowModal(false);
         setPickingPackage(null);
         setFlexiblePicks([]);
       }
@@ -409,6 +424,112 @@ const JobChecklistScreen = ({navigation, route}: any) => {
     svc.adminPercent != null && svc.partnerPercent != null && svc.gstPercent != null
       ? `Admin ${svc.adminPercent}% · Partner ${svc.partnerPercent}% · GST ${svc.gstPercent}%`
       : null;
+
+  // Combo/Package picker body for the Add Service modal's "Combos"/"Packages" tabs —
+  // same list card, "Add"/"Choose →" actions, and flexible-pick sub-view as the
+  // standalone Add Package modal below, just scoped to one packageType at a time.
+  const renderPackagePickerBody = (list: any[], totalOfKind: number, kindLabel: string) => (
+    !pickingPackage ? (
+      loadingPkgs ? (
+        <ActivityIndicator color="#105641" style={{marginVertical: sw(24)}} />
+      ) : (
+        <FlatList
+          data={list}
+          keyExtractor={item => String(item.id)}
+          style={{maxHeight: sw(300)}}
+          showsVerticalScrollIndicator={false}
+          renderItem={({item}) => (
+            <View style={styles.pkgPickCard}>
+              <View style={{flex: 1}}>
+                <View style={{flexDirection: 'row', alignItems: 'center', gap: sw(6)}}>
+                  <Text style={styles.pickName}>{item.title}</Text>
+                  <View style={[styles.pkgTypeBadge, item.packageType === 'fixed' ? styles.pkgTypeBadgeFixed : styles.pkgTypeBadgeFlex]}>
+                    <Text style={[styles.pkgTypeBadgeText, {color: item.packageType === 'fixed' ? '#105641' : '#1D4ED8'}]}>
+                      {item.packageType === 'fixed' ? 'FIXED' : 'FLEXIBLE'}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={styles.pickMeta}>
+                  {item.packageType === 'fixed'
+                    ? `${(item.services || []).length} services`
+                    : `Pick any ${item.serviceCount} services`}
+                  {'  ·  '}₹{formatAmount(item.price)}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.pkgAddBtn}
+                disabled={addingPkg}
+                onPress={() => item.packageType === 'fixed' ? handleAddFixedPackage(item) : handlePickFlexible(item)}
+                activeOpacity={0.85}>
+                <Text style={styles.pkgAddBtnText}>
+                  {item.packageType === 'fixed' ? (addingPkg ? 'Adding…' : 'Add') : 'Choose →'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+          ListEmptyComponent={
+            <Text style={styles.emptyPick}>
+              {totalOfKind === 0
+                ? `No ${kindLabel} available`
+                : `All available ${kindLabel} are already on this booking`}
+            </Text>
+          }
+        />
+      )
+    ) : (
+      <>
+        <View style={styles.pkgProgressRow}>
+          <Text style={styles.qtyLabel}>Pick {pickingPackage.serviceCount} service{pickingPackage.serviceCount !== 1 ? 's' : ''}</Text>
+          <Text style={[styles.qtyLabel, {fontWeight: '700', color: flexiblePicks.length === pickingPackage.serviceCount ? '#105641' : '#171816'}]}>
+            {flexiblePicks.length} / {pickingPackage.serviceCount}
+          </Text>
+        </View>
+        {loadingSvcs ? (
+          <ActivityIndicator color="#105641" style={{marginVertical: sw(24)}} />
+        ) : (
+          <FlatList
+            data={allServices.filter((s: any) => !pickingPackage.categoryId || s.categoryId === pickingPackage.categoryId)}
+            keyExtractor={item => String(item.id)}
+            style={{maxHeight: sw(260)}}
+            showsVerticalScrollIndicator={false}
+            renderItem={({item}) => {
+              const picked = flexiblePicks.includes(item.id);
+              const disabled = !picked && flexiblePicks.length >= pickingPackage.serviceCount;
+              return (
+                <TouchableOpacity
+                  style={[styles.svcPickRow, picked && styles.svcPickRowSel, disabled && {opacity: 0.4}]}
+                  disabled={disabled}
+                  onPress={() => toggleFlexiblePick(item.id)} activeOpacity={0.8}>
+                  <Image source={{uri: resolveImageUrl(item.image) ?? FALLBACK_IMG}} style={styles.pickImg} resizeMode="cover" />
+                  <View style={{flex: 1}}>
+                    <Text style={styles.pickName}>{item.name}</Text>
+                    <Text style={styles.pickMeta}>
+                      {item.duration ? `${item.duration} min  ·  ` : ''}₹{formatAmount(item.basePrice)}
+                    </Text>
+                  </View>
+                  {picked && <Ionicons name="checkmark-circle" size={sw(22)} color="#105641" />}
+                </TouchableOpacity>
+              );
+            }}
+            ListEmptyComponent={<Text style={styles.emptyPick}>No services found</Text>}
+          />
+        )}
+        <View style={{flexDirection: 'row', gap: sw(10), marginTop: sw(14)}}>
+          <TouchableOpacity style={styles.pkgBackBtn} onPress={() => setPickingPackage(null)} activeOpacity={0.85}>
+            <Text style={styles.pkgBackBtnText}>← Back</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.confirmBtn, {flex: 1, marginTop: 0}, (flexiblePicks.length !== pickingPackage.serviceCount || addingPkg) && {opacity: 0.5}]}
+            disabled={flexiblePicks.length !== pickingPackage.serviceCount || addingPkg}
+            onPress={handleConfirmFlexiblePackage} activeOpacity={0.88}>
+            {addingPkg ? <ActivityIndicator color="#FFFFFF" size="small" /> : (
+              <Text style={styles.confirmBtnText}>Add Package (₹{formatAmount(pickingPackage.price)})</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      </>
+    )
+  );
 
   return (
     <View style={[styles.root, {paddingBottom: insets.bottom}]}>
@@ -708,13 +829,25 @@ const JobChecklistScreen = ({navigation, route}: any) => {
         <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={() => setShowModal(false)} />
         <View style={[styles.sheet, {paddingBottom: insets.bottom + sw(16)}]}>
           <View style={styles.handle} />
-          <Text style={styles.sheetTitle}>Add a Service</Text>
+          <Text style={styles.sheetTitle}>
+            {addMode === 'package' && pickingPackage ? pickingPackage.title : 'Add a Service'}
+          </Text>
 
           <View style={styles.modeToggle}>
             <TouchableOpacity
               style={[styles.modeToggleBtn, addMode === 'catalog' && styles.modeToggleBtnActive]}
               onPress={() => setAddMode('catalog')} activeOpacity={0.85}>
               <Text style={[styles.modeToggleText, addMode === 'catalog' && styles.modeToggleTextActive]}>From Catalog</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.modeToggleBtn, addMode === 'combo' && styles.modeToggleBtnActive]}
+              onPress={() => setAddMode('combo')} activeOpacity={0.85}>
+              <Text style={[styles.modeToggleText, addMode === 'combo' && styles.modeToggleTextActive]}>Combos</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.modeToggleBtn, addMode === 'package' && styles.modeToggleBtnActive]}
+              onPress={() => setAddMode('package')} activeOpacity={0.85}>
+              <Text style={[styles.modeToggleText, addMode === 'package' && styles.modeToggleTextActive]}>Packages</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.modeToggleBtn, addMode === 'addon' && styles.modeToggleBtnActive]}
@@ -783,6 +916,10 @@ const JobChecklistScreen = ({navigation, route}: any) => {
                 </Text>
               </TouchableOpacity>
             </>
+          ) : addMode === 'combo' ? (
+            renderPackagePickerBody(addableCombos, allCombosCount, 'combos')
+          ) : addMode === 'package' ? (
+            renderPackagePickerBody(addablePackagesOnly, allPackagesOnlyCount, 'packages')
           ) : (
             <>
               <View style={styles.addonFieldWrap}>
