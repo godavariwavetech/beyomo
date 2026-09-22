@@ -86,7 +86,10 @@ const SubcategoryServicesScreen = ({navigation, route}: Props) => {
     let cancelled = false;
     setLocalServices(null);
     setLocalLoading(true);
-    dispatch(fetchServices({categoryId, ...cityParam}))
+    // limit: 500 — same reasoning as ServiceListingScreen's equivalent fetch: this is
+    // meant to return the category's whole list, but the backend's default page size
+    // (20) would otherwise silently truncate a category once it grows past that.
+    dispatch(fetchServices({categoryId, limit: 500, ...cityParam}))
       .then((action: any) => {
         if (cancelled) return;
         const data = Array.isArray(action?.payload) ? action.payload : [];
@@ -104,7 +107,7 @@ const SubcategoryServicesScreen = ({navigation, route}: Props) => {
     setRefreshing(true);
     clearCachedServices(categoryId, selectedCityId);
     try {
-      const action: any = await dispatch(fetchServices({categoryId, ...cityParam}));
+      const action: any = await dispatch(fetchServices({categoryId, limit: 500, ...cityParam}));
       const data = Array.isArray(action?.payload) ? action.payload : [];
       setCachedServices(categoryId, selectedCityId, data);
       setLocalServices(data);

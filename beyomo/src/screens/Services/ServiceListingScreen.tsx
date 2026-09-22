@@ -141,6 +141,12 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
   // one navigates to SubcategoryServicesScreen rather than filtering in place, so there's
   // no "selected chip" state to track here any more.
   const [apiSubcategories, setApiSubcategories] = useState<any[]>([]);
+  // Tracks only the subcategories fetch below, so a loader can be shown for the exact
+  // window this screen doesn't yet know whether the tapped category has subcategories —
+  // e.g. revisiting an already-cached category, where localLoading is already false but
+  // this (uncached) fetch is still in flight and would otherwise flash the flat service
+  // list before flipping to the subcategory grid.
+  const [subcategoriesLoading, setSubcategoriesLoading] = useState(false);
 
   // This screen's own copy of the active category's services (not the shared redux
   // array — that gets overwritten by whatever screen last fetched into it, e.g. Home
@@ -208,7 +214,11 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
     let cancelled = false;
     setLocalServices(null);
     setLocalLoading(true);
-    dispatch(fetchServices({categoryId: activeCategoryId, ...cityParam}))
+    // limit: 500 — this is meant to return the category's whole list (the backend
+    // comment on subcategoryId says as much), but its default page size is only 20.
+    // A category that grows past 20 active services silently loses the rest off the
+    // end of page 1, which is exactly what hid a newly added service in Waxing here.
+    dispatch(fetchServices({categoryId: activeCategoryId, limit: 500, ...cityParam}))
       .then((action: any) => {
         if (cancelled) return;
         const data = Array.isArray(action?.payload) ? action.payload : [];
@@ -224,13 +234,21 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
   useEffect(() => {
     if (offerType === 'specific_services' || !activeCategoryId) {
       setApiSubcategories([]);
+      setSubcategoriesLoading(false);
       return;
     }
     let cancelled = false;
+    // Clear the previous category's subcategories right away — otherwise they'd stay on
+    // screen (subcategories.length still > 0) for the whole window this fetch is in
+    // flight, since state from the last activeCategoryId only gets replaced once this
+    // one resolves.
+    setApiSubcategories([]);
+    setSubcategoriesLoading(true);
     fetch(`${BASE_URL}${endpoints.SUBCATEGORIES}?categoryId=${activeCategoryId}`)
       .then(r => r.json())
       .then(j => { if (!cancelled) setApiSubcategories(Array.isArray(j?.data) ? j.data : []); })
-      .catch(() => { if (!cancelled) setApiSubcategories([]); });
+      .catch(() => { if (!cancelled) setApiSubcategories([]); })
+      .finally(() => { if (!cancelled) setSubcategoriesLoading(false); });
     return () => { cancelled = true; };
   }, [activeCategoryId]);
 
@@ -293,6 +311,13 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
     }));
   }, [apiSubcategories, effectiveRawServices]);
 
+  // Whether this category's subcategories are still resolving, i.e. we don't yet know
+  // whether to render the subcategory grid or the flat service list below. Without this,
+  // revisiting an already-cached category (services cached, but this uncached
+  // subcategories fetch still in flight) briefly showed the flat list before flipping to
+  // the grid once it resolved.
+  const showCategoryLoader = subcategoriesLoading && subcategories.length === 0;
+
   const displayServices = (() => {
     let list = [...currentServices];
     // Offer filter — only for specific_services: show required services only
@@ -332,7 +357,7 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
     setRefreshing(true);
     clearCachedServices(activeCategoryId, selectedCityId);
     try {
-      const action: any = await dispatch(fetchServices({categoryId: activeCategoryId, ...cityParam}));
+      const action: any = await dispatch(fetchServices({categoryId: activeCategoryId, limit: 500, ...cityParam}));
       const data = Array.isArray(action?.payload) ? action.payload : [];
       setCachedServices(activeCategoryId, selectedCityId, data);
       setLocalServices(data);
@@ -451,6 +476,13 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
         </ScrollView>
       )}
 
+      {/* Shown only for the window where we don't yet know whether this category has
+          subcategories — see showCategoryLoader above. Hidden the moment that's resolved,
+          whichever way it goes. */}
+      {showCategoryLoader && (
+        <ActivityIndicator size="large" color="#105641" style={{marginTop: sw(40)}} />
+      )}
+
       {/* ── Subcategory grid (e.g. Waxing -> Honey / Rica) ──
           Only rendered when the active category actually has subcategories, so every
           other category's layout is unchanged. Sits above the Filter / Sort By row.
@@ -498,7 +530,7 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
           category (no subcategories). Once a category has subcategories, browsing its
           services happens exclusively via SubcategoryServicesScreen after tapping a
           card above — showing the same services again here would just duplicate them. */}
-      {subcategories.length === 0 && (
+      {subcategories.length === 0 && !showCategoryLoader && (
         <>
           <View style={styles.filterRow}>
             <View style={styles.filterLeft}>

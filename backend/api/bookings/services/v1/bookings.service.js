@@ -361,7 +361,24 @@ const persistBooking = async (prepared, overrides = {}) => {
       where: { status: "approved", locationCity: booking.addressCity, isOnline: true },
       attributes: ["id", "fcmToken", "isOnline", "lastSeenAt"],
     });
-    const tokens = cityPartners.filter(isPartnerOnline).map(p => p.fcmToken).filter(Boolean);
+    const onlinePartners = cityPartners.filter(isPartnerOnline);
+
+    // Persisted in-app record for every alerted partner, independent of the push below —
+    // that push only ever reaches a partner with a live FCM token (and needs Firebase
+    // credentials configured at all, which local/dev setups often don't have). This is
+    // what the partner app's Notifications screen actually reads via
+    // GET /api/v1/notifications, so the alert still lands even when push can't be sent.
+    if (onlinePartners.length > 0) {
+      await Notification.bulkCreate(onlinePartners.map((p) => ({
+        partnerId: p.id,
+        title: "New Job Available",
+        body: `New booking for ${primaryServiceName} near you. Open the app to accept.`,
+        data: { bookingId: String(booking.id) },
+        type: "booking",
+      })));
+    }
+
+    const tokens = onlinePartners.map(p => p.fcmToken).filter(Boolean);
     if (tokens.length > 0) {
       await sendPushNotification(
         tokens,

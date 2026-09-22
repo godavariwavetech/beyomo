@@ -10,6 +10,9 @@ const Service = sequelize.define("Service", {
   subcategoryId: { type: DataTypes.INTEGER, allowNull: true, defaultValue: null },
   name: { type: DataTypes.STRING(150), allowNull: false },
   description: { type: DataTypes.TEXT, allowNull: true },
+  // Separate from `description` (used by the Customer/Partner apps): the website
+  // shows only this field, editable independently from the admin dashboard.
+  websiteDescription: { type: DataTypes.TEXT, allowNull: true },
   basePrice: { type: DataTypes.DECIMAL(10, 2), allowNull: false },
   duration: { type: DataTypes.INTEGER, defaultValue: 60 },
   tags: { type: DataTypes.JSON, defaultValue: [] },

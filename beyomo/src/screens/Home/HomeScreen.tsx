@@ -606,7 +606,7 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
                       <Image
                         source={{uri: svc.image ?? FALLBACK_IMAGE}}
                         style={styles.popularImg}
-                        resizeMode="contain"
+                        resizeMode="cover"
                       />
                       {idx < 2 && (
                         <View style={styles.trendingBadge}>
@@ -1236,7 +1236,6 @@ const styles = StyleSheet.create({
     height: POPULAR_IMG_H,
     borderRadius: sw(14),
     backgroundColor: '#DCEBE3',
-    padding: sw(10),
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',

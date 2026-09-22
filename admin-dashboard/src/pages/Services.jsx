@@ -539,6 +539,7 @@ export default function Services() {
       basePrice: svc.baseServicePrice ?? svc.basePrice,
       duration: svc.duration ?? 60,
       description: svc.description ?? '',
+      websiteDescription: svc.websiteDescription ?? '',
       image: svc.image ?? '',
       priceStartsFrom: svc.priceStartsFrom ?? false,
       isPopular: svc.isPopular ?? false,
@@ -582,6 +583,7 @@ export default function Services() {
       basePrice: +form.basePrice,
       duration: +form.duration,
       description: form.description ?? '',
+      websiteDescription: form.websiteDescription ?? '',
       priceStartsFrom: !!form.priceStartsFrom,
       isPopular: !!form.isPopular,
       showOnHome: !!form.showOnHome,
@@ -618,6 +620,7 @@ export default function Services() {
       basePrice: +form.basePrice,
       duration: +form.duration,
       description: form.description ?? '',
+      websiteDescription: form.websiteDescription ?? '',
       priceStartsFrom: !!form.priceStartsFrom,
       isPopular: !!form.isPopular,
       showOnHome: !!form.showOnHome,
@@ -640,6 +643,7 @@ export default function Services() {
         color: 'var(--c-border-light)',
         image: form.image ?? null,
         description: form.description ?? '',
+        websiteDescription: form.websiteDescription ?? '',
         duration: payload.duration,
         priceStartsFrom: payload.priceStartsFrom,
         isPopular: payload.isPopular,
@@ -725,7 +729,7 @@ export default function Services() {
               <FolderOpen size={14}/> Subcategories
             </button>
             */}
-            <button className="btn btn-primary btn-sm" onClick={() => { setAdding(true); setForm({ name: '', basePrice: '', duration: 60, description: '', image: '', cityIds: [] }); }} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <button className="btn btn-primary btn-sm" onClick={() => { setAdding(true); setForm({ name: '', basePrice: '', duration: 60, description: '', websiteDescription: '', image: '', cityIds: [] }); }} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <Plus size={14}/> Add Service
             </button>
           </div>
@@ -804,7 +808,15 @@ export default function Services() {
               }}>
                 {svc.image ? (
                   <>
-                    <img src={svc.image} alt={svc.name} style={{ width: '100%', height: 140, objectFit: 'cover' }} />
+                    {/* Capped at the upload requirement (640x360, enforced by ImagePicker's
+                        exactWidth/exactHeight on the form) so this never scales an image past
+                        its real resolution — that upscaling (previously as small as 128x128
+                        stretched across this whole card) is what was causing the visible blur.
+                        A properly-sized image still fills the card exactly as before, since
+                        640px comfortably exceeds this card's rendered width. */}
+                    <div style={{ width: '100%', height: 140, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                      <img src={svc.image} alt={svc.name} style={{ width: '100%', height: '100%', maxWidth: 640, maxHeight: 360, objectFit: 'cover' }} />
+                    </div>
                     <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '8px 16px', background: 'linear-gradient(transparent, rgba(0,0,0,0.7))', color: 'white' }}>
                       <div style={{ fontWeight: 700, fontSize: 15 }}>{svc.name}</div>
                       <div style={{ fontSize: 12, opacity: 0.8 }}>{svc.category}</div>
@@ -928,7 +940,7 @@ export default function Services() {
       >
         {editing && (
           <div className="form-grid">
-            <ImagePicker label="Service Image" value={form.image || ''} onChange={url => setForm(f => ({ ...f, image: url }))} hint="JPG/PNG/WebP · max 2 MB · 128×128 px" exactWidth={128} exactHeight={128} />
+            <ImagePicker label="Service Image" value={form.image || ''} onChange={url => setForm(f => ({ ...f, image: url }))} hint="JPG/PNG/WebP · max 2 MB · 640×360 px" exactWidth={640} exactHeight={360} />
             <div className="form-group">
               <label className="form-label">Service Name</label>
               <input className="form-input" value={form.name || ''} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
@@ -1021,6 +1033,16 @@ export default function Services() {
             <div className="form-group">
               <label className="form-label">Description</label>
               <textarea className="form-input" rows={3} placeholder="Describe what this service includes…" value={form.description || ''} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} style={{ resize: 'vertical' }} />
+              <div style={{ fontSize: 11, color: 'var(--c-text-muted)', marginTop: 4 }}>
+                Shown on the app and partner app.
+              </div>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Website Description</label>
+              <textarea className="form-input" rows={3} placeholder="Description shown only on the website…" value={form.websiteDescription || ''} onChange={e => setForm(f => ({ ...f, websiteDescription: e.target.value }))} style={{ resize: 'vertical' }} />
+              <div style={{ fontSize: 11, color: 'var(--c-text-muted)', marginTop: 4 }}>
+                Shown only on the website, separate from the description above.
+              </div>
             </div>
           </div>
         )}
@@ -1040,7 +1062,7 @@ export default function Services() {
         }
       >
         <div className="form-grid">
-            <ImagePicker label="Service Image" value={form.image || ''} onChange={url => setForm(f => ({ ...f, image: url }))} hint="JPG/PNG/WebP · max 2 MB · 128×128 px" exactWidth={128} exactHeight={128} />
+            <ImagePicker label="Service Image" value={form.image || ''} onChange={url => setForm(f => ({ ...f, image: url }))} hint="JPG/PNG/WebP · max 2 MB · 640×360 px" exactWidth={640} exactHeight={360} />
           <div className="form-group">
             <label className="form-label">Service Name *</label>
             <input className="form-input" placeholder="e.g. Deep Tissue Massage" value={form.name || ''} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
@@ -1123,6 +1145,16 @@ export default function Services() {
           <div className="form-group">
             <label className="form-label">Description</label>
             <textarea className="form-input" rows={3} placeholder="Describe what this service includes…" value={form.description || ''} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} style={{ resize: 'vertical' }} />
+            <div style={{ fontSize: 11, color: 'var(--c-text-muted)', marginTop: 4 }}>
+              Shown on the app and partner app.
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Website Description</label>
+            <textarea className="form-input" rows={3} placeholder="Description shown only on the website…" value={form.websiteDescription || ''} onChange={e => setForm(f => ({ ...f, websiteDescription: e.target.value }))} style={{ resize: 'vertical' }} />
+            <div style={{ fontSize: 11, color: 'var(--c-text-muted)', marginTop: 4 }}>
+              Shown only on the website, separate from the description above.
+            </div>
           </div>
         </div>
       </Modal>

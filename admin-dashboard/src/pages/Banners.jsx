@@ -69,7 +69,20 @@ export default function Banners() {
             <div key={slot.type} className="card" style={{ overflow: 'hidden' }}>
               <div style={{ height: 140, background: 'var(--c-border-light)', position: 'relative' }}>
                 {banner?.image ? (
-                  <img src={banner.image} alt={slot.label} style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: banner.isActive ? 1 : 0.4 }} />
+                  // Capped at the slot's own required upload resolution (enforced by
+                  // ImageUploader's exactWidth/exactHeight below) so a slot smaller than
+                  // this card — custom_package/combo are 384x175 vs. a ~550px-wide card —
+                  // is centered at its native size instead of being stretched past its
+                  // real resolution, which is what was causing the visible blur. Slots at
+                  // or above the card's size (hero, why_beyomo, book_steps) render exactly
+                  // as before, since the cap never becomes the limiting dimension for them.
+                  <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <img
+                      src={banner.image}
+                      alt={slot.label}
+                      style={{ width: '100%', height: '100%', maxWidth: slot.w, maxHeight: slot.h, objectFit: 'cover', opacity: banner.isActive ? 1 : 0.4 }}
+                    />
+                  </div>
                 ) : (
                   <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--c-text-muted)' }}>
                     <ImageIcon size={28} />
