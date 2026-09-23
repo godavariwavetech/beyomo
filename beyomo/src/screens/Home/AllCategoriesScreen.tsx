@@ -13,7 +13,10 @@ const FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1570172619644-dfd03ed5
 
 const GRID_COLUMNS = 4;
 const GRID_GAP = sw(12);
-const GRID_ITEM_W = (width - sw(32) - GRID_GAP * (GRID_COLUMNS - 1)) / GRID_COLUMNS;
+// Math.floor guards against per-device pixel rounding: on some screen densities the
+// exact float width, summed across 4 columns + 3 gaps, rounds up just past the
+// container width, tipping the 4th card onto a new row and leaving a gap in its place.
+const GRID_ITEM_W = Math.floor((width - sw(32) - GRID_GAP * (GRID_COLUMNS - 1)) / GRID_COLUMNS);
 
 const AllCategoriesScreen = ({navigation}: {navigation: any}) => {
   const insets = useSafeAreaInsets();

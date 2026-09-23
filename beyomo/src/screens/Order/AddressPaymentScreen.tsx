@@ -1,4 +1,4 @@
-import React, {useEffect, useState} from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 import {
   View,
   Text,
@@ -13,10 +13,13 @@ import {
   StatusBar,
   ActivityIndicator,
   Alert,
+  Animated,
+  PanResponder,
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import LinearGradient from 'react-native-linear-gradient';
 import DatePicker from 'react-native-date-picker';
 import {useSelector, useDispatch} from 'react-redux';
 import {fonts} from '../../config/theme';
@@ -90,6 +93,33 @@ const formatTime = (d: Date) =>
 const addrLabel = (a: SavedAddress) => a.tag ?? a.label ?? 'Address';
 const addrLine = (a: SavedAddress) => a.line1 ?? a.address ?? '';
 
+// Swipe-down-to-close on a bottom sheet's handle bar — shared by the Select Address and
+// Add More Services sheets below, same behavior as the Service Details sheet already has.
+// `isOpen` resets the translateY back to 0 each time the sheet opens fresh.
+const useSheetDrag = (isOpen: boolean, onClose: () => void) => {
+  const translateY = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (isOpen) translateY.setValue(0);
+  }, [isOpen]);
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_evt, gestureState) => Math.abs(gestureState.dy) > 4,
+      onPanResponderMove: (_evt, gestureState) => {
+        if (gestureState.dy > 0) translateY.setValue(gestureState.dy);
+      },
+      onPanResponderRelease: (_evt, gestureState) => {
+        if (gestureState.dy > 100 || gestureState.vy > 0.8) {
+          onClose();
+        } else {
+          Animated.spring(translateY, {toValue: 0, useNativeDriver: true}).start();
+        }
+      },
+    }),
+  ).current;
+  return {translateY, panResponder};
+};
+
 interface Props {
   navigation?: any;
   route?: any;
@@ -111,6 +141,31 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
 
   const [selectedAddr, setSelectedAddr] = useState<SavedAddress | null>(null);
   const [showAddrModal, setShowAddrModal] = useState(false);
+  const addrSheetDrag = useSheetDrag(showAddrModal, () => setShowAddrModal(false));
+  // "Service Details" sheet for a tapped cart item — same design as the service detail
+  // sheet already used on ServiceListingScreen / HomeScreen.
+  const [detailItem, setDetailItem] = useState<any>(null);
+  // Swipe-down-to-close on the detail sheet's handle — previously decorative only.
+  const sheetTranslateY = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (detailItem) sheetTranslateY.setValue(0);
+  }, [detailItem]);
+  const sheetPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_evt, gestureState) => Math.abs(gestureState.dy) > 4,
+      onPanResponderMove: (_evt, gestureState) => {
+        if (gestureState.dy > 0) sheetTranslateY.setValue(gestureState.dy);
+      },
+      onPanResponderRelease: (_evt, gestureState) => {
+        if (gestureState.dy > 100 || gestureState.vy > 0.8) {
+          setDetailItem(null);
+        } else {
+          Animated.spring(sheetTranslateY, {toValue: 0, useNativeDriver: true}).start();
+        }
+      },
+    }),
+  ).current;
 
   const dedupeServices = (raw: any[]): ServiceItem[] => {
     const map = new Map<string, ServiceItem>();
@@ -140,6 +195,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
   // Add More Services modal — lets the customer book extra individual services
   // alongside a package/combo (or any booking), billed additively on top.
   const [showAddSvcModal, setShowAddSvcModal] = useState(false);
+  const addSvcSheetDrag = useSheetDrag(showAddSvcModal, () => setShowAddSvcModal(false));
   const [allServicesForAdd, setAllServicesForAdd] = useState<any[]>([]);
   const [loadingAddSvcs, setLoadingAddSvcs] = useState(false);
   const [addSvcSearch, setAddSvcSearch] = useState('');
@@ -876,7 +932,11 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
 
         {/* ── Service items ── */}
         {displayServiceRows.map(item => (
-          <View key={item.rowKey} style={styles.serviceCard}>
+          <TouchableOpacity
+            key={item.rowKey}
+            style={styles.serviceCard}
+            activeOpacity={0.85}
+            onPress={() => setDetailItem(item)}>
             <Image source={{uri: item.image}} style={styles.serviceThumb} resizeMode="cover" />
             <View style={styles.serviceInfo}>
               <Text style={styles.serviceCode} numberOfLines={2}>{item.name}</Text>
@@ -932,7 +992,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
                 )}
               </View>
             </View>
-          </View>
+          </TouchableOpacity>
         ))}
 
         {/* ── Add more services ── */}
@@ -1239,8 +1299,10 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
           activeOpacity={1}
           onPress={() => setShowAddrModal(false)}
         />
-        <View style={[styles.modalSheet, {paddingBottom: insets.bottom + sw(16)}]}>
-          <View style={styles.modalHandle} />
+        <Animated.View style={[styles.modalSheet, {paddingBottom: insets.bottom + sw(16)}, {transform: [{translateY: addrSheetDrag.translateY}]}]}>
+          <View style={styles.modalHandleHitArea} {...addrSheetDrag.panResponder.panHandlers}>
+            <View style={styles.modalHandle} />
+          </View>
           <Text style={styles.modalTitle}>Select Address</Text>
           {selectedCity && (
             <Text style={styles.modalSubtitle}>Showing addresses in {selectedCity.name}</Text>
@@ -1296,7 +1358,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
               <Text style={styles.addNewAddrText}>Add New Address</Text>
             </TouchableOpacity>
           </ScrollView>
-        </View>
+        </Animated.View>
       </Modal>
 
       {/* ── Add More Services modal ── */}
@@ -1310,8 +1372,10 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
           activeOpacity={1}
           onPress={() => setShowAddSvcModal(false)}
         />
-        <View style={[styles.addSvcSheet, {paddingBottom: insets.bottom + sw(16)}]}>
-          <View style={styles.modalHandle} />
+        <Animated.View style={[styles.addSvcSheet, {paddingBottom: insets.bottom + sw(16)}, {transform: [{translateY: addSvcSheetDrag.translateY}]}]}>
+          <View style={styles.modalHandleHitArea} {...addSvcSheetDrag.panResponder.panHandlers}>
+            <View style={styles.modalHandle} />
+          </View>
           <View style={styles.addSvcHeader}>
             <Text style={styles.modalTitle}>Add More Services</Text>
             <TouchableOpacity onPress={() => setShowAddSvcModal(false)} hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
@@ -1396,6 +1460,131 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
               <Text style={styles.addSvcConfirmText}>Add {addSvcCart.length || ''} Service{addSvcCart.length !== 1 ? 's' : ''}</Text>
             </TouchableOpacity>
           </View>
+        </Animated.View>
+      </Modal>
+
+      {/* ── Service Details sheet — tapping an added cart item opens this, same design
+          as the service detail sheet already used on ServiceListingScreen / HomeScreen. ── */}
+      <Modal
+        visible={!!detailItem}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setDetailItem(null)}>
+        <View style={styles.detailSheetContainer}>
+          <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={() => setDetailItem(null)} />
+
+          {detailItem && (() => {
+            const detailIsFree = !!(detailItem as any).isFree;
+            const detailIsPackageItem = !!(detailItem as any).isPackageItem;
+            const detailPrice = Number(detailItem.price) || 0;
+            const detailOriginalPrice = Number((detailItem as any).originalPrice ?? detailItem.price) || detailPrice;
+            const detailDiscountPct = (detailItem as any).discountPct ?? (detailItem as any).discountPercent ??
+              (detailOriginalPrice > detailPrice ? Math.round(((detailOriginalPrice - detailPrice) / detailOriginalPrice) * 100) : 0);
+            const detailBullets = (detailItem as any).bullets ?? (detailItem as any).highlights?.join('\n') ?? (detailItem as any).description ?? '';
+            return (
+              <Animated.View style={[styles.detailSheet, {paddingBottom: insets.bottom + sw(16)}, {transform: [{translateY: sheetTranslateY}]}]}>
+                <View style={styles.detailSheetHero}>
+                  {detailItem.image
+                    ? <Image source={{uri: detailItem.image}} style={styles.detailSheetHeroImg} resizeMode="cover" />
+                    : <View style={[styles.detailSheetHeroImg, {backgroundColor: '#E8F3EF'}]} />
+                  }
+                  <LinearGradient
+                    colors={['transparent', 'rgba(0,0,0,0.55)']}
+                    style={styles.detailSheetHeroGradient}
+                  />
+                  <View style={styles.detailSheetHeroPriceBadge}>
+                    <Text style={styles.detailSheetHeroPrice}>
+                      {(detailItem as any).priceStartsFrom ? 'Starts at ' : ''}₹{formatAmount(detailPrice)}
+                    </Text>
+                    {detailOriginalPrice > detailPrice && (
+                      <Text style={styles.detailSheetHeroOriginal}>₹{formatAmount(detailOriginalPrice)}</Text>
+                    )}
+                  </View>
+                  <TouchableOpacity style={styles.detailSheetCloseBtn} onPress={() => setDetailItem(null)} activeOpacity={0.8}>
+                    <Ionicons name="close" size={sw(18)} color="#171816" />
+                  </TouchableOpacity>
+                  {/* Handle — draggable: swipe down (or a fast flick) closes the sheet */}
+                  <View style={styles.detailSheetHandleHitArea} {...sheetPanResponder.panHandlers}>
+                    <View style={styles.detailSheetHandle} />
+                  </View>
+                </View>
+
+                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.detailSheetScrollContent}>
+                  <Text style={styles.detailSheetName}>{detailItem.name}</Text>
+
+                  <View style={styles.detailSheetPillsRow}>
+                    {!!detailItem.duration && (
+                      <View style={styles.detailSheetPill}>
+                        <Ionicons name="time-outline" size={sw(13)} color="#105641" />
+                        <Text style={styles.detailSheetPillText}>{detailItem.duration}</Text>
+                      </View>
+                    )}
+                    {detailDiscountPct > 0 && (
+                      <View style={[styles.detailSheetPill, styles.detailSheetPillGreen]}>
+                        <Ionicons name="pricetag-outline" size={sw(13)} color="#008F30" />
+                        <Text style={[styles.detailSheetPillText, {color: '#008F30'}]}>{detailDiscountPct}% OFF</Text>
+                      </View>
+                    )}
+                    {!!(detailItem as any).bookedCount && (
+                      <View style={styles.detailSheetPill}>
+                        <Ionicons name="people-outline" size={sw(13)} color="#0068F0" />
+                        <Text style={[styles.detailSheetPillText, {color: '#0068F0'}]}>{(detailItem as any).bookedCount}</Text>
+                      </View>
+                    )}
+                  </View>
+
+                  {!!detailBullets && <View style={styles.detailSheetDivider} />}
+                  {!!detailBullets && (
+                    <>
+                      <Text style={styles.detailSheetSectionLabel}>What's Included</Text>
+                      {String(detailBullets).split('\n').map((line: string, i: number) =>
+                        line.trim() ? (
+                          <View key={i} style={styles.detailSheetBulletRow}>
+                            <View style={styles.detailSheetBulletDot} />
+                            <Text style={styles.detailSheetBulletText}>{line.trim()}</Text>
+                          </View>
+                        ) : null,
+                      )}
+                    </>
+                  )}
+                </ScrollView>
+
+                <View style={styles.detailSheetFooter}>
+                  {!detailIsFree && !detailIsPackageItem ? (
+                    <View style={styles.detailSheetStepperRow}>
+                      <View style={styles.detailSheetStepper}>
+                        <TouchableOpacity
+                          style={styles.detailSheetStepBtn}
+                          activeOpacity={0.7}
+                          onPress={() => decrement(detailItem.id)}>
+                          <Ionicons
+                            name={detailItem.qty === 1 ? 'trash-outline' : 'remove'}
+                            size={sw(18)}
+                            color={detailItem.qty === 1 ? '#FF2F2F' : '#105641'}
+                          />
+                        </TouchableOpacity>
+                        <Text style={styles.detailSheetStepCount}>{detailItem.qty}</Text>
+                        <TouchableOpacity
+                          style={styles.detailSheetStepBtn}
+                          activeOpacity={0.7}
+                          onPress={() => increment(detailItem.id)}>
+                          <Ionicons name="add" size={sw(18)} color="#105641" />
+                        </TouchableOpacity>
+                      </View>
+                      <TouchableOpacity style={styles.detailSheetDoneBtn} activeOpacity={0.85} onPress={() => setDetailItem(null)}>
+                        <Ionicons name="checkmark" size={sw(16)} color="#FFFFFF" />
+                        <Text style={styles.detailSheetDoneBtnText}>Done</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <TouchableOpacity style={styles.detailSheetCloseFullBtn} activeOpacity={0.85} onPress={() => setDetailItem(null)}>
+                      <Text style={styles.detailSheetDoneBtnText}>Close</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </Animated.View>
+            );
+          })()}
         </View>
       </Modal>
 
@@ -1916,8 +2105,13 @@ const styles = StyleSheet.create({
     height: sw(4),
     borderRadius: sw(2),
     backgroundColor: '#D0D0D0',
-    alignSelf: 'center',
-    marginBottom: sw(12),
+  },
+  // Bigger touch target around the handle bar (in normal flow, not absolute, since this
+  // handle sits inline above the title rather than over a hero image).
+  modalHandleHitArea: {
+    alignItems: 'center',
+    paddingVertical: sw(10),
+    marginBottom: sw(2),
   },
   modalTitle: {
     fontFamily: fonts.title,
@@ -2098,6 +2292,214 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   continueText: {fontFamily: fonts.title, fontSize: sw(16), fontWeight: '700', color: '#FFFFFF'},
+
+  /* ── Service Details sheet (tapped cart item) — same design as the service detail
+     sheet on ServiceListingScreen / HomeScreen ──────────────────────── */
+  detailSheetContainer: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  detailSheet: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: sw(24),
+    borderTopRightRadius: sw(24),
+    maxHeight: '88%',
+    overflow: 'hidden',
+  },
+  detailSheetHero: {
+    position: 'relative',
+    width: '100%',
+    height: sw(210),
+  },
+  detailSheetHeroImg: {
+    width: '100%',
+    height: '100%',
+  },
+  detailSheetHeroGradient: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: sw(90),
+  },
+  detailSheetHeroPriceBadge: {
+    position: 'absolute',
+    bottom: sw(14),
+    left: sw(16),
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: sw(6),
+  },
+  detailSheetHeroPrice: {
+    fontFamily: fonts.title,
+    fontSize: sw(22),
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  detailSheetHeroOriginal: {
+    fontFamily: fonts.textFont,
+    fontSize: sw(14),
+    color: 'rgba(255,255,255,0.65)',
+    textDecorationLine: 'line-through',
+  },
+  detailSheetCloseBtn: {
+    position: 'absolute',
+    top: sw(12),
+    right: sw(12),
+    width: sw(32),
+    height: sw(32),
+    borderRadius: sw(16),
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  detailSheetHandle: {
+    width: sw(36),
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.6)',
+  },
+  // Bigger invisible touch target around the handle bar so it's easy to grab.
+  detailSheetHandleHitArea: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: sw(28),
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  detailSheetScrollContent: {
+    paddingHorizontal: sw(16),
+    paddingTop: sw(16),
+    paddingBottom: sw(12),
+  },
+  detailSheetName: {
+    fontFamily: fonts.title,
+    fontSize: sw(20),
+    fontWeight: '800',
+    color: '#171816',
+    lineHeight: sw(26),
+    marginBottom: sw(12),
+  },
+  detailSheetPillsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: sw(8),
+    marginBottom: sw(16),
+  },
+  detailSheetPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: sw(5),
+    backgroundColor: '#F2F2F2',
+    borderRadius: sw(20),
+    paddingHorizontal: sw(10),
+    paddingVertical: sw(5),
+  },
+  detailSheetPillGreen: {
+    backgroundColor: '#E8F8EE',
+  },
+  detailSheetPillText: {
+    fontFamily: fonts.textFont,
+    fontSize: sw(12),
+    fontWeight: '600',
+    color: '#414141',
+  },
+  detailSheetDivider: {
+    height: 1,
+    backgroundColor: '#F0F0F0',
+    marginBottom: sw(14),
+  },
+  detailSheetSectionLabel: {
+    fontFamily: fonts.title,
+    fontSize: sw(13),
+    fontWeight: '700',
+    color: '#A3A3A3',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    marginBottom: sw(10),
+  },
+  detailSheetBulletRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: sw(10),
+    marginBottom: sw(8),
+  },
+  detailSheetBulletDot: {
+    width: sw(7),
+    height: sw(7),
+    borderRadius: sw(4),
+    backgroundColor: '#105641',
+    marginTop: sw(6),
+    flexShrink: 0,
+  },
+  detailSheetBulletText: {
+    flex: 1,
+    fontFamily: fonts.textFont,
+    fontSize: sw(13),
+    color: '#444444',
+    lineHeight: sw(20),
+  },
+  detailSheetFooter: {
+    paddingHorizontal: sw(16),
+    paddingTop: sw(12),
+    borderTopWidth: 1,
+    borderTopColor: '#F0F0F0',
+  },
+  detailSheetStepperRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: sw(12),
+  },
+  detailSheetStepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#105641',
+    borderRadius: sw(14),
+    height: sw(52),
+    overflow: 'hidden',
+  },
+  detailSheetStepBtn: {
+    width: sw(48),
+    height: sw(52),
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  detailSheetStepCount: {
+    fontFamily: fonts.title,
+    fontSize: sw(16),
+    fontWeight: '800',
+    color: '#105641',
+    minWidth: sw(28),
+    textAlign: 'center',
+  },
+  detailSheetDoneBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#105641',
+    borderRadius: sw(14),
+    height: sw(52),
+    gap: sw(6),
+  },
+  detailSheetDoneBtnText: {
+    fontFamily: fonts.title,
+    fontSize: sw(15),
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  detailSheetCloseFullBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#105641',
+    borderRadius: sw(14),
+    height: sw(52),
+  },
 });
 
 export default AddressPaymentScreen;

@@ -19,30 +19,44 @@ const activeWhere = () => ({
   }],
 });
 
-// Enrich a fixed package — resolve service details from an already-fetched map of
-// {id: Service}, so callers doing this for many packages at once make one shared
-// lookup query instead of firing one query per package.
+// Enrich a package's services list — resolve service details from an already-fetched
+// map of {id: Service}, so callers doing this for many packages at once make one
+// shared lookup query instead of firing one query per package.
+//
+// Applies to both packageTypes: a 'fixed' package's pre-set services, and a
+// 'flexible' package's admin-curated "Eligible Services" list (PackageDetailScreen
+// uses that list, when non-empty, as the actual pickable services for the package —
+// see the comment there). A 'flexible' package with no curated list has an empty
+// `services` array to begin with, so this is a no-op for it either way.
+//
+// serviceMap is expected to hold only *active* services (see callers below), so a
+// serviceId missing from it means that service is inactive/deleted — such entries are
+// dropped rather than falling back to the package's own stale cached name/price, which
+// would otherwise keep showing (and let a customer pick/book) a service that's no
+// longer available at all. This is what actually keeps a package's shown/bookable
+// services in sync with the catalog — an admin doesn't need to remember to manually
+// edit every package whenever one of its services is deactivated elsewhere.
 const enrichFixedFromMap = (pkg, serviceMap) => {
   const plain = pkg.get ? pkg.get({ plain: true }) : { ...pkg };
-  if (plain.packageType !== "fixed") return plain;
-  plain.services = (plain.services ?? []).map((s) => ({
-    ...s,
-    name: serviceMap[s.serviceId]?.name ?? s.name,
-    price: parseFloat(serviceMap[s.serviceId]?.basePrice ?? s.price ?? 0),
-    duration: serviceMap[s.serviceId]?.duration ?? s.duration,
-    image: serviceMap[s.serviceId]?.image ?? s.image,
-  }));
+  plain.services = (plain.services ?? [])
+    .filter((s) => serviceMap[s.serviceId])
+    .map((s) => ({
+      ...s,
+      name: serviceMap[s.serviceId].name,
+      price: parseFloat(serviceMap[s.serviceId].basePrice ?? 0),
+      duration: serviceMap[s.serviceId].duration,
+      image: serviceMap[s.serviceId].image,
+    }));
   return plain;
 };
 
 // Single-package version (e.g. getById) — one query is fine when there's only one package.
 const enrichFixed = async (pkg) => {
   const plain = pkg.get ? pkg.get({ plain: true }) : { ...pkg };
-  if (plain.packageType !== "fixed") return plain;
   const ids = (plain.services ?? []).map((s) => s.serviceId).filter(Boolean);
   if (ids.length === 0) return plain;
   const dbServices = await Service.findAll({
-    where: { id: ids },
+    where: { id: ids, isActive: true },
     attributes: ["id", "name", "basePrice", "duration", "image"],
   });
   const map = Object.fromEntries(dbServices.map((s) => [s.id, s]));
@@ -55,16 +69,17 @@ const listActive = async (cityId) => {
     order: [["sortOrder", "ASC"], ["createdAt", "DESC"]],
   });
 
-  // Batch-resolve every fixed package's service details in one query instead of
-  // one query per package (which was blowing through the DB connection pool).
+  // Batch-resolve every package's service details (fixed's pre-set list, or a
+  // flexible package's curated eligible-services list) in one query instead of one
+  // query per package (which was blowing through the DB connection pool).
   const allServiceIds = [...new Set(
     pkgs.flatMap((pkg) => {
       const plain = pkg.get({ plain: true });
-      return plain.packageType === "fixed" ? (plain.services ?? []).map((s) => s.serviceId).filter(Boolean) : [];
+      return (plain.services ?? []).map((s) => s.serviceId).filter(Boolean);
     })
   )];
   const dbServices = allServiceIds.length
-    ? await Service.findAll({ where: { id: allServiceIds }, attributes: ["id", "name", "basePrice", "duration", "image"] })
+    ? await Service.findAll({ where: { id: allServiceIds, isActive: true }, attributes: ["id", "name", "basePrice", "duration", "image"] })
     : [];
   const serviceMap = Object.fromEntries(dbServices.map((s) => [s.id, s]));
 
