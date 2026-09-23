@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useMemo} from 'react';
+import React, {useState, useEffect, useMemo, useRef} from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,8 @@ import {
   Modal,
   ActivityIndicator,
   RefreshControl,
+  Animated,
+  PanResponder,
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -130,6 +132,28 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
     return map;
   }, [cartServices]);
   const [detailItem, setDetailItem] = useState<any>(null);
+  // Swipe-down-to-close on the detail sheet's handle — the handle bar was previously
+  // decorative only (no gesture attached), so dragging it did nothing.
+  const sheetTranslateY = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (detailItem) sheetTranslateY.setValue(0);
+  }, [detailItem]);
+  const sheetPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_evt, gestureState) => Math.abs(gestureState.dy) > 4,
+      onPanResponderMove: (_evt, gestureState) => {
+        if (gestureState.dy > 0) sheetTranslateY.setValue(gestureState.dy);
+      },
+      onPanResponderRelease: (_evt, gestureState) => {
+        if (gestureState.dy > 100 || gestureState.vy > 0.8) {
+          setDetailItem(null);
+        } else {
+          Animated.spring(sheetTranslateY, {toValue: 0, useNativeDriver: true}).start();
+        }
+      },
+    }),
+  ).current;
   const [showSortSheet, setShowSortSheet] = useState(false);
   const [showFilterSheet, setShowFilterSheet] = useState(false);
   const [sortBy, setSortBy] = useState<'default'|'price_asc'|'price_desc'|'popular'>('default');
@@ -699,7 +723,7 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
           <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={() => setDetailItem(null)} />
 
           {detailItem && (
-            <View style={[styles.sheet, {paddingBottom: insets.bottom + sw(16)}]}>
+            <Animated.View style={[styles.sheet, {paddingBottom: insets.bottom + sw(16)}, {transform: [{translateY: sheetTranslateY}]}]}>
 
               {/* ── Hero image with gradient + close button ── */}
               <View style={styles.sheetHero}>
@@ -723,8 +747,10 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
                 <TouchableOpacity style={styles.sheetCloseBtn} onPress={() => setDetailItem(null)} activeOpacity={0.8}>
                   <Ionicons name="close" size={sw(18)} color="#171816" />
                 </TouchableOpacity>
-                {/* Handle */}
-                <View style={styles.sheetHandle} />
+                {/* Handle — draggable: swipe down (or a fast flick) closes the sheet */}
+                <View style={styles.sheetHandleHitArea} {...sheetPanResponder.panHandlers}>
+                  <View style={styles.sheetHandle} />
+                </View>
               </View>
 
               {/* ── Scrollable body ── */}
@@ -805,7 +831,7 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
                 )}
               </View>
 
-            </View>
+            </Animated.View>
           )}
         </View>
       </Modal>
@@ -875,7 +901,8 @@ const ServiceCard = ({
           <Image source={{uri: item.image}} style={styles.cardThumb} resizeMode="cover" />
         ) : (
           <View style={[styles.cardThumb, styles.cardThumbPlaceholder]}>
-            <Ionicons name="image-outline" size={sw(22)} color="#C5C5C5" />
+            <Ionicons name="image-outline" size={sw(20)} color="#C5C5C5" />
+            <Text style={styles.cardThumbPlaceholderText}>No image found</Text>
           </View>
         )}
         {item.isFree ? (
@@ -1104,6 +1131,14 @@ const styles = StyleSheet.create({
   cardThumbPlaceholder: {
     alignItems: 'center',
     justifyContent: 'center',
+    gap: sw(4),
+  },
+  cardThumbPlaceholderText: {
+    fontFamily: fonts.textFont,
+    fontSize: sw(9),
+    color: '#B5B5B5',
+    textAlign: 'center',
+    paddingHorizontal: sw(4),
   },
   priceBlock: {alignItems: 'flex-start', gap: sw(6)},
   startsAtLabel: {fontFamily: fonts.textFont, fontSize: sw(12), color: '#8A8A8A'},
@@ -1268,9 +1303,16 @@ const styles = StyleSheet.create({
     height: 4,
     borderRadius: 2,
     backgroundColor: 'rgba(255,255,255,0.6)',
-    alignSelf: 'center',
+  },
+  // Bigger invisible touch target around the handle bar so it's easy to grab.
+  sheetHandleHitArea: {
     position: 'absolute',
-    top: sw(8),
+    top: 0,
+    left: 0,
+    right: 0,
+    height: sw(28),
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   sheetScrollContent: {
     paddingHorizontal: sw(16),

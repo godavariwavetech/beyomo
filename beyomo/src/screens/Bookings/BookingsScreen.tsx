@@ -11,6 +11,8 @@ import {
   Alert,
   RefreshControl,
   AppState,
+  ActivityIndicator,
+  Share,
 } from 'react-native';
 import {BookingsScreenSkeleton} from '../../components/Skeleton/Skeleton';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
@@ -21,6 +23,7 @@ import {fonts} from '../../config/theme';
 import {fetchUserBookings, cancelBooking} from '../../redux/reducers/bookings';
 import type {AppDispatch, RootState} from '../../redux/store';
 import {formatAmount} from '../../utils/utils';
+import {downloadBookingInvoice} from '../../utils/invoicePdf';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
@@ -183,6 +186,7 @@ const BookingCard = ({
   onCancel: () => void;
   onReschedule: () => void;
 }) => {
+  const [downloadingInvoice, setDownloadingInvoice] = useState(false);
   const bookingCode = booking.bookingCode ?? booking._id?.slice(-8).toUpperCase();
   const scheduledAt = booking.scheduledAt
     ? new Date(booking.scheduledAt).toLocaleDateString('en-IN', {
@@ -205,6 +209,46 @@ const BookingCard = ({
   const handleTrack = () =>
     Alert.alert('Track Expert', 'Your expert Riya Sharma is on the way! ETA: ~15 minutes.', [{text: 'OK'}]);
 
+  // Opens the OS share sheet (WhatsApp/SMS/email/etc. — including a "Copy" option most
+  // share sheets offer on their own) with the booking's details. There's no web page a
+  // booking can be viewed at, so this shares a readable summary rather than a link that
+  // wouldn't actually go anywhere — the previous "Booking link copied!" alert didn't call
+  // any share/clipboard API at all, so nothing was ever actually copied.
+  const handleShareBooking = async () => {
+    const lines = [
+      `Beyomo Booking ${bookingCode}`,
+      status ? `Status: ${status}` : null,
+      scheduledAt ? `Scheduled: ${scheduledAt}${timeStr ? ` at ${timeStr}` : ''}` : null,
+      serviceCount ? `${serviceCount} service${serviceCount !== 1 ? 's' : ''}` : null,
+      totalAmount ? `Total: ₹${formatAmount(totalAmount)}` : null,
+    ].filter(Boolean);
+    try {
+      await Share.share({message: lines.join('\n')});
+    } catch {
+      // Share.share only rejects on a genuine platform error (not a user-dismissed
+      // sheet, which resolves normally) — safe to ignore.
+    }
+  };
+
+  const handleDownloadInvoice = async () => {
+    if (downloadingInvoice) return;
+    setDownloadingInvoice(true);
+    const result = await downloadBookingInvoice(booking);
+    setDownloadingInvoice(false);
+    if (result.success) {
+      const fileName = result.path?.split('/').pop() ?? `Beyomo_Invoice_${bookingCode}.pdf`;
+      const inDownloads = result.path?.includes('/Download');
+      Alert.alert(
+        'Download successful',
+        inDownloads
+          ? `Saved as ${fileName} in your Downloads folder.`
+          : `Saved as ${fileName}. Your device didn't allow saving directly to Downloads, so it's in the app's own storage instead.`,
+      );
+    } else {
+      Alert.alert('Download failed', result.message ?? 'Could not download the invoice. Please try again.');
+    }
+  };
+
   return (
   <View style={styles.card}>
     {/* ── Card top ── */}
@@ -218,7 +262,7 @@ const BookingCard = ({
             style={styles.dotsBtn}
             onPress={() => Alert.alert(bookingCode, 'What would you like to do?', [
               {text: 'View Details', onPress: onViewDetails},
-              {text: 'Share Booking', onPress: () => Alert.alert('Share', 'Booking link copied!')},
+              {text: 'Share Booking', onPress: handleShareBooking},
               {text: 'Close', style: 'cancel'},
             ])}>
             <View style={styles.dot} />
@@ -296,8 +340,13 @@ const BookingCard = ({
         <TouchableOpacity
           style={styles.actionBtn}
           activeOpacity={0.7}
-          onPress={() => Alert.alert('Invoice', 'Downloading invoice for ' + bookingCode + '...\nFeature coming soon.')}>
-          <Ionicons name="document-text-outline" size={sw(16)} color="#5C5C5C" />
+          disabled={downloadingInvoice}
+          onPress={handleDownloadInvoice}>
+          {downloadingInvoice ? (
+            <ActivityIndicator size="small" color="#5C5C5C" />
+          ) : (
+            <Ionicons name="document-text-outline" size={sw(16)} color="#5C5C5C" />
+          )}
           <Text style={styles.actionTextGray}>Invoice</Text>
         </TouchableOpacity>
       </View>

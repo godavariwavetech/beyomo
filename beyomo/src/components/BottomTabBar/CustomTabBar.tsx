@@ -91,43 +91,50 @@ const CustomTabBar = ({state, navigation}: Props) => {
   if (keyboardVisible) return null;
 
   return (
-    <View style={[styles.container, {paddingBottom: Math.max(insets.bottom, sw(8))}]}>
-      <View style={styles.tabRow}>
-        {state.routes.map((route: any, index: number) =>
-          index === profileIndex ? null : renderRouteTab(route, index),
-        )}
+    // Plain, unrounded backing in the same color as the bar itself — otherwise the two
+    // top corners the border radius cuts away just show the screen's background
+    // (white/off-white) behind them instead of blending into the bar.
+    <View style={styles.containerBacking}>
+      <View style={[styles.container, {paddingBottom: Math.max(insets.bottom, sw(8))}]}>
+        <View style={styles.tabRow}>
+          {state.routes.map((route: any, index: number) =>
+            index === profileIndex ? null : renderRouteTab(route, index),
+          )}
 
-        {/* Cart isn't a routed tab (it's a stack screen, not a persistent tab of its
-            own) — this just jumps straight there instead of drilling through package/
-            service screens to find a way in. Placed before Profile so Profile stays
-            the visually last tab. */}
-        <TouchableOpacity
-          onPress={() => navigation.navigate('AddressPayment', {
-            // Explicitly clear these so a stale legacy single-flow visit elsewhere
-            // (services/packageId from before) can't leak into cart mode.
-            services: undefined, packageId: undefined, packagePrice: undefined, packageTitle: undefined, offerId: undefined,
-          })}
-          activeOpacity={0.7}
-          style={styles.tabInactive}>
-          <View style={styles.cartIconWrapper}>
-            <Ionicons name="cart-outline" size={sw(22)} color={INACTIVE_COLOR} />
-            {cartCount > 0 && (
-              <View style={styles.cartCountBadge}>
-                <Text style={styles.cartCountText}>{cartCount > 9 ? '9+' : cartCount}</Text>
-              </View>
-            )}
-          </View>
-          <Text style={styles.labelInactive}>Cart</Text>
-        </TouchableOpacity>
+          {/* Cart isn't a routed tab (it's a stack screen, not a persistent tab of its
+              own) — this just jumps straight there instead of drilling through package/
+              service screens to find a way in. Placed before Profile so Profile stays
+              the visually last tab. */}
+          <TouchableOpacity
+            onPress={() => navigation.navigate('AddressPayment', {
+              // Explicitly clear these so a stale legacy single-flow visit elsewhere
+              // (services/packageId from before) can't leak into cart mode.
+              services: undefined, packageId: undefined, packagePrice: undefined, packageTitle: undefined, offerId: undefined,
+            })}
+            activeOpacity={0.7}
+            style={styles.tabInactive}>
+            <View style={styles.cartIconWrapper}>
+              <Ionicons name="cart-outline" size={sw(22)} color={INACTIVE_COLOR} />
+              {cartCount > 0 && (
+                <View style={styles.cartCountBadge}>
+                  <Text style={styles.cartCountText}>{cartCount > 9 ? '9+' : cartCount}</Text>
+                </View>
+              )}
+            </View>
+            <Text style={styles.labelInactive}>Cart</Text>
+          </TouchableOpacity>
 
-        {profileIndex !== -1 && renderRouteTab(state.routes[profileIndex], profileIndex)}
+          {profileIndex !== -1 && renderRouteTab(state.routes[profileIndex], profileIndex)}
+        </View>
       </View>
-
     </View>
   );
 };
 
 const styles = StyleSheet.create({
+  containerBacking: {
+    backgroundColor: TAB_BG,
+  },
   container: {
     backgroundColor: TAB_BG,
     paddingHorizontal: sw(16),

@@ -1,4 +1,4 @@
-import React, {useEffect, useRef, useState} from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -13,22 +13,26 @@ import {
   RefreshControl,
   Keyboard,
   ActivityIndicator,
+  Modal,
+  Animated,
+  PanResponder,
 } from 'react-native';
-import {HomeScreenSkeleton, SkeletonBox} from '../../components/Skeleton/Skeleton';
+import LinearGradient from 'react-native-linear-gradient';
+import { HomeScreenSkeleton, SkeletonBox } from '../../components/Skeleton/Skeleton';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import {useSafeAreaInsets} from 'react-native-safe-area-context';
-import {useDispatch, useSelector} from 'react-redux';
-import {fonts} from '../../config/theme';
-import {fetchCategories} from '../../redux/reducers/services';
-import {addServicesToCart, incrementServiceQty, decrementServiceQty} from '../../redux/reducers/cart';
-import {fetchNotifications} from '../../redux/reducers/notifications';
-import {fetchUserBookings} from '../../redux/reducers/bookings';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useDispatch, useSelector } from 'react-redux';
+import { fonts } from '../../config/theme';
+import { fetchCategories } from '../../redux/reducers/services';
+import { addServicesToCart, incrementServiceQty, decrementServiceQty } from '../../redux/reducers/cart';
+import { fetchNotifications } from '../../redux/reducers/notifications';
+import { fetchUserBookings } from '../../redux/reducers/bookings';
 import CartBar from '../../components/CartBar/CartBar';
-import type {AppDispatch, RootState} from '../../redux/store';
+import type { AppDispatch, RootState } from '../../redux/store';
 import api from '../../utils/api';
-import {endpoints} from '../../config/config';
-import {formatAmount} from '../../utils/utils';
-import {useKeyboardVisible} from '../../utils/useKeyboardVisible';
+import { endpoints } from '../../config/config';
+import { formatAmount } from '../../utils/utils';
+import { useKeyboardVisible } from '../../utils/useKeyboardVisible';
 
 const BRAND_LOGOS = [
   require('../../assets/brands/b1.png'),
@@ -52,7 +56,7 @@ const BRAND_LOGOS = [
   require('../../assets/brands/b21.png'),
 ];
 
-const {width} = Dimensions.get('window');
+const { width } = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
 
 const ELLIPSE_W = sw(755.67);
@@ -100,7 +104,10 @@ const WHY_BEYOMO_H = WHY_BEYOMO_W / WHY_BEYOMO_ASPECT;
 // "Top Brands" logo grid — 3 columns, compact rectangular cards for a premium look
 const BRAND_COLUMNS = 3;
 const BRAND_GAP = sw(12);
-const BRAND_CARD_W = (width - sw(32) - BRAND_GAP * (BRAND_COLUMNS - 1)) / BRAND_COLUMNS;
+// Math.floor guards against per-device pixel rounding: on some screen densities the
+// exact float width, summed across 3 columns + 2 gaps, rounds up just past the
+// container width, tipping the 3rd card onto a new row and leaving a gap in its place.
+const BRAND_CARD_W = Math.floor((width - sw(32) - BRAND_GAP * (BRAND_COLUMNS - 1)) / BRAND_COLUMNS);
 const BRAND_CARD_H = BRAND_CARD_W * 0.95;
 
 const chunkArray = <T,>(arr: T[], size: number): T[][] => {
@@ -111,11 +118,11 @@ const chunkArray = <T,>(arr: T[], size: number): T[][] => {
   return chunks;
 };
 
-const HomeScreen = ({navigation}: {navigation: any}) => {
+const HomeScreen = ({ navigation }: { navigation: any }) => {
   const insets = useSafeAreaInsets();
   const keyboardVisible = useKeyboardVisible();
   const dispatch = useDispatch<AppDispatch>();
-  const {categories, loading} = useSelector((state: RootState) => state.Services);
+  const { categories, loading } = useSelector((state: RootState) => state.Services);
   const selectedCity = useSelector((state: RootState) => state.City?.selectedCity);
   const userProfile = useSelector((state: RootState) => (state as any).User?.profile ?? (state as any).Auth?.user);
   const authToken = useSelector((state: RootState) => (state as any).Auth?.token);
@@ -124,13 +131,37 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
   const cartServices = useSelector((state: RootState) => (state as any).Cart?.services ?? []);
   const [banners, setBanners] = useState<any[]>([]);
   const [popularServices, setPopularServices] = useState<any[]>([]);
-  const [packageStats, setPackageStats] = useState<{flexibleMinPrice: number | null; flexibleCount: number; fixedMinPrice: number | null; fixedCount: number}>({flexibleMinPrice: null, flexibleCount: 0, fixedMinPrice: null, fixedCount: 0});
+  // "View Details" bottom sheet for a Most Booked Services card — same pattern as the
+  // service detail sheet on ServiceListingScreen.
+  const [detailItem, setDetailItem] = useState<any>(null);
+  // Swipe-down-to-close on the detail sheet's handle — previously decorative only.
+  const sheetTranslateY = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (detailItem) sheetTranslateY.setValue(0);
+  }, [detailItem]);
+  const sheetPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_evt, gestureState) => Math.abs(gestureState.dy) > 4,
+      onPanResponderMove: (_evt, gestureState) => {
+        if (gestureState.dy > 0) sheetTranslateY.setValue(gestureState.dy);
+      },
+      onPanResponderRelease: (_evt, gestureState) => {
+        if (gestureState.dy > 100 || gestureState.vy > 0.8) {
+          setDetailItem(null);
+        } else {
+          Animated.spring(sheetTranslateY, { toValue: 0, useNativeDriver: true }).start();
+        }
+      },
+    }),
+  ).current;
+  const [packageStats, setPackageStats] = useState<{ flexibleMinPrice: number | null; flexibleCount: number; fixedMinPrice: number | null; fixedCount: number }>({ flexibleMinPrice: null, flexibleCount: 0, fixedMinPrice: null, fixedCount: 0 });
 
   const [loadedServices, setLoadedServices] = useState<Set<string>>(new Set());
   const [refreshing, setRefreshing] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<any>({categories: [], services: [], packages: [], offers: []});
+  const [searchResults, setSearchResults] = useState<any>({ categories: [], services: [], packages: [], offers: [] });
   const [searchLoading, setSearchLoading] = useState(false);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -146,7 +177,7 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
     const q = searchQuery.trim();
     if (q.length < 2) {
-      setSearchResults({categories: [], services: [], packages: [], offers: []});
+      setSearchResults({ categories: [], services: [], packages: [], offers: [] });
       setSearchLoading(false);
       return;
     }
@@ -156,9 +187,9 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
       api
         .get(`${endpoints.SEARCH}?q=${encodeURIComponent(q)}${cityParam}`)
         .then(res => {
-          if (res.data?.status) setSearchResults(res.data.data ?? {categories: [], services: [], packages: [], offers: []});
+          if (res.data?.status) setSearchResults(res.data.data ?? { categories: [], services: [], packages: [], offers: [] });
         })
-        .catch(() => {})
+        .catch(() => { })
         .finally(() => setSearchLoading(false));
     }, 400);
     return () => {
@@ -169,13 +200,13 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
   const goToServiceListing = (categoryId: any, categoryName: string) => {
     Keyboard.dismiss();
     setSearchQuery('');
-    navigation.navigate('ServiceListing', {categoryId, category: categoryName});
+    navigation.navigate('ServiceListing', { categoryId, category: categoryName });
   };
 
   const goToPackage = (pkg: any) => {
     Keyboard.dismiss();
     setSearchQuery('');
-    navigation.navigate('PackageDetail', {packageId: pkg.id});
+    navigation.navigate('PackageDetail', { packageId: pkg.id });
   };
 
   const searchActive = searchQuery.trim().length >= 2;
@@ -211,14 +242,14 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
   const loadHomeData = () => {
     const bannersPromise = api.get(endpoints.BANNERS).then(res => {
       if (res.data?.status) setBanners(res.data.data ?? []);
-    }).catch(() => {});
+    }).catch(() => { });
     const popularPromise = api.get(endpoints.SERVICES, {
-      params: {isPopular: true, limit: 8, cityId: selectedCity?.id},
+      params: { isPopular: true, limit: 8, cityId: selectedCity?.id },
     }).then(res => {
       if (res.data?.status) setPopularServices(res.data.data ?? []);
-    }).catch(() => {});
+    }).catch(() => { });
     const packagesPromise = api.get(endpoints.PACKAGES, {
-      params: selectedCity?.id ? {cityId: selectedCity.id} : {},
+      params: selectedCity?.id ? { cityId: selectedCity.id } : {},
     }).then(res => {
       if (res.data?.status) {
         const all = (res.data.data ?? []) as any[];
@@ -232,14 +263,14 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
           fixedMinPrice: minPrice(fixed),
         });
       }
-    }).catch(() => {});
+    }).catch(() => { });
     const authedPromises: Promise<any>[] = authToken
       ? [dispatch(fetchNotifications()) as any, dispatch(fetchUserBookings()) as any]
       : [];
     return Promise.all([
       // Same city the popular-services call above already uses, so the category strip
       // can't offer a category that has nothing available in this city.
-      dispatch(fetchCategories(selectedCity?.id ? {cityId: selectedCity.id} : {})),
+      dispatch(fetchCategories(selectedCity?.id ? { cityId: selectedCity.id } : {})),
       bannersPromise,
       popularPromise,
       packagesPromise,
@@ -303,7 +334,7 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
           STICKY HEADER — stays pinned at top while scrolling
           Contains: dark ellipse + nav row + search bar
       ══════════════════════════════════ */}
-      <View style={[styles.stickyHeader, {paddingTop: insets.top}]}>
+      <View style={[styles.stickyHeader, { paddingTop: insets.top }]}>
         <View style={styles.ellipse} />
         <Image
           source={require('../../assets/leaf_alt.png')}
@@ -316,7 +347,7 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
             <TouchableOpacity
               activeOpacity={0.7}
               style={styles.locationBtn}
-              onPress={() => navigation.navigate('CitySelector', {returnToHome: true})}>
+              onPress={() => navigation.navigate('CitySelector', { returnToHome: true })}>
               <Ionicons name="location-sharp" size={sw(12)} color="#FFFFFF" />
               <View style={styles.locationNameRow}>
                 <Text style={styles.locationName} numberOfLines={1}>
@@ -361,11 +392,11 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
         {searchActive && (
           <ScrollView
             style={styles.searchResultsCard}
-            contentContainerStyle={{gap: sw(8)}}
+            contentContainerStyle={styles.searchResultsContent}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={true}
             nestedScrollEnabled>
-            {searchLoading && <ActivityIndicator color="#105641" style={{marginVertical: sw(16)}} />}
+            {searchLoading && <ActivityIndicator color="#105641" style={{ marginVertical: sw(16) }} />}
             {!searchLoading && !hasSearchResults && (
               <Text style={styles.searchEmpty}>No results for "{searchQuery.trim()}"</Text>
             )}
@@ -388,8 +419,8 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
                 {searchResults.services.map((svc: any) => (
                   <TouchableOpacity key={`svc-${svc.id}`} style={styles.searchRow} activeOpacity={0.7}
                     onPress={() => goToServiceListing(svc.categoryId ?? svc.category?.id, svc.category?.name ?? '')}>
-                    <Image source={{uri: svc.image || FALLBACK_IMAGE}} style={styles.searchRowImg} />
-                    <View style={{flex: 1}}>
+                    <Image source={{ uri: svc.image || FALLBACK_IMAGE }} style={styles.searchRowImg} />
+                    <View style={{ flex: 1 }}>
                       <Text style={styles.searchRowTitle} numberOfLines={1}>{svc.name}</Text>
                       <Text style={styles.searchRowSub} numberOfLines={1}>
                         {svc.category?.name ?? ''}{svc.duration ? ` · ${svc.duration} mins` : ''}
@@ -406,8 +437,8 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
                 {searchResults.packages.map((pkg: any) => (
                   <TouchableOpacity key={`pkg-${pkg.id}`} style={styles.searchRow} activeOpacity={0.7}
                     onPress={() => goToPackage(pkg)}>
-                    <Image source={{uri: pkg.image || FALLBACK_IMAGE}} style={styles.searchRowImg} />
-                    <View style={{flex: 1}}>
+                    <Image source={{ uri: pkg.image || FALLBACK_IMAGE }} style={styles.searchRowImg} />
+                    <View style={{ flex: 1 }}>
                       <Text style={styles.searchRowTitle} numberOfLines={1}>{pkg.title}</Text>
                     </View>
                     <Text style={styles.searchRowPrice}>₹{formatAmount(pkg.price ?? 0)}</Text>
@@ -434,7 +465,7 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
             <View style={styles.headerCardShadowWrap}>
               <View style={styles.headerCardImgWrap}>
                 <Image
-                  source={{uri: heroBanner.image}}
+                  source={{ uri: heroBanner.image }}
                   style={styles.headerCardImg}
                   resizeMode="cover"
                 />
@@ -479,12 +510,20 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
               style={styles.ctaCardShadow}
               activeOpacity={0.88}
               onPress={() => navigation.navigate('CustomPackages')}>
-              <View style={styles.ctaCardImgWrap}>
+              {/* <View style={styles.ctaCardImgWrap}>
                 <Image
                   source={customPackageBanner?.image ? {uri: customPackageBanner.image} : require('../../assets/custom_package_banner.png')}
                   style={styles.ctaCardImg}
                   resizeMode="cover"
                 />
+              </View> */}
+
+              <View style={styles.ctaCardImgWrap}>
+                {customPackageBanner?.image ?
+                  (<Image source={{ uri: customPackageBanner.image }} style={styles.ctaCardImg} resizeMode="cover" />) :
+                  (<View style={styles.noImageContainer}>
+                    <Text style={styles.noImageText}>No image found</Text>
+                  </View>)}
               </View>
               {packageStats.flexibleCount > 0 && (
                 <Text style={styles.ctaCaption} numberOfLines={1}>
@@ -497,13 +536,21 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
             <TouchableOpacity
               style={styles.ctaCardShadow}
               activeOpacity={0.88}
-              onPress={() => navigation.navigate('PackageListing', {packageType: 'fixed', title: 'Combos'})}>
-              <View style={styles.ctaCardImgWrap}>
+              onPress={() => navigation.navigate('PackageListing', { packageType: 'fixed', title: 'Combos' })}>
+              {/* <View style={styles.ctaCardImgWrap}>
                 <Image
-                  source={comboBanner?.image ? {uri: comboBanner.image} : require('../../assets/combo_banner.png')}
+                  source={comboBanner?.image ? { uri: comboBanner.image } : require('../../assets/combo_banner.png')}
                   style={styles.ctaCardImg}
                   resizeMode="cover"
                 />
+              </View> */}
+
+              <View style={styles.ctaCardImgWrap}>
+                {comboBanner?.image ?
+                  (<Image source={{ uri: comboBanner.image }} style={styles.ctaCardImg} resizeMode="cover" />) :
+                  (<View style={styles.noImageContainer}>
+                    <Text style={styles.noImageText}>No image found</Text>
+                  </View>)}
               </View>
               {packageStats.fixedCount > 0 && (
                 <Text style={styles.ctaCaption} numberOfLines={1}>
@@ -524,57 +571,57 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
           </View>
 
           <View style={styles.servicesGridWrap}>
-          <View style={styles.grid}>
-            {chunkArray(categories.slice(0, 12), 4).map((row: any[], ri: number) => (
-              <View key={ri} style={styles.gridRow}>
-                {row.map((item: any) => (
-                  <TouchableOpacity
-                    key={item._id ?? item.id}
-                    style={styles.serviceItem}
-                    activeOpacity={0.7}
-                    onPress={() => navigation.navigate('ServiceListing', {categoryId: item._id ?? item.id, category: item.name})}>
-                    <View style={styles.serviceImgBox}>
-                      <View style={styles.serviceImgInner}>
-                        <Image
-                          source={{uri: item.image ?? FALLBACK_IMAGE}}
-                          style={styles.serviceImg}
-                          resizeMode="cover"
-                          onLoadEnd={() =>
-                            setLoadedServices(prev =>
-                              prev.has(String(item._id ?? item.id))
-                                ? prev
-                                : new Set(prev).add(String(item._id ?? item.id))
-                            )
-                          }
-                        />
-                        {!loadedServices.has(String(item._id ?? item.id)) && (
-                          <SkeletonBox color="#DCDCDC" r={0} style={StyleSheet.absoluteFill} />
-                        )}
+            <View style={styles.grid}>
+              {chunkArray(categories.slice(0, 12), 4).map((row: any[], ri: number) => (
+                <View key={ri} style={styles.gridRow}>
+                  {row.map((item: any) => (
+                    <TouchableOpacity
+                      key={item._id ?? item.id}
+                      style={styles.serviceItem}
+                      activeOpacity={0.7}
+                      onPress={() => navigation.navigate('ServiceListing', { categoryId: item._id ?? item.id, category: item.name })}>
+                      <View style={styles.serviceImgBox}>
+                        <View style={styles.serviceImgInner}>
+                          <Image
+                            source={{ uri: item.image ?? FALLBACK_IMAGE }}
+                            style={styles.serviceImg}
+                            resizeMode="cover"
+                            onLoadEnd={() =>
+                              setLoadedServices(prev =>
+                                prev.has(String(item._id ?? item.id))
+                                  ? prev
+                                  : new Set(prev).add(String(item._id ?? item.id))
+                              )
+                            }
+                          />
+                          {!loadedServices.has(String(item._id ?? item.id)) && (
+                            <SkeletonBox color="#DCDCDC" r={0} style={StyleSheet.absoluteFill} />
+                          )}
+                        </View>
                       </View>
-                    </View>
-                    <Text style={styles.serviceLabel} numberOfLines={2}>
-                      {item.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            ))}
-          </View>
+                      <Text style={styles.serviceLabel} numberOfLines={2}>
+                        {item.name}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              ))}
+            </View>
 
-          {/* Was `> 12` — i.e. only when the 12-item grid above actually truncated the
+            {/* Was `> 12` — i.e. only when the 12-item grid above actually truncated the
               list. That made the button vanish the moment city filtering brought a city
               down to 12 or fewer categories, which reads as the button being broken.
               It's a useful way into the full list either way, so it shows whenever
               there's anything to show. */}
-          {categories.length > 0 && (
-            <TouchableOpacity
-              style={styles.viewAllRow}
-              activeOpacity={0.7}
-              onPress={() => navigation.navigate('AllCategories')}>
-              <Text style={styles.viewAllText}>View All Services</Text>
-              <Ionicons name="chevron-forward" size={sw(14)} color="#105641" />
-            </TouchableOpacity>
-          )}
+            {categories.length > 0 && (
+              <TouchableOpacity
+                style={styles.viewAllRow}
+                activeOpacity={0.7}
+                onPress={() => navigation.navigate('AllCategories')}>
+                <Text style={styles.viewAllText}>View All Services</Text>
+                <Ionicons name="chevron-forward" size={sw(14)} color="#105641" />
+              </TouchableOpacity>
+            )}
           </View>
         </View>
 
@@ -604,7 +651,7 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
                   <View key={id} style={styles.popularCard}>
                     <View style={styles.popularImgWrap}>
                       <Image
-                        source={{uri: svc.image ?? FALLBACK_IMAGE}}
+                        source={{ uri: svc.image ?? FALLBACK_IMAGE }}
                         style={styles.popularImg}
                         resizeMode="cover"
                       />
@@ -626,6 +673,13 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
                       <Text style={styles.popularPrice}>
                         {svc.priceStartsFrom ? 'From ' : ''}₹{formatAmount(parseFloat(svc.basePrice) || 0)}
                       </Text>
+                      <TouchableOpacity
+                        activeOpacity={0.7}
+                        onPress={() => setDetailItem(svc)}
+                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                        style={styles.viewDetailsBtn}>
+                        <Text style={styles.viewDetails}>View Details ›</Text>
+                      </TouchableOpacity>
                       {qty === 0 ? (
                         <TouchableOpacity
                           style={styles.popularAddBtn}
@@ -659,6 +713,125 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
           </View>
         )}
 
+        {/* ── "View Details" sheet for a Most Booked Services card — same UI/behavior
+            as the service detail sheet on ServiceListingScreen. ── */}
+        <Modal
+          visible={!!detailItem}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setDetailItem(null)}>
+          <View style={styles.sheetContainer}>
+            <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={() => setDetailItem(null)} />
+
+            {detailItem && (() => {
+              const detailId = String(detailItem.id ?? detailItem._id);
+              const detailQty = (cartServices as any[]).find((s: any) => String(s.id) === detailId && !s.isFree)?.qty ?? 0;
+              const detailPrice = parseFloat(detailItem.basePrice) || 0;
+              const detailOriginalPrice = parseFloat(detailItem.originalPrice ?? detailItem.mrp) || detailPrice;
+              const detailDiscountPct = detailItem.discountPct ?? detailItem.discountPercent ??
+                (detailOriginalPrice > detailPrice ? Math.round(((detailOriginalPrice - detailPrice) / detailOriginalPrice) * 100) : 0);
+              const detailBullets = detailItem.bullets ?? detailItem.highlights?.join('\n') ?? detailItem.description ?? '';
+              return (
+                <Animated.View style={[styles.sheet, { paddingBottom: insets.bottom + sw(16) }, { transform: [{ translateY: sheetTranslateY }] }]}>
+                  <View style={styles.sheetHero}>
+                    {detailItem.image
+                      ? <Image source={{ uri: detailItem.image }} style={styles.sheetHeroImg} resizeMode="cover" />
+                      : <View style={[styles.sheetHeroImg, { backgroundColor: '#E8F3EF' }]} />
+                    }
+                    <LinearGradient
+                      colors={['transparent', 'rgba(0,0,0,0.55)']}
+                      style={styles.sheetHeroGradient}
+                    />
+                    <View style={styles.sheetHeroPriceBadge}>
+                      <Text style={styles.sheetHeroPrice}>{detailItem.priceStartsFrom ? 'Starts at ' : ''}₹{formatAmount(detailPrice)}</Text>
+                      {detailOriginalPrice > detailPrice && (
+                        <Text style={styles.sheetHeroOriginal}>₹{formatAmount(detailOriginalPrice)}</Text>
+                      )}
+                    </View>
+                    <TouchableOpacity style={styles.sheetCloseBtn} onPress={() => setDetailItem(null)} activeOpacity={0.8}>
+                      <Ionicons name="close" size={sw(18)} color="#171816" />
+                    </TouchableOpacity>
+                    {/* Handle — draggable: swipe down (or a fast flick) closes the sheet */}
+                    <View style={styles.sheetHandleHitArea} {...sheetPanResponder.panHandlers}>
+                      <View style={styles.sheetHandle} />
+                    </View>
+                  </View>
+
+                  <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.sheetScrollContent}>
+                    <Text style={styles.sheetName}>{detailItem.name}</Text>
+
+                    <View style={styles.sheetPillsRow}>
+                      {!!detailItem.duration && (
+                        <View style={styles.sheetPill}>
+                          <Ionicons name="time-outline" size={sw(13)} color="#105641" />
+                          <Text style={styles.sheetPillText}>{detailItem.duration} mins</Text>
+                        </View>
+                      )}
+                      {detailDiscountPct > 0 && (
+                        <View style={[styles.sheetPill, styles.sheetPillGreen]}>
+                          <Ionicons name="pricetag-outline" size={sw(13)} color="#008F30" />
+                          <Text style={[styles.sheetPillText, { color: '#008F30' }]}>{detailDiscountPct}% OFF</Text>
+                        </View>
+                      )}
+                      {!!detailItem.bookedCount && (
+                        <View style={styles.sheetPill}>
+                          <Ionicons name="people-outline" size={sw(13)} color="#0068F0" />
+                          <Text style={[styles.sheetPillText, { color: '#0068F0' }]}>{detailItem.bookedCount}</Text>
+                        </View>
+                      )}
+                    </View>
+
+                    {!!detailBullets && <View style={styles.sheetDivider} />}
+                    {!!detailBullets && (
+                      <>
+                        <Text style={styles.sheetSectionLabel}>What's Included</Text>
+                        {detailBullets.split('\n').map((line: string, i: number) =>
+                          line.trim() ? (
+                            <View key={i} style={styles.sheetBulletRow}>
+                              <View style={styles.sheetBulletDot} />
+                              <Text style={styles.sheetBulletText}>{line.trim()}</Text>
+                            </View>
+                          ) : null,
+                        )}
+                      </>
+                    )}
+                  </ScrollView>
+
+                  <View style={styles.sheetFooter}>
+                    {detailQty === 0 ? (
+                      <TouchableOpacity
+                        style={styles.sheetAddBtn}
+                        activeOpacity={0.85}
+                        onPress={() => { handleAddPopular(detailItem); setDetailItem(null); }}>
+                        <Text style={styles.sheetAddBtnText}>Add to Cart</Text>
+                        <View style={styles.sheetAddBtnPriceBadge}>
+                          <Text style={styles.sheetAddBtnPrice}>₹{formatAmount(detailPrice)}</Text>
+                        </View>
+                      </TouchableOpacity>
+                    ) : (
+                      <View style={styles.sheetStepperRow}>
+                        <View style={styles.sheetStepper}>
+                          <TouchableOpacity style={styles.sheetStepBtn} activeOpacity={0.7} onPress={() => dispatch(decrementServiceQty(detailId))}>
+                            <Ionicons name="remove" size={sw(18)} color="#105641" />
+                          </TouchableOpacity>
+                          <Text style={styles.sheetStepCount}>{detailQty}</Text>
+                          <TouchableOpacity style={styles.sheetStepBtn} activeOpacity={0.7} onPress={() => dispatch(incrementServiceQty(detailId))}>
+                            <Ionicons name="add" size={sw(18)} color="#105641" />
+                          </TouchableOpacity>
+                        </View>
+                        <TouchableOpacity style={styles.sheetDoneBtn} activeOpacity={0.85} onPress={() => setDetailItem(null)}>
+                          <Ionicons name="checkmark" size={sw(16)} color="#FFFFFF" />
+                          <Text style={styles.sheetAddBtnText}>Done</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </View>
+                </Animated.View>
+              );
+            })()}
+          </View>
+        </Modal>
+
         {/* ══════════════════════════════════
             WHY BEYOMO?
         ══════════════════════════════════ */}
@@ -666,7 +839,7 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
           <View style={styles.whyBeyomoShadowWrap}>
             <View style={styles.whyBeyomoImgWrap}>
               <Image
-                source={whyBeyomoBanner?.image ? {uri: whyBeyomoBanner.image} : require('../../assets/why_beyomo.png')}
+                source={whyBeyomoBanner?.image ? { uri: whyBeyomoBanner.image } : require('../../assets/why_beyomo.png')}
                 style={styles.whyBeyomoImg}
                 resizeMode="cover"
               />
@@ -705,8 +878,13 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FCF8F3',
   },
-  scroll: {flex: 1},
-  contentContainer: {paddingBottom: sw(32)},
+  scroll: { flex: 1 },
+  // No bottom padding here — Top Brands (the last section) is a full-bleed dark green
+  // block, and padding on the scroll container itself would show as a strip of the
+  // screen's off-white background below it, breaking the full-bleed look. The same
+  // amount of bottom spacing is added to brandsSection's own paddingBottom instead, so
+  // it stays green all the way down to the tab bar.
+  contentContainer: { paddingBottom: 0 },
 
   /* ── Header hero banner card — plain poster image ──
      RN clips shadows away on any view that also has overflow:hidden (needed
@@ -893,7 +1071,7 @@ const styles = StyleSheet.create({
     borderRadius: sw(14),
     backgroundColor: '#FFFFFF',
     shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
     shadowRadius: 8,
     elevation: 2,
@@ -903,6 +1081,18 @@ const styles = StyleSheet.create({
     height: CTA_CARD_H,
     borderRadius: sw(14),
     overflow: 'hidden',
+  },
+  noImageContainer:
+  {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f5f5f5',
+  },
+  noImageText:
+  {
+    fontSize: 14,
+    color: '#777',
   },
   // Container is sized to the poster's exact aspect ratio (CTA_CARD_ASPECT), so
   // plain "cover" already fills it edge-to-edge with no cropping needed.
@@ -931,7 +1121,7 @@ const styles = StyleSheet.create({
     left: ELLIPSE_LEFT + ELLIPSE_W / 2 - ELLIPSE_H / 2,
     top: ELLIPSE_TOP,
     borderRadius: ELLIPSE_H / 2,
-    transform: [{scaleX: ELLIPSE_SCALE_X}],
+    transform: [{ scaleX: ELLIPSE_SCALE_X }],
     backgroundColor: '#012823',
   },
   headerLeaf: {
@@ -1011,7 +1201,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: sw(16),
     paddingVertical: sw(12),
     shadowColor: '#000',
-    shadowOffset: {width: 0, height: 1},
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 4,
     elevation: 1,
@@ -1031,15 +1221,21 @@ const styles = StyleSheet.create({
   searchResultsCard: {
     marginHorizontal: sw(12),
     marginTop: sw(12),
-    padding: sw(12),
     backgroundColor: '#FFFFFF',
     borderRadius: sw(12),
     maxHeight: sw(420),
     shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
     shadowRadius: 6,
     elevation: 2,
+  },
+  // Padding belongs on the scrollable content, not the ScrollView's own `style` —
+  // otherwise it doesn't apply to the actual content box, and the last row has no
+  // bottom clearance before the card's hard maxHeight cutoff, so it reads as "cut off".
+  searchResultsContent: {
+    gap: sw(8),
+    padding: sw(12),
   },
   searchEmpty: {
     fontFamily: fonts.secondry,
@@ -1141,7 +1337,7 @@ const styles = StyleSheet.create({
     borderRadius: sw(14),
     elevation: 1,
     shadowColor: '#000',
-    shadowOffset: {width: 0, height: sw(1)},
+    shadowOffset: { width: 0, height: sw(1) },
     shadowOpacity: 0.05,
     shadowRadius: sw(6),
     backgroundColor: '#F4E1CC',
@@ -1338,6 +1534,236 @@ const styles = StyleSheet.create({
     fontSize: sw(13),
     color: '#105641',
   },
+  viewDetailsBtn: {
+    paddingVertical: sw(2),
+  },
+  viewDetails: {
+    fontFamily: fonts.title,
+    fontSize: sw(12),
+    color: '#105641',
+    lineHeight: sw(16),
+  },
+
+  /* ── Most Booked Services — "View Details" sheet (same design as the service
+     detail sheet on ServiceListingScreen) ──────────────────────── */
+  sheetContainer: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  sheet: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: sw(24),
+    borderTopRightRadius: sw(24),
+    maxHeight: '88%',
+    overflow: 'hidden',
+  },
+  sheetHero: {
+    position: 'relative',
+    width: '100%',
+    height: sw(210),
+  },
+  sheetHeroImg: {
+    width: '100%',
+    height: '100%',
+  },
+  sheetHeroGradient: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: sw(90),
+  },
+  sheetHeroPriceBadge: {
+    position: 'absolute',
+    bottom: sw(14),
+    left: sw(16),
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: sw(6),
+  },
+  sheetHeroPrice: {
+    fontFamily: fonts.title,
+    fontSize: sw(22),
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  sheetHeroOriginal: {
+    fontFamily: fonts.textFont,
+    fontSize: sw(14),
+    color: 'rgba(255,255,255,0.65)',
+    textDecorationLine: 'line-through',
+  },
+  sheetCloseBtn: {
+    position: 'absolute',
+    top: sw(12),
+    right: sw(12),
+    width: sw(32),
+    height: sw(32),
+    borderRadius: sw(16),
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sheetHandle: {
+    width: sw(36),
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.6)',
+  },
+  // Bigger invisible touch target around the handle bar so it's easy to grab.
+  sheetHandleHitArea: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: sw(28),
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sheetScrollContent: {
+    paddingHorizontal: sw(16),
+    paddingTop: sw(16),
+    paddingBottom: sw(12),
+  },
+  sheetName: {
+    fontFamily: fonts.title,
+    fontSize: sw(20),
+    fontWeight: '800',
+    color: '#171816',
+    lineHeight: sw(26),
+    marginBottom: sw(12),
+  },
+  sheetPillsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: sw(8),
+    marginBottom: sw(16),
+  },
+  sheetPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: sw(5),
+    backgroundColor: '#F2F2F2',
+    borderRadius: sw(20),
+    paddingHorizontal: sw(10),
+    paddingVertical: sw(5),
+  },
+  sheetPillGreen: {
+    backgroundColor: '#E8F8EE',
+  },
+  sheetPillText: {
+    fontFamily: fonts.textFont,
+    fontSize: sw(12),
+    fontWeight: '600',
+    color: '#414141',
+  },
+  sheetDivider: {
+    height: 1,
+    backgroundColor: '#F0F0F0',
+    marginBottom: sw(14),
+  },
+  sheetSectionLabel: {
+    fontFamily: fonts.title,
+    fontSize: sw(13),
+    fontWeight: '700',
+    color: '#A3A3A3',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    marginBottom: sw(10),
+  },
+  sheetBulletRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: sw(10),
+    marginBottom: sw(8),
+  },
+  sheetBulletDot: {
+    width: sw(7),
+    height: sw(7),
+    borderRadius: sw(4),
+    backgroundColor: '#105641',
+    marginTop: sw(6),
+    flexShrink: 0,
+  },
+  sheetBulletText: {
+    flex: 1,
+    fontFamily: fonts.textFont,
+    fontSize: sw(13),
+    color: '#444444',
+    lineHeight: sw(20),
+  },
+  sheetFooter: {
+    paddingHorizontal: sw(16),
+    paddingTop: sw(12),
+    borderTopWidth: 1,
+    borderTopColor: '#F0F0F0',
+  },
+  sheetAddBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#105641',
+    borderRadius: sw(14),
+    height: sw(52),
+    gap: sw(10),
+  },
+  sheetAddBtnText: {
+    fontFamily: fonts.title,
+    fontSize: sw(15),
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  sheetAddBtnPriceBadge: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: sw(8),
+    paddingHorizontal: sw(8),
+    paddingVertical: sw(3),
+  },
+  sheetAddBtnPrice: {
+    fontFamily: fonts.title,
+    fontSize: sw(13),
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  sheetStepperRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: sw(12),
+  },
+  sheetStepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#105641',
+    borderRadius: sw(14),
+    height: sw(52),
+    overflow: 'hidden',
+  },
+  sheetStepBtn: {
+    width: sw(48),
+    height: sw(52),
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sheetStepCount: {
+    fontFamily: fonts.title,
+    fontSize: sw(16),
+    fontWeight: '800',
+    color: '#105641',
+    minWidth: sw(28),
+    textAlign: 'center',
+  },
+  sheetDoneBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#105641',
+    borderRadius: sw(14),
+    height: sw(52),
+    gap: sw(6),
+  },
 
   /* ── Why Beyomo? ──────────────────────── */
   whyBeyomoSection: {
@@ -1350,7 +1776,7 @@ const styles = StyleSheet.create({
     borderRadius: sw(16),
     backgroundColor: '#FFFFFF',
     shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
     shadowRadius: 6,
     elevation: 2,
@@ -1371,7 +1797,7 @@ const styles = StyleSheet.create({
     marginTop: sw(28),
     paddingHorizontal: sw(16),
     paddingTop: sw(24),
-    paddingBottom: sw(24),
+    paddingBottom: sw(56),
     backgroundColor: '#105641',
   },
   brandsTag: {
