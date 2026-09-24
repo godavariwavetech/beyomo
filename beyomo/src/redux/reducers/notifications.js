@@ -7,7 +7,16 @@ export const fetchNotifications = createAsyncThunk(
   async (_, {rejectWithValue}) => {
     try {
       const response = await api.get(endpoints.NOTIFICATIONS);
-      return response.data.data;
+      // The API returns { data: [...notifications], unreadCount } — `data` is the
+      // array directly, not `{ notifications: [...] }`. The reducer below expects
+      // that nested shape, so this reshapes the payload to match it; returning the
+      // raw array left `action.payload.notifications` (and `.unreadCount`) always
+      // undefined, which meant the notifications list was always empty regardless
+      // of how many notifications actually existed.
+      return {
+        notifications: response.data?.data ?? [],
+        unreadCount: response.data?.unreadCount ?? 0,
+      };
     } catch (error) {
       return rejectWithValue(error.response?.data?.message ?? 'Failed to load notifications.');
     }
