@@ -21,7 +21,7 @@ const DEV_POINT_AT_LIVE = true;//live
 
 export const BASE_URL =
   __DEV__ && !DEV_POINT_AT_LIVE ? LOCAL_BASE_URL : LIVE_BASE_URL;
-//const BASE_URL='http://192.168.1.2:3000';
+//const BASE_URL='http://192.168.1.12:3000';
 export const baseURL =BASE_URL;
 //export const baseURL = 'http://192.168.1.42:3000';
 

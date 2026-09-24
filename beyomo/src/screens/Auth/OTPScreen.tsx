@@ -208,7 +208,7 @@ const OTPScreen = ({navigation, route}: any) => {
 
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
 
         <TouchableOpacity
           style={styles.backBtn}

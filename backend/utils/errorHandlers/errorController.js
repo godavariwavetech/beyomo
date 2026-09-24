@@ -31,6 +31,7 @@ const sendErrorDev = (err, res) => {
   res.status(err.statusCode).json({
     status: err.status,
     message: err.message,
+    ...(err.details !== undefined ? { details: err.details } : {}),
     stack: err.stack,
     error: err,
   });
@@ -41,6 +42,7 @@ const sendErrorProd = (err, res) => {
     res.status(err.statusCode).json({
       status: false,
       message: err.msg || err.message,
+      ...(err.details !== undefined ? { details: err.details } : {}),
     });
   } else {
     logger.error("NON-OPERATIONAL ERROR:", err);

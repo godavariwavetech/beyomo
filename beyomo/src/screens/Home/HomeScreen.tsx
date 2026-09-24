@@ -522,6 +522,7 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
                 {customPackageBanner?.image ?
                   (<Image source={{ uri: customPackageBanner.image }} style={styles.ctaCardImg} resizeMode="cover" />) :
                   (<View style={styles.noImageContainer}>
+                    <Ionicons name="image-outline" size={sw(28)} color="#999999" style={styles.noImageIcon} />
                     <Text style={styles.noImageText}>No image found</Text>
                   </View>)}
               </View>
@@ -549,6 +550,7 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
                 {comboBanner?.image ?
                   (<Image source={{ uri: comboBanner.image }} style={styles.ctaCardImg} resizeMode="cover" />) :
                   (<View style={styles.noImageContainer}>
+                    <Ionicons name="image-outline" size={sw(28)} color="#999999" style={styles.noImageIcon} />
                     <Text style={styles.noImageText}>No image found</Text>
                   </View>)}
               </View>
@@ -650,11 +652,21 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
                 return (
                   <View key={id} style={styles.popularCard}>
                     <View style={styles.popularImgWrap}>
-                      <Image
-                        source={{ uri: svc.image ?? FALLBACK_IMAGE }}
-                        style={styles.popularImg}
-                        resizeMode="cover"
-                      />
+                      {svc.image
+                        ? (
+                          <Image
+                            source={{ uri: svc.image }}
+                            style={styles.popularImg}
+                            resizeMode="cover"
+                          />
+                        )
+                        : (
+                          <View style={[styles.popularImg, styles.noImageContainer]}>
+                            <Ionicons name="image-outline" size={sw(22)} color="#999999" style={styles.noImageIcon} />
+                            <Text style={styles.noImageText}>No image found</Text>
+                          </View>
+                        )
+                      }
                       {idx < 2 && (
                         <View style={styles.trendingBadge}>
                           <Ionicons name="flame" size={sw(10)} color="#FFFFFF" />
@@ -736,7 +748,12 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
                   <View style={styles.sheetHero}>
                     {detailItem.image
                       ? <Image source={{ uri: detailItem.image }} style={styles.sheetHeroImg} resizeMode="cover" />
-                      : <View style={[styles.sheetHeroImg, { backgroundColor: '#E8F3EF' }]} />
+                      : (
+                        <View style={[styles.sheetHeroImg, styles.noImageContainer]}>
+                          <Ionicons name="image-outline" size={sw(28)} color="#999999" style={styles.noImageIcon} />
+                          <Text style={styles.noImageText}>No image found</Text>
+                        </View>
+                      )
                     }
                     <LinearGradient
                       colors={['transparent', 'rgba(0,0,0,0.55)']}
@@ -1088,6 +1105,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#f5f5f5',
+  },
+  noImageIcon: {
+    marginBottom: 6,
   },
   noImageText:
   {
@@ -1609,7 +1629,10 @@ const styles = StyleSheet.create({
     width: sw(36),
     height: 4,
     borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.6)',
+    // Semi-dark rather than semi-white: a light/no-image hero (e.g. the "No image
+    // found" fallback) left this handle nearly invisible — a dark tint reads on both
+    // light and dark heroes instead of only showing up against a dark photo.
+    backgroundColor: 'rgba(0,0,0,0.28)',
   },
   // Bigger invisible touch target around the handle bar so it's easy to grab.
   sheetHandleHitArea: {

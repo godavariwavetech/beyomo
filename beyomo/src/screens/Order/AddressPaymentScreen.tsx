@@ -142,6 +142,10 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
   const [selectedAddr, setSelectedAddr] = useState<SavedAddress | null>(null);
   const [showAddrModal, setShowAddrModal] = useState(false);
   const addrSheetDrag = useSheetDrag(showAddrModal, () => setShowAddrModal(false));
+  // Small centered dialog for booking-failure notices (e.g. a cart service went
+  // unavailable mid-checkout) — replaces the OS Alert with an in-app styled modal.
+  const [infoModal, setInfoModal] = useState<{title: string; message: string; onOk?: () => void} | null>(null);
+
   // "Service Details" sheet for a tapped cart item — same design as the service detail
   // sheet already used on ServiceListingScreen / HomeScreen.
   const [detailItem, setDetailItem] = useState<any>(null);
@@ -698,10 +702,43 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
         ],
       });
     } catch (err: any) {
-      Alert.alert(
-        'Booking failed',
-        err?.response?.data?.message ?? 'Something went wrong. Please try again.',
-      );
+      const message = err?.response?.data?.message ?? 'Something went wrong. Please try again.';
+      // A service in the cart was deactivated/removed after it was added (admin-side
+      // change mid-checkout). Retrying does nothing until the stale item is gone.
+      const staleCartItem = /service/i.test(message) && /(not found|unavailable|not available)/i.test(message);
+      if (staleCartItem) {
+        const invalidIds: Array<string | number> = err?.response?.data?.details?.invalidServiceIds ?? [];
+        const invalidSet = new Set(invalidIds.map(String));
+        // Only the plain services list (cartServices) can be trimmed item-by-item — a
+        // service embedded inside a cart package can't be pulled out on its own, so that
+        // case still falls back to clearing everything below.
+        const invalidIsPlainServiceOnly =
+          isCartMode &&
+          invalidIds.length > 0 &&
+          !cartItems.some(item => item.services.some((s: any) => invalidSet.has(String(s.id))));
+
+        if (invalidIsPlainServiceOnly) {
+          invalidIds.forEach(id => dispatch(removeServiceFromCart(String(id))));
+          setInfoModal({
+            title: 'Service no longer available',
+            message: invalidIds.length > 1
+              ? 'Those services have been removed from your cart. The rest of your cart is unchanged.'
+              : 'It has been removed from your cart. The reset of your cart is unchanged.',
+          });
+        } else {
+          // Unknown which item(s) failed (e.g. inside a package), or nothing came back —
+          // safest fallback is to clear the cart and send the customer back to Home
+          // instead of leaving them stuck on a checkout screen that will keep failing.
+          if (isCartMode) dispatch(clearCart());
+          setInfoModal({
+            title: 'Service no longer available',
+            message: 'Your cart has been cleared.',
+            onOk: () => navigation?.reset({index: 0, routes: [{name: 'Main'}]}),
+          });
+        }
+      } else {
+        Alert.alert('Booking failed', message);
+      }
     } finally {
       setBooking(false);
     }
@@ -1486,7 +1523,12 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
                 <View style={styles.detailSheetHero}>
                   {detailItem.image
                     ? <Image source={{uri: detailItem.image}} style={styles.detailSheetHeroImg} resizeMode="cover" />
-                    : <View style={[styles.detailSheetHeroImg, {backgroundColor: '#E8F3EF'}]} />
+                    : (
+                      <View style={[styles.detailSheetHeroImg, styles.noImageContainer]}>
+                        <Ionicons name="image-outline" size={sw(28)} color="#999999" style={styles.noImageIcon} />
+                        <Text style={styles.noImageText}>No image found</Text>
+                      </View>
+                    )
                   }
                   <LinearGradient
                     colors={['transparent', 'rgba(0,0,0,0.55)']}
@@ -1585,6 +1627,33 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
               </Animated.View>
             );
           })()}
+        </View>
+      </Modal>
+
+      {/* ── Booking-failure notice (e.g. a cart service went unavailable mid-checkout) ── */}
+      <Modal
+        visible={!!infoModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setInfoModal(null)}>
+        <View style={styles.infoModalOverlay}>
+          <View style={styles.infoModalCard}>
+            <View style={styles.infoModalIconWrap}>
+              <Ionicons name="alert-circle" size={sw(30)} color="#E07A00" />
+            </View>
+            <Text style={styles.infoModalTitle}>{infoModal?.title}</Text>
+            <Text style={styles.infoModalMessage}>{infoModal?.message}</Text>
+            <TouchableOpacity
+              style={styles.infoModalBtn}
+              activeOpacity={0.85}
+              onPress={() => {
+                const onOk = infoModal?.onOk;
+                setInfoModal(null);
+                onOk?.();
+              }}>
+              <Text style={styles.infoModalBtnText}>OK</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </Modal>
 
@@ -2358,7 +2427,10 @@ const styles = StyleSheet.create({
     width: sw(36),
     height: 4,
     borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.6)',
+    // Semi-dark rather than semi-white: a light/no-image hero (e.g. the "No image
+    // found" fallback) left this handle nearly invisible — a dark tint reads on both
+    // light and dark heroes instead of only showing up against a dark photo.
+    backgroundColor: 'rgba(0,0,0,0.28)',
   },
   // Bigger invisible touch target around the handle bar so it's easy to grab.
   detailSheetHandleHitArea: {
@@ -2369,6 +2441,19 @@ const styles = StyleSheet.create({
     height: sw(28),
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  noImageContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f5f5f5',
+  },
+  noImageIcon: {
+    marginBottom: 6,
+  },
+  noImageText: {
+    fontSize: 14,
+    color: '#777',
   },
   detailSheetScrollContent: {
     paddingHorizontal: sw(16),
@@ -2499,6 +2584,61 @@ const styles = StyleSheet.create({
     backgroundColor: '#105641',
     borderRadius: sw(14),
     height: sw(52),
+  },
+  infoModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: sw(32),
+  },
+  infoModalCard: {
+    width: '100%',
+    maxWidth: sw(340),
+    backgroundColor: '#FFFFFF',
+    borderRadius: sw(20),
+    paddingVertical: sw(24),
+    paddingHorizontal: sw(22),
+    alignItems: 'center',
+  },
+  infoModalIconWrap: {
+    width: sw(56),
+    height: sw(56),
+    borderRadius: sw(28),
+    backgroundColor: '#FFF3E0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: sw(14),
+  },
+  infoModalTitle: {
+    fontFamily: fonts.title,
+    fontSize: sw(17),
+    fontWeight: '800',
+    color: '#171816',
+    textAlign: 'center',
+    marginBottom: sw(8),
+  },
+  infoModalMessage: {
+    fontFamily: fonts.primary,
+    fontSize: sw(13.5),
+    color: '#5C5F5B',
+    textAlign: 'center',
+    lineHeight: sw(19),
+    marginBottom: sw(20),
+  },
+  infoModalBtn: {
+    width: '100%',
+    height: sw(48),
+    borderRadius: sw(14),
+    backgroundColor: '#105641',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  infoModalBtnText: {
+    fontFamily: fonts.title,
+    fontSize: sw(14.5),
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 });
 

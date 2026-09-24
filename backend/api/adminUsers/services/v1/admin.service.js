@@ -23,7 +23,8 @@ const Review = require("../../../reviews/models/review.model");
 const Notification = require("../../../notifications/models/notification.model");
 const AppFeedback = require("../../../feedback/models/feedback.model");
 const { signToken } = require("../../../../utils/jwtUtils");
-const { sendPushNotification, PARTNER_NEW_BOOKING_CHANNEL } = require("../../../../utils/firebaseUtils");
+const { sendPushNotification, pushTokensFor, PARTNER_NEW_BOOKING_CHANNEL } = require("../../../../utils/firebaseUtils");
+const { formatISTDateTime } = require("../../../../utils/formatIST");
 const { haversineKm } = require("../../../../utils/geoUtils");
 const {
   resolveRatesForBooking,
@@ -221,14 +222,15 @@ const updatePartnerStatus = async (partnerId, status) => {
   const partner = await Partner.findByPk(partnerId);
   if (!partner) throw new AppError("Partner not found", 404);
 
-  if (partner.fcmToken) {
+  const statusTokens = pushTokensFor(partner);
+  if (statusTokens.length > 0) {
     const messages = {
       approved: "Congratulations! Your partner account has been approved.",
       suspended: "Your partner account has been suspended. Please contact support.",
       rejected: "Your partner application has been rejected. Please contact support.",
     };
     if (messages[status]) {
-      await sendPushNotification([partner.fcmToken], "Account Status Update", messages[status], { type: "system" });
+      await sendPushNotification(statusTokens, "Account Status Update", messages[status], { type: "system" });
     }
   }
   return partner;
@@ -645,9 +647,10 @@ const createBookingForCustomer = async (adminId, data) => {
     createdByAdminId: adminId,
   });
 
-  if (user.fcmToken) {
+  const createdBookingUserTokens = pushTokensFor(user);
+  if (createdBookingUserTokens.length > 0) {
     await sendPushNotification(
-      [user.fcmToken],
+      createdBookingUserTokens,
       "Booking Confirmed",
       `Your booking for ${primaryServiceName} has been placed. Booking ID: ${booking.bookingCode}`,
       { bookingId: String(booking.id), type: "booking" },
@@ -663,17 +666,22 @@ const createBookingForCustomer = async (adminId, data) => {
     type: "booking",
   });
 
-  if (!partnerId && booking.addressCity) {
+  if (!partnerId && (booking.cityId || booking.addressCity)) {
+    // Same cityId-first, locationCity-fallback rule used for the customer-booking path
+    // (bookings.service.js persistBooking) — an exact addressCity/locationCity string
+    // match silently misses partners over a trailing space, casing, or a spelling
+    // variant, which meant this push could go out to zero partners.
+    const cityWhere = booking.cityId ? { cityId: booking.cityId } : { locationCity: booking.addressCity };
     const cityPartners = await Partner.findAll({
-      where: { status: "approved", locationCity: booking.addressCity },
-      attributes: ["id", "fcmToken"],
+      where: { status: "approved", ...cityWhere },
+      attributes: ["id", "fcmToken", "deviceTokens"],
     });
-    const tokens = cityPartners.map(p => p.fcmToken).filter(Boolean);
+    const tokens = Array.from(new Set(cityPartners.flatMap(pushTokensFor)));
     if (tokens.length > 0) {
       await sendPushNotification(
         tokens,
         "New Job Available",
-        `New booking for ${primaryServiceName} near you. Open the app to accept.`,
+        `New booking for ${primaryServiceName} on ${formatISTDateTime(booking.scheduledAt)}. Open the app to accept.`,
         { bookingId: String(booking.id), type: "available_booking" },
         PARTNER_NEW_BOOKING_CHANNEL
       ).catch(() => {});
@@ -812,13 +820,14 @@ const assignPartner = async (bookingId, partnerId) => {
   await booking.update({ partnerId, status: "confirmed", services: updatedSvcs });
 
   // Notify partner about the new assignment
-  const msg = `You have been assigned to booking ${booking.bookingCode}. Scheduled: ${new Date(booking.scheduledAt).toLocaleString("en-IN")}.`;
-  if (partner.fcmToken) {
+  const msg = `You have been assigned to booking ${booking.bookingCode}. Scheduled: ${formatISTDateTime(booking.scheduledAt)}.`;
+  const assignedPartnerTokens = pushTokensFor(partner);
+  if (assignedPartnerTokens.length > 0) {
     // type "new_booking", not the generic "booking": this IS a new job for the partner,
     // and the app routes the custom alert sound (and the tap-through to the job) off
     // that distinction. The stored Notification row below keeps type "booking", which
     // is what the in-app list groups on.
-    await sendPushNotification([partner.fcmToken], "New Booking Assigned", msg,
+    await sendPushNotification(assignedPartnerTokens, "New Booking Assigned", msg,
       { bookingId: String(booking.id), type: "new_booking" },
       PARTNER_NEW_BOOKING_CHANNEL).catch(() => {});
   }
@@ -845,8 +854,9 @@ const acceptBooking = async (bookingId) => {
 
   const user = await User.findByPk(booking.userId);
   const userMsg = `Your booking ${booking.bookingCode} has been accepted and is being arranged.`;
-  if (user?.fcmToken) {
-    await sendPushNotification([user.fcmToken], "Booking Accepted", userMsg,
+  const acceptedTokens = pushTokensFor(user);
+  if (acceptedTokens.length > 0) {
+    await sendPushNotification(acceptedTokens, "Booking Accepted", userMsg,
       { bookingId: String(booking.id), type: "booking" }, "beyomo_booking").catch(() => {});
   }
   await Notification.create({
@@ -934,8 +944,9 @@ const editBookingServices = async (bookingId, serviceItems = [], removeIndices =
   // Notify user and assigned partners about the service change
   const userNotifMsg = `The services on your booking ${booking.bookingCode} have been updated by support. New total: ₹${total}.`;
   const userRecord = await User.findByPk(booking.userId);
-  if (userRecord?.fcmToken) {
-    await sendPushNotification([userRecord.fcmToken], "Booking Updated", userNotifMsg,
+  const userUpdateTokens = pushTokensFor(userRecord);
+  if (userUpdateTokens.length > 0) {
+    await sendPushNotification(userUpdateTokens, "Booking Updated", userNotifMsg,
       { bookingId: String(booking.id), type: "booking" }, "beyomo_booking").catch(() => {});
   }
   await Notification.create({
@@ -947,9 +958,10 @@ const editBookingServices = async (bookingId, serviceItems = [], removeIndices =
   });
 
   if (booking.partnerId) {
-    const partnerRecord = await Partner.findByPk(booking.partnerId, { attributes: ["fcmToken"] });
-    if (partnerRecord?.fcmToken) {
-      await sendPushNotification([partnerRecord.fcmToken], "Booking Updated",
+    const partnerRecord = await Partner.findByPk(booking.partnerId, { attributes: ["fcmToken", "deviceTokens"] });
+    const partnerUpdateTokens = pushTokensFor(partnerRecord);
+    if (partnerUpdateTokens.length > 0) {
+      await sendPushNotification(partnerUpdateTokens, "Booking Updated",
         `Services on booking ${booking.bookingCode} have been modified by admin. New total: ₹${total}.`,
         { bookingId: String(booking.id), type: "booking" }).catch(() => {});
     }
@@ -972,8 +984,9 @@ const removeBookingPackage = async (bookingId, packageId) => {
   await booking.update(updates);
 
   const userRecord = await User.findByPk(booking.userId);
-  if (userRecord?.fcmToken) {
-    await sendPushNotification([userRecord.fcmToken], "Booking Updated",
+  const removePkgTokens = pushTokensFor(userRecord);
+  if (removePkgTokens.length > 0) {
+    await sendPushNotification(removePkgTokens, "Booking Updated",
       `A package on your booking ${booking.bookingCode} was removed by support. New total: ₹${updates.totalAmount}.`,
       { bookingId: String(booking.id), type: "booking" }, "beyomo_booking").catch(() => {});
   }
@@ -1002,8 +1015,9 @@ const addBookingPackage = async (bookingId, packageId, qty, serviceItems) => {
   await booking.update(updates);
 
   const userRecord = await User.findByPk(booking.userId);
-  if (userRecord?.fcmToken) {
-    await sendPushNotification([userRecord.fcmToken], "Booking Updated",
+  const addPkgTokens = pushTokensFor(userRecord);
+  if (addPkgTokens.length > 0) {
+    await sendPushNotification(addPkgTokens, "Booking Updated",
       `A package was added to your booking ${booking.bookingCode} by support. New total: ₹${updates.totalAmount}.`,
       { bookingId: String(booking.id), type: "booking" }, "beyomo_booking").catch(() => {});
   }
@@ -1034,8 +1048,8 @@ const cancelBooking = async (bookingId) => {
     claimedPartnerIds.push(booking.partnerId);
   }
   if (claimedPartnerIds.length > 0) {
-    const claimedPartners = await Partner.findAll({ where: { id: claimedPartnerIds }, attributes: ["fcmToken"] });
-    const tokens = claimedPartners.map(p => p.fcmToken).filter(Boolean);
+    const claimedPartners = await Partner.findAll({ where: { id: claimedPartnerIds }, attributes: ["fcmToken", "deviceTokens"] });
+    const tokens = Array.from(new Set(claimedPartners.flatMap(pushTokensFor)));
     if (tokens.length > 0) {
       await sendPushNotification(tokens, "Booking Cancelled",
         `Booking ${booking.bookingCode} has been cancelled by the admin.`,
@@ -1044,8 +1058,9 @@ const cancelBooking = async (bookingId) => {
   }
   const user = await User.findByPk(booking.userId);
   const userMsg = `Your booking ${booking.bookingCode} has been cancelled by support. Contact us for help.`;
-  if (user?.fcmToken) {
-    await sendPushNotification([user.fcmToken], "Booking Cancelled", userMsg,
+  const cancelUserTokens = pushTokensFor(user);
+  if (cancelUserTokens.length > 0) {
+    await sendPushNotification(cancelUserTokens, "Booking Cancelled", userMsg,
       { bookingId: String(booking.id), type: "booking" }, "beyomo_booking").catch(() => {});
   }
   await Notification.create({
@@ -1077,12 +1092,13 @@ const rescheduleBooking = async (bookingId, scheduledAt, reason) => {
     rescheduledCount: (booking.rescheduledCount || 0) + 1,
   });
 
-  const newTimeStr = newScheduledAt.toLocaleString("en-IN");
+  const newTimeStr = formatISTDateTime(newScheduledAt);
 
   const user = await User.findByPk(booking.userId);
   const userMsg = `Your booking ${booking.bookingCode} has been rescheduled to ${newTimeStr} by support.`;
-  if (user?.fcmToken) {
-    await sendPushNotification([user.fcmToken], "Booking Rescheduled", userMsg,
+  const rescheduleUserTokens = pushTokensFor(user);
+  if (rescheduleUserTokens.length > 0) {
+    await sendPushNotification(rescheduleUserTokens, "Booking Rescheduled", userMsg,
       { bookingId: String(booking.id), type: "booking" }, "beyomo_booking").catch(() => {});
   }
   await Notification.create({
@@ -1094,9 +1110,10 @@ const rescheduleBooking = async (bookingId, scheduledAt, reason) => {
   });
 
   if (booking.partnerId) {
-    const partner = await Partner.findByPk(booking.partnerId, { attributes: ["fcmToken"] });
-    if (partner?.fcmToken) {
-      await sendPushNotification([partner.fcmToken], "Booking Rescheduled",
+    const partner = await Partner.findByPk(booking.partnerId, { attributes: ["fcmToken", "deviceTokens"] });
+    const reschedulePartnerTokens = pushTokensFor(partner);
+    if (reschedulePartnerTokens.length > 0) {
+      await sendPushNotification(reschedulePartnerTokens, "Booking Rescheduled",
         `Booking ${booking.bookingCode} has been rescheduled to ${newTimeStr} by admin.`,
         { bookingId: String(booking.id), type: "booking" }).catch(() => {});
     }
@@ -1202,16 +1219,16 @@ const broadcastNotification = async ({ title, body, data, segment, cityIds }) =>
   const cityFilter = cityIdsFilter(cityIds);
 
   if (segment === "all_users" || segment === "all") {
-    const users = await User.findAll({ where: { status: "active", fcmToken: { [Op.ne]: null }, ...cityFilter }, attributes: ["fcmToken", "id"] });
-    userTokens = users.map((u) => u.fcmToken).filter(Boolean);
+    const users = await User.findAll({ where: { status: "active", fcmToken: { [Op.ne]: null }, ...cityFilter }, attributes: ["fcmToken", "deviceTokens", "id"] });
+    userTokens = Array.from(new Set(users.flatMap(pushTokensFor)));
     if (users.length > 0) {
       await Notification.bulkCreate(users.map((u) => ({ userId: u.id, title, body, data: data || {}, type: "promo" })));
     }
   }
 
   if (segment === "all_partners" || segment === "all") {
-    const partners = await Partner.findAll({ where: { status: "approved", fcmToken: { [Op.ne]: null }, ...cityFilter }, attributes: ["fcmToken", "id"] });
-    partnerTokens = partners.map((p) => p.fcmToken).filter(Boolean);
+    const partners = await Partner.findAll({ where: { status: "approved", fcmToken: { [Op.ne]: null }, ...cityFilter }, attributes: ["fcmToken", "deviceTokens", "id"] });
+    partnerTokens = Array.from(new Set(partners.flatMap(pushTokensFor)));
     if (partners.length > 0) {
       await Notification.bulkCreate(partners.map((p) => ({ partnerId: p.id, title, body, data: data || {}, type: "promo" })));
     }

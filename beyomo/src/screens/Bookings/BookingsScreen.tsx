@@ -13,6 +13,7 @@ import {
   AppState,
   ActivityIndicator,
   Share,
+  Modal,
 } from 'react-native';
 import {BookingsScreenSkeleton} from '../../components/Skeleton/Skeleton';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
@@ -23,7 +24,7 @@ import {fonts} from '../../config/theme';
 import {fetchUserBookings, cancelBooking} from '../../redux/reducers/bookings';
 import type {AppDispatch, RootState} from '../../redux/store';
 import {formatAmount} from '../../utils/utils';
-import {downloadBookingInvoice} from '../../utils/invoicePdf';
+import {downloadBookingInvoice, openInvoiceFile} from '../../utils/invoicePdf';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
@@ -187,6 +188,8 @@ const BookingCard = ({
   onReschedule: () => void;
 }) => {
   const [downloadingInvoice, setDownloadingInvoice] = useState(false);
+  // In-app styled result modal for the invoice download, replacing the OS Alert.
+  const [invoiceModal, setInvoiceModal] = useState<{success: boolean; title: string; message: string; path?: string} | null>(null);
   const bookingCode = booking.bookingCode ?? booking._id?.slice(-8).toUpperCase();
   const scheduledAt = booking.scheduledAt
     ? new Date(booking.scheduledAt).toLocaleDateString('en-IN', {
@@ -236,16 +239,18 @@ const BookingCard = ({
     const result = await downloadBookingInvoice(booking);
     setDownloadingInvoice(false);
     if (result.success) {
-      const fileName = result.path?.split('/').pop() ?? `Beyomo_Invoice_${bookingCode}.pdf`;
-      const inDownloads = result.path?.includes('/Download');
-      Alert.alert(
-        'Download successful',
-        inDownloads
-          ? `Saved as ${fileName} in your Downloads folder.`
-          : `Saved as ${fileName}. Your device didn't allow saving directly to Downloads, so it's in the app's own storage instead.`,
-      );
+      setInvoiceModal({
+        success: true,
+        title: 'Downloaded successfully',
+        message: 'Your invoice has been saved to Downloads.',
+        path: result.path,
+      });
     } else {
-      Alert.alert('Download failed', result.message ?? 'Could not download the invoice. Please try again.');
+      setInvoiceModal({
+        success: false,
+        title: 'Download failed',
+        message: result.message ?? 'Could not download the invoice. Please try again.',
+      });
     }
   };
 
@@ -382,6 +387,47 @@ const BookingCard = ({
         </TouchableOpacity>
       </View>
     )}
+
+    {/* ── Invoice download result — in-app styled modal, not the OS Alert ── */}
+    <Modal
+      visible={!!invoiceModal}
+      transparent
+      animationType="fade"
+      onRequestClose={() => setInvoiceModal(null)}>
+      <View style={styles.invoiceModalOverlay}>
+        <View style={styles.invoiceModalCard}>
+          <View
+            style={[
+              styles.invoiceModalIconWrap,
+              !invoiceModal?.success && styles.invoiceModalIconWrapError,
+            ]}>
+            <Ionicons
+              name={invoiceModal?.success ? 'checkmark-circle' : 'alert-circle'}
+              size={sw(32)}
+              color={invoiceModal?.success ? '#105641' : '#D64545'}
+            />
+          </View>
+          <Text style={styles.invoiceModalTitle}>{invoiceModal?.title}</Text>
+          <Text style={styles.invoiceModalMessage}>{invoiceModal?.message}</Text>
+          <TouchableOpacity
+            style={styles.invoiceModalBtn}
+            activeOpacity={0.85}
+            onPress={() => {
+              const path = invoiceModal?.path;
+              setInvoiceModal(null);
+              if (path) {
+                openInvoiceFile(path).catch(() => {
+                  // No PDF viewer installed on the device, or the intent otherwise
+                  // couldn't be resolved — the file itself is still safely saved.
+                  Alert.alert('Could not open the invoice', 'The PDF was saved, but no app on this device could open it.');
+                });
+              }
+            }}>
+            <Text style={styles.invoiceModalBtnText}>{invoiceModal?.success ? 'View Invoice' : 'OK'}</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
   </View>
   );
 };
@@ -699,6 +745,64 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#5C5C5C',
     lineHeight: sw(15),
+  },
+  invoiceModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: sw(32),
+  },
+  invoiceModalCard: {
+    width: '100%',
+    maxWidth: sw(340),
+    backgroundColor: '#FFFFFF',
+    borderRadius: sw(20),
+    paddingVertical: sw(24),
+    paddingHorizontal: sw(22),
+    alignItems: 'center',
+  },
+  invoiceModalIconWrap: {
+    width: sw(60),
+    height: sw(60),
+    borderRadius: sw(30),
+    backgroundColor: '#EAF5F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: sw(14),
+  },
+  invoiceModalIconWrapError: {
+    backgroundColor: '#FEF0F0',
+  },
+  invoiceModalTitle: {
+    fontFamily: fonts.title,
+    fontSize: sw(17),
+    fontWeight: '800',
+    color: '#171816',
+    textAlign: 'center',
+    marginBottom: sw(8),
+  },
+  invoiceModalMessage: {
+    fontFamily: fonts.textFont,
+    fontSize: sw(13.5),
+    color: '#5C5F5B',
+    textAlign: 'center',
+    lineHeight: sw(19),
+    marginBottom: sw(20),
+  },
+  invoiceModalBtn: {
+    width: '100%',
+    height: sw(48),
+    borderRadius: sw(14),
+    backgroundColor: '#105641',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  invoiceModalBtnText: {
+    fontFamily: fonts.title,
+    fontSize: sw(14.5),
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 });
 

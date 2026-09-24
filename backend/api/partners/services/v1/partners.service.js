@@ -467,7 +467,7 @@ const updateBookingStatus = async (partnerId, bookingId, status, cashCollected =
  */
 const markArrived = async (partnerId, bookingId) => {
   const Notification = require("../../../notifications/models/notification.model");
-  const { sendPushNotification } = require("../../../../utils/firebaseUtils");
+  const { sendPushNotification, pushTokensFor } = require("../../../../utils/firebaseUtils");
 
   const booking = await Booking.findByPk(bookingId);
   if (!booking) throw new AppError("Booking not found", 404);
@@ -486,10 +486,11 @@ const markArrived = async (partnerId, bookingId) => {
   }
   const reloaded = await booking.reload();
 
-  const user = await User.findByPk(booking.userId, { attributes: ["fcmToken"] });
+  const user = await User.findByPk(booking.userId, { attributes: ["fcmToken", "deviceTokens"] });
   const msg = `Your service partner has arrived at your location for booking ${booking.bookingCode}.`;
-  if (user?.fcmToken) {
-    await sendPushNotification([user.fcmToken], "Partner Arrived", msg,
+  const arrivedTokens = pushTokensFor(user);
+  if (arrivedTokens.length > 0) {
+    await sendPushNotification(arrivedTokens, "Partner Arrived", msg,
       { bookingId: String(booking.id), type: "booking" }, "beyomo_booking").catch(() => {});
   }
   await Notification.create({
@@ -685,7 +686,7 @@ const getAvailableBookings = async (partnerId) => {
 
 const claimServices = async (partnerId, bookingId, serviceIndices) => {
   const Notification = require('../../../notifications/models/notification.model');
-  const { sendPushNotification } = require('../../../../utils/firebaseUtils');
+  const { sendPushNotification, pushTokensFor } = require('../../../../utils/firebaseUtils');
 
   const partner = await Partner.findByPk(partnerId, { attributes: ['name'] });
   if (!partner) throw new AppError('Partner not found', 404);
@@ -745,9 +746,10 @@ const claimServices = async (partnerId, bookingId, serviceIndices) => {
 
     const user = await User.findByPk(booking.userId, { transaction: t });
     const names = uniqueIndices.map(i => svcs[i]?.name || 'Service').join(', ');
-    if (user?.fcmToken) {
+    const claimTokens = pushTokensFor(user);
+    if (claimTokens.length > 0) {
       await sendPushNotification(
-        [user.fcmToken], 'Partner Assigned',
+        claimTokens, 'Partner Assigned',
         `${partner.name} accepted: ${names} for booking ${booking.bookingCode}.`,
         { bookingId: String(booking.id), type: 'booking' }
       );
@@ -788,7 +790,7 @@ const acceptBooking = async (partnerId, bookingId) => {
   if (!hasTracking) {
     // Old format: simple full accept
     const Notification = require('../../../notifications/models/notification.model');
-    const { sendPushNotification } = require('../../../../utils/firebaseUtils');
+    const { sendPushNotification, pushTokensFor } = require('../../../../utils/firebaseUtils');
     const [updated] = await Booking.update(
       { partnerId, status: 'confirmed' },
       {
@@ -808,8 +810,9 @@ const acceptBooking = async (partnerId, bookingId) => {
       ],
     });
     const user = await User.findByPk(booking.userId);
-    if (user?.fcmToken) {
-      await sendPushNotification([user.fcmToken], 'Partner Assigned',
+    const acceptTokens = pushTokensFor(user);
+    if (acceptTokens.length > 0) {
+      await sendPushNotification(acceptTokens, 'Partner Assigned',
         `A partner has accepted your booking ${booking.bookingCode}.`,
         { bookingId: String(booking.id), type: 'booking' }, 'beyomo_booking');
     }
@@ -838,7 +841,7 @@ const acceptBooking = async (partnerId, bookingId) => {
  */
 const addExtraServices = async (partnerId, bookingId, { services: serviceItems = [], removeIndices = [], updateQty = [] } = {}) => {
   const Notification = require('../../../notifications/models/notification.model');
-  const { sendPushNotification } = require('../../../../utils/firebaseUtils');
+  const { sendPushNotification, pushTokensFor } = require('../../../../utils/firebaseUtils');
 
   const booking = await Booking.findOne({ where: { id: bookingId, status: ['confirmed', 'in_progress'] } });
   if (!booking) throw new AppError('Booking not found or not in an active state', 404);
@@ -944,8 +947,9 @@ const addExtraServices = async (partnerId, bookingId, { services: serviceItems =
   const changeMsg = addedNames
     ? `Your partner updated booking ${booking.bookingCode}. Added: ${addedNames}. New total: ₹${total}`
     : `Your partner updated services on booking ${booking.bookingCode}. New total: ₹${total}`;
-  if (user?.fcmToken) {
-    await sendPushNotification([user.fcmToken], 'Booking Updated', changeMsg,
+  const changeTokens = pushTokensFor(user);
+  if (changeTokens.length > 0) {
+    await sendPushNotification(changeTokens, 'Booking Updated', changeMsg,
       { bookingId: String(booking.id), type: 'booking' }).catch(() => {});
   }
   await Notification.create({
@@ -978,7 +982,7 @@ const assertPartnerAuthorised = (booking, partnerId) => {
  */
 const addBookingPackage = async (partnerId, bookingId, packageId, qty, serviceItems) => {
   const Notification = require('../../../notifications/models/notification.model');
-  const { sendPushNotification } = require('../../../../utils/firebaseUtils');
+  const { sendPushNotification, pushTokensFor } = require('../../../../utils/firebaseUtils');
   const { buildPackageAddition } = require('../../../bookings/services/v1/bookings.service');
 
   const booking = await Booking.findOne({ where: { id: bookingId, status: ['confirmed', 'in_progress'] } });
@@ -1000,8 +1004,9 @@ const addBookingPackage = async (partnerId, bookingId, packageId, qty, serviceIt
 
   const user = await User.findByPk(booking.userId);
   const msg = `Your partner added a package to booking ${booking.bookingCode}. New total: ₹${updates.totalAmount}.`;
-  if (user?.fcmToken) {
-    await sendPushNotification([user.fcmToken], 'Booking Updated', msg,
+  const addPkgTokens2 = pushTokensFor(user);
+  if (addPkgTokens2.length > 0) {
+    await sendPushNotification(addPkgTokens2, 'Booking Updated', msg,
       { bookingId: String(booking.id), type: 'booking' }).catch(() => {});
   }
   await Notification.create({
@@ -1018,7 +1023,7 @@ const addBookingPackage = async (partnerId, bookingId, packageId, qty, serviceIt
  */
 const removeBookingPackage = async (partnerId, bookingId, packageId) => {
   const Notification = require('../../../notifications/models/notification.model');
-  const { sendPushNotification } = require('../../../../utils/firebaseUtils');
+  const { sendPushNotification, pushTokensFor } = require('../../../../utils/firebaseUtils');
   const { buildPackageRemoval } = require('../../../bookings/services/v1/bookings.service');
 
   const booking = await Booking.findOne({ where: { id: bookingId, status: ['confirmed', 'in_progress'] } });
@@ -1030,8 +1035,9 @@ const removeBookingPackage = async (partnerId, bookingId, packageId) => {
 
   const user = await User.findByPk(booking.userId);
   const msg = `Your partner removed a package from booking ${booking.bookingCode}. New total: ₹${updates.totalAmount}.`;
-  if (user?.fcmToken) {
-    await sendPushNotification([user.fcmToken], 'Booking Updated', msg,
+  const removePkgTokens2 = pushTokensFor(user);
+  if (removePkgTokens2.length > 0) {
+    await sendPushNotification(removePkgTokens2, 'Booking Updated', msg,
       { bookingId: String(booking.id), type: 'booking' }).catch(() => {});
   }
   await Notification.create({
