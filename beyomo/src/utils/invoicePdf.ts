@@ -49,6 +49,10 @@ type InvoiceLine = {
   rowH?: number; // background band height — needed when this line's own `gap` is 0 (a
   // multi-column row's non-last column), since `gap` alone can't describe the row's
   // visual height in that case
+  borderBottom?: RGB; // thin horizontal rule drawn at this row's bottom edge — put on
+  // the row's last column (the one carrying the real `gap`), so the rule lands exactly
+  // at the row boundary rather than mid-row
+  borderBottomWidth?: number; // rule thickness in points — defaults to a hairline
 };
 
 const BASE64_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
@@ -158,6 +162,20 @@ const buildBodyOps = (lines: InvoiceLine[]): string => {
       ops.push(`1 0 0 1 ${line.x ?? MARGIN_LEFT} ${y} Tm`);
       ops.push(`(${escapePdfText(line.text)}) Tj`);
       ops.push('ET');
+    }
+    if (line.borderBottom) {
+      // Drawn at this row's bottom edge (y - rowH, before the cursor advances below),
+      // so it reads as a divider between this row and the next rather than mid-text.
+      // `y - rowH` is the *next* row's baseline, not the gap between the two — text
+      // sits mostly above its baseline (see the rowBg centering note above), so a rule
+      // drawn right at that y cut straight through the next row's text. Centering it
+      // in the gap between this row's visual bottom and the next row's visual top
+      // keeps it clear of both.
+      const ruleH = line.borderBottomWidth ?? 0.75;
+      const ruleY = y - rowH / 2 + size * 0.3;
+      ops.push(rgOp(line.borderBottom));
+      ops.push(`${MARGIN_LEFT - 6} ${ruleY} ${CONTENT_WIDTH + 12} ${ruleH} re`);
+      ops.push('f');
     }
     y -= rowH;
   });
@@ -305,20 +323,35 @@ const buildInvoiceLines = (booking: any): InvoiceLine[] => {
   lines.push({text: 'Price', x: COL_PRICE, size: 10, bold: true, color: BRAND_DARK, gap: 0});
   lines.push({text: 'Amount', x: COL_AMOUNT, size: 10, bold: true, color: BRAND_DARK, gap: HEADER_ROW_H});
 
+  // A light hairline under each row (separate from the alternating shading) makes
+  // individual services easy to tell apart at a glance, especially once there are
+  // more than two or three of them.
+  const ROW_DIVIDER: RGB = [0.87, 0.87, 0.85];
   if (services.length) {
     const ROW_H = 20;
     services.forEach((s: any, idx: number) => {
       const qty = Number(s.qty) || 1;
       const price = Number(s.price) || 0;
       const rowBg: RGB | undefined = idx % 2 === 1 ? [0.976, 0.976, 0.973] : undefined;
+      // Skip the hairline on the last row — the bold green rule right after it
+      // (closing off the table before the bill summary) already marks that edge, so
+      // a hairline there too was just a second, redundant line sitting on top of it.
+      const isLast = idx === services.length - 1;
       lines.push({text: truncate(String(s.name ?? 'Service'), 42), x: COL_ITEM, size: 9.5, rowBg, rowH: ROW_H, gap: 0});
       lines.push({text: String(qty), x: COL_QTY, size: 9.5, gap: 0});
       lines.push({text: money(price), x: COL_PRICE, size: 9.5, gap: 0});
-      lines.push({text: money(price * qty), x: COL_AMOUNT, size: 9.5, gap: ROW_H});
+      lines.push({text: money(price * qty), x: COL_AMOUNT, size: 9.5, borderBottom: isLast ? undefined : ROW_DIVIDER, gap: ROW_H});
     });
   } else {
     lines.push({text: 'No services listed', size: 9.5, gap: 20});
   }
+
+  // A stronger rule (brand color, thicker than the per-row hairlines above) closes
+  // off the itemized table before the bill summary starts, so the two sections read
+  // as visually distinct blocks rather than running into each other.
+  lines.push({
+    text: '', size: 4, borderBottom: BRAND_DARK, borderBottomWidth: 1.25, gap: 14,
+  });
 
   // Bill summary — right-hand block, label/value as two columns
   const summaryRow = (label: string, value: string, opts?: Partial<InvoiceLine>) => {

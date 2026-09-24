@@ -88,6 +88,14 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
   const [onlineSaving, setOnlineSaving] = useState(false);
   const heartbeatRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
   const heartbeatMinsRef = React.useRef(2);
+  // Read inside the AppState listener below, which is only ever set up once (empty
+  // dep array) — without this it would always see the `isOnline` value from that
+  // first render, not whatever it actually is by the time the app comes back to
+  // the foreground.
+  const isOnlineRef = React.useRef(isOnline);
+  useEffect(() => {
+    isOnlineRef.current = isOnline;
+  }, [isOnline]);
   const [ready, setReady] = useState(false);
   const [dashboardData, setDashboardData] = useState<any>(null);
   const [availableCount, setAvailableCount] = useState(0);
@@ -178,6 +186,22 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
 
       const sub = AppState.addEventListener('change', state => {
         if (state === 'active') {
+          // The heartbeat's own setInterval keeps "ticking" in JS terms while the app
+          // is backgrounded, but Android is free to throttle or altogether suspend
+          // timers for a backgrounded app (aggressively so on some OEMs' battery
+          // managers) — if that happens for longer than the server's online timeout,
+          // the very next dashboard poll below sees the server's own "gone stale"
+          // isOnline:false and silently flips the toggle off, even though the partner
+          // never touched it. Sending a heartbeat the instant the app is foregrounded
+          // — before that poll runs — closes that gap immediately if they're still
+          // toggled on, instead of waiting for the (possibly dead) interval to catch up.
+          if (isOnlineRef.current) {
+            pushOnlineStatus(true).catch(() => {});
+            // Also restarts the heartbeat's own interval, in case Android didn't just
+            // throttle it but stopped it outright while backgrounded — restarting is
+            // safe and idempotent (startHeartbeat always clears any existing one first).
+            startHeartbeat();
+          }
           if (!interval) {
             refreshAll();
             interval = setInterval(refreshAll, 10000);

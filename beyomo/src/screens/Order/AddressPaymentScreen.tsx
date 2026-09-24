@@ -1,4 +1,5 @@
-import React, {useEffect, useRef, useState} from 'react';
+import React, {useCallback, useEffect, useRef, useState} from 'react';
+import {useFocusEffect} from '@react-navigation/native';
 import {
   View,
   Text,
@@ -228,6 +229,67 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
   // local `services` state did for a single package's extras.
   const cartServices: ServiceItem[] = useSelector((state: RootState) => (state as any).Cart?.services ?? []);
   const isCartEmpty = isCartMode && cartItems.length === 0 && cartServices.length === 0;
+
+  // Kept in sync with the redux cart so the focus-effect below always reads the
+  // latest contents without needing cartServices/cartItems in its dependency array —
+  // that would re-run the check on every cart edit (qty change, add, remove) instead
+  // of only when the screen is actually (re)opened.
+  const cartServicesRef = useRef(cartServices);
+  useEffect(() => {
+    cartServicesRef.current = cartServices;
+  }, [cartServices]);
+  const cartItemsRef = useRef(cartItems);
+  useEffect(() => {
+    cartItemsRef.current = cartItems;
+  }, [cartItems]);
+
+  // Catches a service going inactive (e.g. an admin deactivating it) while it's
+  // already sitting in the cart, *before* the customer gets all the way to tapping
+  // Continue — the same staleness check previously only ran when the booking API
+  // call itself failed. Package-embedded services aren't checked here for the same
+  // reason as the Continue-time fallback: they can't be pulled out individually.
+  useFocusEffect(
+    useCallback(() => {
+      if (!isCartMode) return;
+      let cancelled = false;
+      (async () => {
+        const toCheck = cartServicesRef.current;
+        if (toCheck.length === 0) return;
+        const results = await Promise.all(
+          toCheck.map(async (s: any) => {
+            try {
+              await api.get(`${endpoints.SERVICES}/${s.id}`);
+              return null;
+            } catch {
+              return String(s.id);
+            }
+          }),
+        );
+        if (cancelled) return;
+        const staleIds = results.filter((id): id is string => id !== null);
+        if (staleIds.length === 0) return;
+        staleIds.forEach(id => dispatch(removeServiceFromCart(id)));
+        // Whether anything is actually left in the cart after this removal — packages
+        // (cartItemsRef) are untouched by this check, so a cart that still has one of
+        // those isn't empty even if every plain service just got pulled out.
+        const cartNowEmpty = toCheck.length - staleIds.length + cartItemsRef.current.length === 0;
+        setInfoModal({
+          title: 'Service no longer available',
+          message: cartNowEmpty
+            ? (staleIds.length > 1
+                ? 'Those services are no longer available. Your cart is now empty.'
+                : 'It is no longer available. Your cart is now empty.')
+            : (staleIds.length > 1
+                ? 'Those services have been removed from your cart. The rest of your cart is unchanged.'
+                : 'It has been removed from your cart. The rest of your cart is unchanged.'),
+        });
+      })();
+      return () => {
+        cancelled = true;
+      };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isCartMode]),
+  );
 
   const [eligibleOffer, setEligibleOffer] = useState<{
     offerId: number;
@@ -719,11 +781,18 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
 
         if (invalidIsPlainServiceOnly) {
           invalidIds.forEach(id => dispatch(removeServiceFromCart(String(id))));
+          // Packages (cartItems) aren't touched by this removal, so the cart isn't
+          // truly empty just because every plain service got pulled out of it.
+          const cartNowEmpty = isCartMode && cartServices.length - invalidIds.length + cartItems.length === 0;
           setInfoModal({
             title: 'Service no longer available',
-            message: invalidIds.length > 1
-              ? 'Those services have been removed from your cart. The rest of your cart is unchanged.'
-              : 'It has been removed from your cart. The reset of your cart is unchanged.',
+            message: cartNowEmpty
+              ? (invalidIds.length > 1
+                  ? 'Those services are no longer available. Your cart is now empty.'
+                  : 'It is no longer available. Your cart is now empty.')
+              : (invalidIds.length > 1
+                  ? 'Those services have been removed from your cart. The rest of your cart is unchanged.'
+                  : 'It has been removed from your cart. The rest of your cart is unchanged.'),
           });
         } else {
           // Unknown which item(s) failed (e.g. inside a package), or nothing came back —
@@ -1630,33 +1699,6 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
         </View>
       </Modal>
 
-      {/* ── Booking-failure notice (e.g. a cart service went unavailable mid-checkout) ── */}
-      <Modal
-        visible={!!infoModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setInfoModal(null)}>
-        <View style={styles.infoModalOverlay}>
-          <View style={styles.infoModalCard}>
-            <View style={styles.infoModalIconWrap}>
-              <Ionicons name="alert-circle" size={sw(30)} color="#E07A00" />
-            </View>
-            <Text style={styles.infoModalTitle}>{infoModal?.title}</Text>
-            <Text style={styles.infoModalMessage}>{infoModal?.message}</Text>
-            <TouchableOpacity
-              style={styles.infoModalBtn}
-              activeOpacity={0.85}
-              onPress={() => {
-                const onOk = infoModal?.onOk;
-                setInfoModal(null);
-                onOk?.();
-              }}>
-              <Text style={styles.infoModalBtnText}>OK</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
       {/* Bottom bar */}
       {subtotal > 0 && subtotal < MIN_BOOKING_AMOUNT && (
         <View style={styles.minAmountBanner}>
@@ -1688,6 +1730,39 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
       </View>
       </>
       )}
+
+      {/* ── Booking-failure notice (e.g. a cart service went unavailable mid-checkout) ──
+          Deliberately a sibling of the isCartEmpty branch above, not nested inside it:
+          when the stale service being removed was the cart's last item, isCartEmpty
+          flips true and swaps in the "Your cart is empty" state on the same render —
+          nesting this modal inside that branch meant it got unmounted before the user
+          ever saw why the cart emptied, leaving just the empty-cart view with no
+          explanation. ── */}
+      <Modal
+        visible={!!infoModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setInfoModal(null)}>
+        <View style={styles.infoModalOverlay}>
+          <View style={styles.infoModalCard}>
+            <View style={styles.infoModalIconWrap}>
+              <Ionicons name="alert-circle" size={sw(30)} color="#E07A00" />
+            </View>
+            <Text style={styles.infoModalTitle}>{infoModal?.title}</Text>
+            <Text style={styles.infoModalMessage}>{infoModal?.message}</Text>
+            <TouchableOpacity
+              style={styles.infoModalBtn}
+              activeOpacity={0.85}
+              onPress={() => {
+                const onOk = infoModal?.onOk;
+                setInfoModal(null);
+                onOk?.();
+              }}>
+              <Text style={styles.infoModalBtnText}>OK</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };

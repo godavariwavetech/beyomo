@@ -66,10 +66,14 @@ const MyReviewsScreen = ({navigation}: any) => {
 
               {reviews.map((review: any) => {
                 const rid = review._id ?? review.id;
-                const serviceName = review.serviceName ?? review.service ?? '';
-                const expertName = review.partnerName ?? review.expertName ?? review.expert ?? '';
-                const expertImg = review.partnerAvatar ?? review.expertImg ?? '';
-                const serviceImg = review.serviceImage ?? review.serviceImg ?? '';
+                // The API joins `service` and `partner` as nested objects (see
+                // GET /api/v1/users/reviews), not flat serviceName/partnerName fields —
+                // reading review.service directly as the name rendered the whole
+                // {name, image} object as a React child and crashed the screen.
+                const serviceName = review.service?.name ?? review.serviceName ?? '';
+                const expertName = review.partner?.name ?? review.partnerName ?? review.expertName ?? review.expert ?? '';
+                const expertImg = review.partner?.profilePicture ?? review.partnerAvatar ?? review.expertImg ?? '';
+                const serviceImg = review.service?.image ?? review.serviceImage ?? review.serviceImg ?? '';
                 const rating = review.rating ?? 0;
                 const dateStr = review.createdAt ? formatDate(review.createdAt) : (review.date ?? '');
                 const comment = review.comment ?? review.review ?? '';
