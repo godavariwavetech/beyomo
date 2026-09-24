@@ -12,7 +12,8 @@ const Notification = require("../../../notifications/models/notification.model")
 const Payment = require("../../../payments/models/payment.model");
 const City = require("../../../cities/models/city.model");
 const AppError = require("../../../../utils/errorHandlers/appError");
-const { sendPushNotification, PARTNER_NEW_BOOKING_CHANNEL } = require("../../../../utils/firebaseUtils");
+const { sendPushNotification, pushTokensFor, PARTNER_NEW_BOOKING_CHANNEL } = require("../../../../utils/firebaseUtils");
+const { formatISTDateTime } = require("../../../../utils/formatIST");
 const { isPartnerOnline } = require("../../../../utils/partnerPresence");
 const { haversineKm } = require("../../../../utils/geoUtils");
 const { resolveRatesForBooking, resolveRatesForMultiPackageBooking } = require("../../../../utils/revenueSplit");
@@ -84,7 +85,9 @@ const prepareBooking = async (userId, bookingData) => {
   const uniqueServiceIds = [...new Set(serviceIds)];
   const foundServices = await Service.findAll({ where: { id: uniqueServiceIds, isActive: true } });
   if (foundServices.length !== uniqueServiceIds.length) {
-    throw new AppError("One or more services not found or unavailable", 404);
+    const foundIds = new Set(foundServices.map((s) => s.id));
+    const invalidServiceIds = uniqueServiceIds.filter((id) => !foundIds.has(id));
+    throw new AppError("One or more services not found or unavailable", 404, { invalidServiceIds });
   }
 
   if (partnerId) {
@@ -334,9 +337,10 @@ const persistBooking = async (prepared, overrides = {}) => {
   const booking = await Booking.create({ ...bookingRow, ...overrides });
 
   const user = await User.findByPk(userId);
-  if (user?.fcmToken) {
+  const userTokens = pushTokensFor(user);
+  if (userTokens.length > 0) {
     await sendPushNotification(
-      [user.fcmToken],
+      userTokens,
       "Booking Confirmed",
       `Your booking for ${primaryServiceName} has been placed. Booking ID: ${booking.bookingCode}`,
       { bookingId: String(booking.id), type: "booking" },
@@ -352,14 +356,23 @@ const persistBooking = async (prepared, overrides = {}) => {
     type: "booking",
   });
 
-  if (!partnerId && booking.addressCity) {
+  if (!partnerId && (booking.cityId || booking.addressCity)) {
     // Only partners who are actually online are alerted to a new job. isOnline is the
     // toggle they set in the app; isPartnerOnline additionally requires a recent
     // heartbeat, so a partner whose app was force-quit while "online" is not paged for
     // work they cannot see or accept.
+    //
+    // City match: same cityId-first, locationCity-fallback rule getAvailableBookings
+    // uses. addressCity/locationCity are free text typed into an address form, so a
+    // trailing space, a lowercase letter, or a spelling variant ("Rajamahendravaram" vs
+    // "Rajahmundry") silently breaks an exact string match — which meant this "New Job
+    // Available" push could go out to zero partners even with online partners correctly
+    // in the same city by cityId. Only fall back to the string match when cityId isn't
+    // available (partners registered before cityId was captured).
+    const cityWhere = booking.cityId ? { cityId: booking.cityId } : { locationCity: booking.addressCity };
     const cityPartners = await Partner.findAll({
-      where: { status: "approved", locationCity: booking.addressCity, isOnline: true },
-      attributes: ["id", "fcmToken", "isOnline", "lastSeenAt"],
+      where: { status: "approved", isOnline: true, ...cityWhere },
+      attributes: ["id", "fcmToken", "deviceTokens", "isOnline", "lastSeenAt"],
     });
     const onlinePartners = cityPartners.filter(isPartnerOnline);
 
@@ -368,22 +381,27 @@ const persistBooking = async (prepared, overrides = {}) => {
     // credentials configured at all, which local/dev setups often don't have). This is
     // what the partner app's Notifications screen actually reads via
     // GET /api/v1/notifications, so the alert still lands even when push can't be sent.
+    // Shown in both the in-app notification and the push banner so a partner can see
+    // when the job is for without opening the app first.
+    const jobTimeText = formatISTDateTime(booking.scheduledAt);
+    const newJobBody = `New booking for ${primaryServiceName} on ${jobTimeText}. Open the app to accept.`;
+
     if (onlinePartners.length > 0) {
       await Notification.bulkCreate(onlinePartners.map((p) => ({
         partnerId: p.id,
         title: "New Job Available",
-        body: `New booking for ${primaryServiceName} near you. Open the app to accept.`,
+        body: newJobBody,
         data: { bookingId: String(booking.id) },
         type: "booking",
       })));
     }
 
-    const tokens = onlinePartners.map(p => p.fcmToken).filter(Boolean);
+    const tokens = Array.from(new Set(onlinePartners.flatMap(pushTokensFor)));
     if (tokens.length > 0) {
       await sendPushNotification(
         tokens,
         "New Job Available",
-        `New booking for ${primaryServiceName} near you. Open the app to accept.`,
+        newJobBody,
         { bookingId: String(booking.id), type: "available_booking" },
         PARTNER_NEW_BOOKING_CHANNEL
       );
@@ -456,9 +474,9 @@ const cancelBooking = async (userId, bookingId, reason) => {
   if (claimedPartnerIds.length > 0) {
     const claimedPartners = await Partner.findAll({
       where: { id: claimedPartnerIds },
-      attributes: ["id", "fcmToken"],
+      attributes: ["id", "fcmToken", "deviceTokens"],
     });
-    const tokens = claimedPartners.map(p => p.fcmToken).filter(Boolean);
+    const tokens = Array.from(new Set(claimedPartners.flatMap(pushTokensFor)));
     if (tokens.length > 0) {
       await sendPushNotification(
         tokens,
@@ -491,12 +509,13 @@ const rescheduleBooking = async (userId, bookingId, scheduledAt, reason) => {
     rescheduledCount: (booking.rescheduledCount || 0) + 1,
   });
 
-  const newTimeStr = newScheduledAt.toLocaleString("en-IN");
+  const newTimeStr = formatISTDateTime(newScheduledAt);
 
   const user = await User.findByPk(userId);
-  if (user?.fcmToken) {
+  const userTokens = pushTokensFor(user);
+  if (userTokens.length > 0) {
     await sendPushNotification(
-      [user.fcmToken],
+      userTokens,
       "Booking Rescheduled",
       `Your booking ${booking.bookingCode} has been rescheduled to ${newTimeStr}.`,
       { bookingId: String(booking.id), type: "booking" },
@@ -513,10 +532,11 @@ const rescheduleBooking = async (userId, bookingId, scheduledAt, reason) => {
   });
 
   if (booking.partnerId) {
-    const partner = await Partner.findByPk(booking.partnerId, { attributes: ["fcmToken"] });
-    if (partner?.fcmToken) {
+    const partner = await Partner.findByPk(booking.partnerId, { attributes: ["fcmToken", "deviceTokens"] });
+    const partnerTokens = pushTokensFor(partner);
+    if (partnerTokens.length > 0) {
       await sendPushNotification(
-        [partner.fcmToken],
+        partnerTokens,
         "Booking Rescheduled",
         `Booking ${booking.bookingCode} has been rescheduled by the customer to ${newTimeStr}.`,
         { bookingId: String(booking.id), type: "booking" }
@@ -650,11 +670,12 @@ const addUserServices = async (userId, bookingId, serviceItems) => {
   await booking.update({ services: updatedServices, baseAmount: newBase, taxAmount: tax, totalAmount: total, partnerEarning });
 
   if (booking.partnerId) {
-    const partner = await Partner.findByPk(booking.partnerId, { attributes: ['fcmToken'] });
-    if (partner?.fcmToken) {
+    const partner = await Partner.findByPk(booking.partnerId, { attributes: ['fcmToken', 'deviceTokens'] });
+    const partnerTokens = pushTokensFor(partner);
+    if (partnerTokens.length > 0) {
       const addedNames = newEntries.map(s => s.name).join(', ');
       await sendPushNotification(
-        [partner.fcmToken],
+        partnerTokens,
         'Customer Added Services',
         `${addedNames} added to booking ${booking.bookingCode}. New total: ₹${total}`,
         { bookingId: String(booking.id), type: 'booking' }

@@ -1,4 +1,4 @@
-import React, {useEffect, useMemo, useState} from 'react';
+import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,8 @@ import {
   Modal,
   ActivityIndicator,
   RefreshControl,
+  Animated,
+  PanResponder,
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -61,6 +63,29 @@ const SubcategoryServicesScreen = ({navigation, route}: Props) => {
   const cartServices = useSelector((st: any) => st.Cart?.services ?? []);
 
   const [detailItem, setDetailItem] = useState<any>(null);
+  // Swipe-down-to-close on the detail sheet's handle — same gesture as
+  // ServiceListingScreen's own detail sheet (this screen has its own separate
+  // component state, so it needs its own PanResponder rather than sharing one).
+  const sheetTranslateY = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (detailItem) sheetTranslateY.setValue(0);
+  }, [detailItem]);
+  const sheetPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_evt, gestureState) => Math.abs(gestureState.dy) > 4,
+      onPanResponderMove: (_evt, gestureState) => {
+        if (gestureState.dy > 0) sheetTranslateY.setValue(gestureState.dy);
+      },
+      onPanResponderRelease: (_evt, gestureState) => {
+        if (gestureState.dy > 100 || gestureState.vy > 0.8) {
+          setDetailItem(null);
+        } else {
+          Animated.spring(sheetTranslateY, {toValue: 0, useNativeDriver: true}).start();
+        }
+      },
+    }),
+  ).current;
   const [showSortSheet, setShowSortSheet] = useState(false);
   const [showFilterSheet, setShowFilterSheet] = useState(false);
   const [sortBy, setSortBy] = useState<'default' | 'price_asc' | 'price_desc' | 'popular'>('default');
@@ -358,12 +383,17 @@ const SubcategoryServicesScreen = ({navigation, route}: Props) => {
           <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={() => setDetailItem(null)} />
 
           {detailItem && (
-            <View style={[styles.sheet, {paddingBottom: insets.bottom + sw(16)}]}>
+            <Animated.View style={[styles.sheet, {paddingBottom: insets.bottom + sw(16)}, {transform: [{translateY: sheetTranslateY}]}]}>
 
               <View style={styles.sheetHero}>
                 {detailItem.image
                   ? <Image source={{uri: detailItem.image}} style={styles.sheetHeroImg} resizeMode="cover" />
-                  : <View style={[styles.sheetHeroImg, {backgroundColor: '#E8F3EF'}]} />
+                  : (
+                    <View style={[styles.sheetHeroImg, styles.noImageContainer]}>
+                      <Ionicons name="image-outline" size={sw(28)} color="#999999" style={styles.noImageIcon} />
+                      <Text style={styles.noImageText}>No image found</Text>
+                    </View>
+                  )
                 }
                 <LinearGradient
                   colors={['transparent', 'rgba(0,0,0,0.55)']}
@@ -378,7 +408,10 @@ const SubcategoryServicesScreen = ({navigation, route}: Props) => {
                 <TouchableOpacity style={styles.sheetCloseBtn} onPress={() => setDetailItem(null)} activeOpacity={0.8}>
                   <Ionicons name="close" size={sw(18)} color="#171816" />
                 </TouchableOpacity>
-                <View style={styles.sheetHandle} />
+                {/* Handle — draggable: swipe down (or a fast flick) closes the sheet */}
+                <View style={styles.sheetHandleHitArea} {...sheetPanResponder.panHandlers}>
+                  <View style={styles.sheetHandle} />
+                </View>
               </View>
 
               <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.sheetScrollContent}>
@@ -453,7 +486,7 @@ const SubcategoryServicesScreen = ({navigation, route}: Props) => {
                 )}
               </View>
 
-            </View>
+            </Animated.View>
           )}
         </View>
       </Modal>

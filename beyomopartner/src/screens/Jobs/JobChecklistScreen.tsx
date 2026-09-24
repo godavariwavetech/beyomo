@@ -2,7 +2,7 @@ import React, {useState, useCallback, useEffect} from 'react';
 import {
   View, Text, Image, ScrollView, TouchableOpacity, StyleSheet,
   Dimensions, StatusBar, Modal, TextInput, FlatList,
-  ActivityIndicator, Linking,
+  ActivityIndicator, Linking, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -780,48 +780,52 @@ const JobChecklistScreen = ({navigation, route}: any) => {
           swipe below rather than starting the job outright. No dismiss-on-backdrop
           here, so a stray tap can't silently drop the partner out of the step. */}
       <Modal visible={showOtpModal} animationType="slide" transparent onRequestClose={() => setShowOtpModal(false)}>
-        <View style={styles.overlay} />
-        <View style={[styles.sheet, {paddingBottom: insets.bottom + sw(16)}]}>
-          <View style={styles.handle} />
-          <Text style={styles.sheetTitle}>Enter Customer OTP</Text>
-          <Text style={styles.otpSubtitle}>
-            Ask the customer for the 4-digit code shown on their booking. The service
-            can't be started without it.
-          </Text>
+        <KeyboardAvoidingView
+          style={styles.otpModalFlex}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+          <View style={styles.overlay} />
+          <View style={[styles.sheet, {paddingBottom: insets.bottom + sw(16)}]}>
+            <View style={styles.handle} />
+            <Text style={styles.sheetTitle}>Enter Customer OTP</Text>
+            <Text style={styles.otpSubtitle}>
+              Ask the customer for the 4-digit code shown on their booking. The service
+              can't be started without it.
+            </Text>
 
-          <TextInput
-            style={[styles.otpInput, !!otpError && styles.otpInputError]}
-            value={otp}
-            onChangeText={t => { setOtp(t.replace(/\D/g, '').slice(0, 4)); setOtpError(''); }}
-            keyboardType="number-pad"
-            maxLength={4}
-            autoFocus
-            placeholder="––––"
-            placeholderTextColor="#C4C4C4"
-            editable={!verifyingOtp}
-          />
+            <TextInput
+              style={[styles.otpInput, !!otpError && styles.otpInputError]}
+              value={otp}
+              onChangeText={t => { setOtp(t.replace(/\D/g, '').slice(0, 4)); setOtpError(''); }}
+              keyboardType="number-pad"
+              maxLength={4}
+              autoFocus
+              placeholder="––––"
+              placeholderTextColor="#C4C4C4"
+              editable={!verifyingOtp}
+            />
 
-          {!!otpError && <Text style={styles.otpErrorText}>{otpError}</Text>}
+            {!!otpError && <Text style={styles.otpErrorText}>{otpError}</Text>}
 
-          <TouchableOpacity
-            style={[styles.btn, styles.otpVerifyBtn, (verifyingOtp || otp.length !== 4) && {opacity: 0.6}]}
-            onPress={handleVerifyOtp}
-            disabled={verifyingOtp || otp.length !== 4}
-            activeOpacity={0.88}>
-            {verifyingOtp ? <ActivityIndicator color="#FFFFFF" /> : (
-              <><Ionicons name="checkmark-circle-outline" size={sw(18)} color="#FFFFFF" />
-              <Text style={styles.btnText}>Verify OTP</Text></>
-            )}
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.btn, styles.otpVerifyBtn, (verifyingOtp || otp.length !== 4) && {opacity: 0.6}]}
+              onPress={handleVerifyOtp}
+              disabled={verifyingOtp || otp.length !== 4}
+              activeOpacity={0.88}>
+              {verifyingOtp ? <ActivityIndicator color="#FFFFFF" /> : (
+                <><Ionicons name="checkmark-circle-outline" size={sw(18)} color="#FFFFFF" />
+                <Text style={styles.btnText}>Verify OTP</Text></>
+              )}
+            </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.otpCancelBtn}
-            onPress={() => setShowOtpModal(false)}
-            disabled={verifyingOtp}
-            activeOpacity={0.7}>
-            <Text style={styles.otpCancelText}>Cancel</Text>
-          </TouchableOpacity>
-        </View>
+            <TouchableOpacity
+              style={styles.otpCancelBtn}
+              onPress={() => setShowOtpModal(false)}
+              disabled={verifyingOtp}
+              activeOpacity={0.7}>
+              <Text style={styles.otpCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Add Service Modal */}
@@ -1157,6 +1161,7 @@ const styles = StyleSheet.create({
   btnWarning: {backgroundColor: '#C87B1A', height: sw(56), flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: sw(10)},
   btnText: {fontFamily: fonts.title, fontSize: sw(15), fontWeight: '700', color: '#FFFFFF'},
 
+  otpModalFlex: {flex: 1},
   overlay: {flex: 1, backgroundColor: 'rgba(0,0,0,0.4)'},
   sheet: {backgroundColor: '#FFFFFF', borderTopLeftRadius: sw(20), borderTopRightRadius: sw(20), paddingHorizontal: sw(16), paddingTop: sw(12), maxHeight: '85%'},
   handle: {width: sw(40), height: sw(4), borderRadius: sw(2), backgroundColor: '#D0D0D0', alignSelf: 'center', marginBottom: sw(14)},

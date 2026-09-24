@@ -170,8 +170,26 @@ const sendSinglePushNotification = async (token, title, body, data = {}, channel
 // alert sound exclusive to orders. Anything sent without a channelId rings the default.
 const PARTNER_NEW_BOOKING_CHANNEL = "beyomo_partner_new_booking";
 
+/**
+ * Every push send site used to build its token list from just `row.fcmToken` — the
+ * single most-recently-registered device. `deviceTokens` (every device this user/partner
+ * has ever logged into the app on) was being written on every login but never read back
+ * for sending, so a user who used a second phone, or reinstalled and kept the old one,
+ * silently stopped getting notified on every device but the newest. This pulls both
+ * together, deduped, so a push reaches every device that's actually still registered.
+ * @param {{fcmToken?: string, deviceTokens?: string[]}|null} row - a User or Partner row
+ *   (must have been fetched with both `fcmToken` and `deviceTokens` in its attributes).
+ * @returns {string[]}
+ */
+const pushTokensFor = (row) => {
+  if (!row) return [];
+  const extra = Array.isArray(row.deviceTokens) ? row.deviceTokens : [];
+  return Array.from(new Set([row.fcmToken, ...extra].filter((t) => t && typeof t === "string")));
+};
+
 module.exports = {
   sendPushNotification,
   sendSinglePushNotification,
+  pushTokensFor,
   PARTNER_NEW_BOOKING_CHANNEL,
 };

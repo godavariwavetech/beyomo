@@ -729,7 +729,12 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
               <View style={styles.sheetHero}>
                 {detailItem.image
                   ? <Image source={{uri: detailItem.image}} style={styles.sheetHeroImg} resizeMode="cover" />
-                  : <View style={[styles.sheetHeroImg, {backgroundColor: '#E8F3EF'}]} />
+                  : (
+                    <View style={[styles.sheetHeroImg, styles.noImageContainer]}>
+                      <Ionicons name="image-outline" size={sw(28)} color="#999999" style={styles.noImageIcon} />
+                      <Text style={styles.noImageText}>No image found</Text>
+                    </View>
+                  )
                 }
                 {/* Dark fade at bottom of image */}
                 <LinearGradient
@@ -1302,7 +1307,10 @@ const styles = StyleSheet.create({
     width: sw(36),
     height: 4,
     borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.6)',
+    // Semi-dark rather than semi-white: a light/no-image hero (e.g. the "No image
+    // found" fallback) left this handle nearly invisible — a dark tint reads on both
+    // light and dark heroes instead of only showing up against a dark photo.
+    backgroundColor: 'rgba(0,0,0,0.28)',
   },
   // Bigger invisible touch target around the handle bar so it's easy to grab.
   sheetHandleHitArea: {
@@ -1313,6 +1321,19 @@ const styles = StyleSheet.create({
     height: sw(28),
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  noImageContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f5f5f5',
+  },
+  noImageIcon: {
+    marginBottom: 6,
+  },
+  noImageText: {
+    fontSize: 14,
+    color: '#777',
   },
   sheetScrollContent: {
     paddingHorizontal: sw(16),
