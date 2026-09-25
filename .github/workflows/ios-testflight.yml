@@ -39,7 +39,7 @@ jobs:
           cache-dependency-path: ${{ inputs.app_dir }}/package-lock.json
 
       - name: Install JS dependencies
-        run: npm ci
+        run: npm ci --legacy-peer-deps
 
       - uses: ruby/setup-ruby@v1
         with:
@@ -79,6 +79,6 @@ jobs:
         with:
           name: ${{ inputs.app_dir }}-build-logs
           path: |
-            ~/Library/Logs/gym
-            ~/Library/Logs/fastlane
+            /Users/runner/Library/Logs/gym
+            /Users/runner/Library/Logs/fastlane
           retention-days: 7
