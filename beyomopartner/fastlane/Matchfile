@@ -1,0 +1,7 @@
+# Certificates + provisioning profiles live in a private git repo, encrypted
+# with MATCH_PASSWORD. MATCH_GIT_URL / MATCH_GIT_BASIC_AUTHORIZATION come from CI secrets.
+git_url(ENV["MATCH_GIT_URL"])
+storage_mode("git")
+type("appstore")
+app_identifier(["com.beyomopartner"])
+team_id("3387GM7U6B")

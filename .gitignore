@@ -60,3 +60,10 @@ local.properties
 # Firebase service-account key - secret, never commit
 firebase-service-account.json
 **/firebase-service-account.json
+
+# Fastlane build output
+**/fastlane/report.xml
+**/fastlane/build/
+**/fastlane/test_output/
+*.ipa
+*.dSYM.zip

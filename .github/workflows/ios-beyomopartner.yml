@@ -1,0 +1,23 @@
+name: iOS - beyomopartner
+
+# Runs only on the ios-deployment branch (never master). Trigger a build by
+# pushing to that branch; only pushes touching this app (or the shared
+# workflow) start it.
+on:
+  push:
+    branches: [ios-deployment]
+    paths:
+      - "beyomopartner/**"
+      - ".github/workflows/ios-beyomopartner.yml"
+      - ".github/workflows/ios-testflight.yml"
+
+concurrency:
+  group: ios-beyomopartner
+  cancel-in-progress: false
+
+jobs:
+  testflight:
+    uses: ./.github/workflows/ios-testflight.yml
+    with:
+      app_dir: beyomopartner
+    secrets: inherit
