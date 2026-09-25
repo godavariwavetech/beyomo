@@ -358,9 +358,8 @@ const persistBooking = async (prepared, overrides = {}) => {
 
   if (!partnerId && (booking.cityId || booking.addressCity)) {
     // Only partners who are actually online are alerted to a new job. isOnline is the
-    // toggle they set in the app; isPartnerOnline additionally requires a recent
-    // heartbeat, so a partner whose app was force-quit while "online" is not paged for
-    // work they cannot see or accept.
+    // toggle they set in the app — it stays true until they switch it off, however long
+    // the app has been closed.
     //
     // City match: same cityId-first, locationCity-fallback rule getAvailableBookings
     // uses. addressCity/locationCity are free text typed into an address form, so a

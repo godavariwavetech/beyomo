@@ -123,8 +123,8 @@ const listPartners = async ({ search, status, source, cityIds, page = 1, limit =
   const { count: total, rows } = await Partner.findAndCountAll({
     where, order: [["createdAt", "DESC"]], offset, limit,
   });
-  // withPresence downgrades a stale isOnline to false, so the dashboard never shows a
-  // partner as available when we haven't heard from their app in ONLINE_TIMEOUT_MINUTES.
+  // withPresence normalises isOnline/isOnlineFlag for this listing (see partnerPresence.js) —
+  // isOnline just reflects the partner's own toggle, with no staleness expiry.
   const data = rows.map(withPresence);
   return { data, pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } };
 };
