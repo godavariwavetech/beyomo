@@ -19,12 +19,12 @@ platform :ios do
     )
 
     # Fetches (or, on the first run, creates) the App Store distribution
-    # certificate + profile. Set MATCH_READONLY=true once they exist.
+    # certificate + profile. Set the MATCH_READONLY repo variable to true once they exist.
     match(
       type: "appstore",
       app_identifier: APP_IDENTIFIER,
       api_key: api_key,
-      readonly: ENV["MATCH_READONLY"] == "true"
+      readonly: ENV["IOS_MATCH_READONLY"] == "true"
     )
 
     # Build numbers must be unique per version, so continue from TestFlight.
