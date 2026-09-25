@@ -1,44 +1,33 @@
 /**
  * Partner presence rules.
  *
- * A partner is "online" only when BOTH are true:
- *   1. isOnline  — the partner toggled themselves on in the app, and
- *   2. lastSeenAt is recent — we've heard from them within ONLINE_TIMEOUT_MINUTES.
+ * A partner is "online" purely based on their own toggle: isOnline. There is
+ * deliberately no freshness/heartbeat expiry on top of it — product decision is that
+ * once a partner switches on, they stay online (and eligible for jobs) no matter how
+ * long the app stays closed, until they explicitly switch off. lastSeenAt is kept
+ * (stamped on every heartbeat/toggle call) purely as "last seen" information, e.g.
+ * for the admin panel — it no longer gates whether a partner counts as online.
  *
- * The second condition is what keeps this honest. The app can only send "offline"
- * when it is running: force-quitting it, losing signal, or a flat battery all leave
- * isOnline stuck at true. Without the freshness check the dashboard would show
- * partners as available who haven't been reachable for days, and admins would
- * assign them jobs they never receive.
- *
- * The app re-sends its status on this cadence (see HEARTBEAT_MINUTES) so a partner
- * who stays online keeps lastSeenAt fresh.
+ * ONLINE_TIMEOUT_MINUTES is unused by isPartnerOnline for that reason, and is kept
+ * only in case a future feature (e.g. an admin-facing staleness warning) wants it.
  */
 
-// How long after the last heartbeat a partner is still considered online.
+// Unused by isPartnerOnline (see above) — no longer expires a partner's online status.
 const ONLINE_TIMEOUT_MINUTES = 5;
 
-// What the app should use as its heartbeat interval. Deliberately shorter than the
-// timeout so a single dropped request doesn't flip a working partner to offline.
+// What the app uses as its heartbeat interval, so lastSeenAt ("last seen") info stays fresh.
 const HEARTBEAT_MINUTES = 2;
 
 /**
  * @param {{isOnline?: boolean, lastSeenAt?: Date|string|null}} partner
  * @returns {boolean}
  */
-const isPartnerOnline = (partner) => {
-  if (!partner || !partner.isOnline || !partner.lastSeenAt) return false;
-
-  const lastSeen = new Date(partner.lastSeenAt).getTime();
-  if (Number.isNaN(lastSeen)) return false;
-
-  return Date.now() - lastSeen < ONLINE_TIMEOUT_MINUTES * 60 * 1000;
-};
+const isPartnerOnline = (partner) => Boolean(partner && partner.isOnline);
 
 /**
- * Normalises a partner row for API responses: replaces the raw stored isOnline
- * with the freshness-checked value, and keeps the raw flag as isOnlineFlag so
- * callers can still tell "toggled off" apart from "toggled on but gone stale".
+ * Normalises a partner row for API responses: runs the raw stored isOnline through
+ * isPartnerOnline (now a passthrough, kept for a single source of truth), and keeps
+ * the raw flag as isOnlineFlag too so callers have both names available.
  *
  * @param {object} partner - Sequelize instance or plain object
  * @returns {object} plain object

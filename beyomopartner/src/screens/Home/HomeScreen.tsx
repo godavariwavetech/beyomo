@@ -96,6 +96,17 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
   useEffect(() => {
     isOnlineRef.current = isOnline;
   }, [isOnline]);
+  // Same staleness problem as isOnlineRef above, for the same reason: fetchDashboardData
+  // is called from the useFocusEffect callback below, which (empty dep array) only ever
+  // closes over the isOnline/onlineSaving values from its first run. Reading the plain
+  // `onlineSaving` state there always saw its initial `false`, so the "don't clobber an
+  // in-flight toggle" check next to it never actually held off — a periodic poll landing
+  // mid-toggle could overwrite the optimistic Online state with the pre-toggle server
+  // value, silently flipping the switch back without the partner touching it.
+  const onlineSavingRef = React.useRef(onlineSaving);
+  useEffect(() => {
+    onlineSavingRef.current = onlineSaving;
+  }, [onlineSaving]);
   const [ready, setReady] = useState(false);
   const [dashboardData, setDashboardData] = useState<any>(null);
   const [availableCount, setAvailableCount] = useState(0);
@@ -105,10 +116,10 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
     await Promise.all([fetchDashboardData(), fetchAvailableCount()]);
   };
 
-  // Tells the backend the partner's availability. Also doubles as the heartbeat:
-  // the backend stamps lastSeenAt on every call, and treats a partner whose last
-  // heartbeat is older than its timeout as offline - so an app that is force-quit
-  // or loses signal ages out instead of appearing available forever.
+  // Tells the backend the partner's availability. Also doubles as a heartbeat: the
+  // backend stamps lastSeenAt on every call for "last seen" info, but online status
+  // itself is just this toggle - it no longer expires from a stale heartbeat, so it
+  // stays Online (even across a force-quit) until the partner switches it off.
   const pushOnlineStatus = async (next: boolean) => {
     const res = await api.patch(endpoints.PARTNER_ONLINE_STATUS, {isOnline: next});
     const mins = res.data?.data?.heartbeatMinutes;
@@ -232,7 +243,7 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
       setDashboardData(data);
       // Trust the server over local state, except while a toggle is still in flight
       // (otherwise a refresh landing mid-request would snap the switch back).
-      if (typeof data?.isOnline === 'boolean' && !onlineSaving) {
+      if (typeof data?.isOnline === 'boolean' && !onlineSavingRef.current) {
         setIsOnline(data.isOnline);
       }
       if (typeof data?.heartbeatMinutes === 'number') {
