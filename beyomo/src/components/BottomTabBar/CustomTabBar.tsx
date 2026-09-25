@@ -208,11 +208,11 @@ const styles = StyleSheet.create({
   cartIconWrapper: {position: 'relative'},
   cartCountBadge: {
     position: 'absolute',
-    top: -sw(4),
-    right: -sw(8),
-    minWidth: sw(15),
-    height: sw(15),
-    borderRadius: sw(8),
+    top: -sw(5),
+    right: -sw(9),
+    minWidth: sw(18),
+    height: sw(18),
+    borderRadius: sw(9),
     backgroundColor: '#FF2F2F',
     alignItems: 'center',
     justifyContent: 'center',
@@ -222,9 +222,12 @@ const styles = StyleSheet.create({
   },
   cartCountText: {
     color: '#FFFFFF',
-    fontSize: sw(11),
+    fontSize: sw(10),
+    lineHeight: sw(13),
     fontWeight: '800',
     fontFamily: fonts.title,
+    textAlign: 'center',
+    includeFontPadding: false,
   },
 });
 
