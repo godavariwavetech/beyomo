@@ -72,8 +72,7 @@ platform :ios do
       output_directory: "./build",
       output_name: "#{SCHEME}.ipa",
       clean: true,
-      xcargs: xcargs,
-      export_xcargs: xcargs
+      xcargs: xcargs
     )
 
     upload_to_testflight(
