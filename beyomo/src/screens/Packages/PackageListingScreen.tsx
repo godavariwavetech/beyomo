@@ -74,7 +74,9 @@ const PackageListingScreen = ({navigation, route}: Props) => {
       </View>
 
       {loading ? (
-        <ActivityIndicator size="large" color="#105641" style={{marginTop: sw(40)}} />
+        <View style={styles.loadingWrap}>
+          <ActivityIndicator size="large" color="#105641" />
+        </View>
       ) : packageType === 'fixed' ? (
         <ScrollView
           style={styles.scroll}
@@ -99,11 +101,13 @@ const PackageListingScreen = ({navigation, route}: Props) => {
                     <Text style={styles.comboPriceText}>₹{formatAmount(combo.price)}</Text>
                   </View>
                   <View style={styles.comboBody}>
-                    {(combo.services ?? []).map((svc: any, idx: number) => (
-                      <Text key={idx} style={styles.comboServiceText}>
-                        {idx + 1}. {svc.name}
-                      </Text>
-                    ))}
+                    <View style={styles.comboServiceList}>
+                      {(combo.services ?? []).map((svc: any, idx: number) => (
+                        <Text key={idx} style={styles.comboServiceText}>
+                          {idx + 1}. {svc.name}
+                        </Text>
+                      ))}
+                    </View>
                     <View style={styles.comboBookRow}>
                       <Text style={styles.comboBookText}>Book Now</Text>
                       <Ionicons name="arrow-forward" size={sw(12)} color="#0E5843" />
@@ -191,6 +195,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#0E5843',
     backgroundColor: '#FFFFFF',
+    // Cards in the same row stretch to match the tallest one (Yoga's default
+    // cross-axis stretch) — flexing the column lets Book Now below settle at
+    // the same bottom edge on every card instead of floating right after a
+    // shorter combo's service list, which is what looked broken.
+    flexDirection: 'column',
   },
   comboHeader: {
     backgroundColor: '#0E5843',
@@ -223,9 +232,11 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   comboBody: {
+    flex: 1,
     padding: sw(10),
-    gap: sw(4),
+    justifyContent: 'space-between',
   },
+  comboServiceList: {gap: sw(4)},
   comboServiceText: {
     fontFamily: fonts.textFont,
     fontSize: sw(11.5),
@@ -263,6 +274,8 @@ const styles = StyleSheet.create({
 
   scroll: {flex: 1},
   scrollContent: {paddingHorizontal: sw(16), paddingBottom: sw(24), gap: sw(16)},
+
+  loadingWrap: {flex: 1, alignItems: 'center', justifyContent: 'center'},
 
   emptyText: {
     textAlign: 'center',
