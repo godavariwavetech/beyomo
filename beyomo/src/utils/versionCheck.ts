@@ -4,7 +4,8 @@ import {BASE_URL, endpoints} from '../config/config';
 // Bump this at every release to match android/app/build.gradle's versionName
 // (and the matching iOS build version) — this is what gets compared against the
 // admin-configured minimum version at splash.
-export const CURRENT_APP_VERSION = '1.0.2';
+// export const CURRENT_APP_VERSION = '1.0.2';
+export const CURRENT_APP_VERSION = '1.1.0';
 
 // Simple dot-separated numeric version compare (e.g. "1.0.2" vs "1.1") — good
 // enough for our versioning scheme, no need for a semver dependency.
