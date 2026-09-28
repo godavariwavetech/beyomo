@@ -29,7 +29,8 @@ jobs:
 
       - name: Install dependencies
         working-directory: beyomo
-        run: npm ci
+        # run: npm ci
+        run: npm ci --legacy-peer-deps
 
       - name: Build APK
         working-directory: beyomo/android
