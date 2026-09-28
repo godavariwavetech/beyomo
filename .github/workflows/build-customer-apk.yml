@@ -89,10 +89,13 @@ jobs:
         working-directory: beyomo/android
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease
+          ./gradlew assembleDebug
+
+     
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: beyomo-customer-release-apk
-          path: beyomo/android/app/build/outputs/apk/release/*.apk
+          # path: beyomo/android/app/build/outputs/apk/release/*.apk
+          path: beyomo/android/app/build/outputs/apk/debug/*.apk
