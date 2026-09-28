@@ -852,7 +852,7 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
         {/* ══════════════════════════════════
             WHY BEYOMO?
         ══════════════════════════════════ */}
-        <View style={styles.whyBeyomoSection}>
+        {/* <View style={styles.whyBeyomoSection}>
           <View style={styles.whyBeyomoShadowWrap}>
             <View style={styles.whyBeyomoImgWrap}>
               <Image
@@ -860,6 +860,30 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
                 style={styles.whyBeyomoImg}
                 resizeMode="cover"
               />
+            </View>
+          </View>
+        </View> */}
+
+        <View style={styles.whyBeyomoSection}>
+          <View style={styles.whyBeyomoShadowWrap}>
+            <View style={styles.whyBeyomoImgWrap}>
+              {whyBeyomoBanner?.image ? (
+                <Image
+                  source={{ uri: whyBeyomoBanner.image }}
+                  style={styles.whyBeyomoImg}
+                  resizeMode="cover"
+                />
+              ) : (
+                <View style={styles.noImageContainer}>
+                  <Ionicons
+                    name="image-outline"
+                    size={sw(28)}
+                    color="#999999"
+                    style={styles.noImageIcon}
+                  />
+                  <Text style={styles.noImageText}>No image found</Text>
+                </View>
+              )}
             </View>
           </View>
         </View>
