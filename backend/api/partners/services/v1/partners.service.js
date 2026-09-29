@@ -619,10 +619,9 @@ const getAvailableBookings = async (partnerId) => {
   });
 
   // Offline partners are offered nothing. isPartnerOnline is the same presence rule the
-  // dashboard and the partner's own dashboard already use: the toggle AND a fresh
-  // heartbeat, so a force-quit or dead-battery app ages out instead of staying
-  // eligible. Enforced here rather than in the app because this is the one place both
-  // the list and the accept call are served from.
+  // partner's own dashboard already uses: just their toggle. Enforced here rather than
+  // in the app because this is the one place both the list and the accept call are
+  // served from.
   if (!isPartnerOnline(partner)) return [];
   // Exclude online-payment bookings whose payment hasn't actually gone through yet
   // (e.g. the customer cancelled Razorpay checkout) — those stay "pending" too, but

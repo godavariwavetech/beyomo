@@ -43,6 +43,8 @@ const BookingsScreen = ({navigation}: Props) => {
   const dispatch = useDispatch<AppDispatch>();
   const {list, loading, actionLoading} = useSelector((state: RootState) => state.Bookings);
   const [activeTab, setActiveTab] = useState<TabType>('upcoming');
+  // In-app styled confirmation modal for cancelling a booking, replacing the OS Alert.
+  const [cancelModal, setCancelModal] = useState<{bookingId: string; bookingCode: string} | null>(null);
 
   // Refresh on focus, then keep polling while focused — but only while the app is
   // actually in the foreground (AppState), since useFocusEffect alone doesn't pause
@@ -79,18 +81,14 @@ const BookingsScreen = ({navigation}: Props) => {
   });
 
   const handleCancel = (bookingId: string, bookingCode: string) => {
-    Alert.alert(
-      'Cancel Booking',
-      `Cancel booking ${bookingCode}?`,
-      [
-        {text: 'No', style: 'cancel'},
-        {
-          text: 'Yes, Cancel',
-          style: 'destructive',
-          onPress: () => dispatch(cancelBooking(bookingId)),
-        },
-      ],
-    );
+    setCancelModal({bookingId, bookingCode});
+  };
+
+  const confirmCancel = () => {
+    if (cancelModal) {
+      dispatch(cancelBooking(cancelModal.bookingId));
+    }
+    setCancelModal(null);
   };
 
   return (
@@ -168,6 +166,39 @@ const BookingsScreen = ({navigation}: Props) => {
           )}
         </ScrollView>
       )}
+
+      {/* ── Cancel booking confirmation — in-app styled modal, not the OS Alert ── */}
+      <Modal
+        visible={!!cancelModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setCancelModal(null)}>
+        <View style={styles.invoiceModalOverlay}>
+          <View style={styles.invoiceModalCard}>
+            <View style={[styles.invoiceModalIconWrap, styles.invoiceModalIconWrapError]}>
+              <Ionicons name="alert-circle" size={sw(32)} color="#D64545" />
+            </View>
+            <Text style={styles.invoiceModalTitle}>Cancel Booking</Text>
+            <Text style={styles.invoiceModalMessage}>
+              Cancel booking {cancelModal?.bookingCode}?
+            </Text>
+            <View style={styles.cancelModalBtnRow}>
+              <TouchableOpacity
+                style={styles.cancelModalNoBtn}
+                activeOpacity={0.85}
+                onPress={() => setCancelModal(null)}>
+                <Text style={styles.cancelModalNoBtnText}>No</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.cancelModalYesBtn}
+                activeOpacity={0.85}
+                onPress={confirmCancel}>
+                <Text style={styles.invoiceModalBtnText}>Yes, Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -193,21 +224,25 @@ const BookingCard = ({
   const bookingCode = booking.bookingCode ?? booking._id?.slice(-8).toUpperCase();
   const scheduledAt = booking.scheduledAt
     ? new Date(booking.scheduledAt).toLocaleDateString('en-IN', {
-        weekday: 'short', day: 'numeric', month: 'short', year: 'numeric',
+        day: 'numeric', month: 'short', year: 'numeric',
       })
     : booking.date ?? '';
   const timeStr = booking.scheduledAt
-    ? new Date(booking.scheduledAt).toLocaleTimeString('en-IN', {hour: '2-digit', minute: '2-digit'})
+    ? new Date(booking.scheduledAt).toLocaleTimeString('en-IN', {hour: '2-digit', minute: '2-digit', hour12: true})
     : booking.time ?? '';
   const serviceCount = booking.services?.length ?? booking.serviceCount ?? 0;
   const totalAmount = booking.totalAmount ?? booking.price ?? 0;
-  const status = booking.status ?? 'Confirmed';
+  const rawStatus = booking.status ?? 'Confirmed';
+  const status = rawStatus
+    .split('_')
+    .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
   // Backend only allows cancel/reschedule while pending or confirmed — not once a partner
   // has started the job (in_progress).
   const isReschedulable = ['pending', 'confirmed'].includes((booking.status ?? '').toLowerCase());
   const createdAt = booking.createdAt
-    ? new Date(booking.createdAt).toLocaleString('en-IN')
-    : booking.createdAt ?? '';
+    ? new Date(booking.createdAt).toLocaleDateString('en-IN', {day: 'numeric', month: 'short', year: 'numeric'})
+    : '';
 
   const handleTrack = () =>
     Alert.alert('Track Expert', 'Your expert Riya Sharma is on the way! ETA: ~15 minutes.', [{text: 'OK'}]);
@@ -261,7 +296,8 @@ const BookingCard = ({
       <View style={styles.cardMain}>
         {/* Row 1: created-at + dots menu */}
         <View style={styles.cardRow1}>
-          <Text style={styles.createdAt}>{booking.createdAt}</Text>
+          <Text style={styles.createdAt}>{createdAt}</Text>
+          {/* Dots menu — hidden per request, keep for potential future re-enable.
           <TouchableOpacity
             activeOpacity={0.7}
             style={styles.dotsBtn}
@@ -274,6 +310,7 @@ const BookingCard = ({
             <View style={styles.dot} />
             <View style={styles.dot} />
           </TouchableOpacity>
+          */}
         </View>
 
         {/* Row 2: booking code + status badge */}
@@ -355,28 +392,25 @@ const BookingCard = ({
           <Text style={styles.actionTextGray}>Invoice</Text>
         </TouchableOpacity>
       </View>
-    ) : (
+    ) : isReschedulable ? (
       <View style={styles.actionStrip}>
-        {isReschedulable && (
-          <>
-            <TouchableOpacity
-              style={styles.actionBtn}
-              activeOpacity={0.7}
-              onPress={onReschedule}>
-              <Ionicons name="calendar-outline" size={sw(16)} color="#105641" />
-              <Text style={styles.actionTextGreen}>Reschedule</Text>
-            </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.actionBtn}
+          activeOpacity={0.7}
+          onPress={onReschedule}>
+          <Ionicons name="calendar-outline" size={sw(16)} color="#105641" />
+          <Text style={styles.actionTextGreen}>Reschedule</Text>
+        </TouchableOpacity>
 
-            <View style={styles.actionDivider} />
+        <View style={styles.actionDivider} />
 
-            <TouchableOpacity style={styles.actionBtn} activeOpacity={0.7} onPress={onCancel}>
-              <Ionicons name="close-circle-outline" size={sw(16)} color="#FB1616" />
-              <Text style={styles.actionTextRed}>Cancel Order</Text>
-            </TouchableOpacity>
+        <TouchableOpacity style={styles.actionBtn} activeOpacity={0.7} onPress={onCancel}>
+          <Ionicons name="close-circle-outline" size={sw(16)} color="#FB1616" />
+          <Text style={styles.actionTextRed}>Cancel Order</Text>
+        </TouchableOpacity>
 
-            <View style={styles.actionDivider} />
-          </>
-        )}
+        {/* Track Expert — hidden per request, keep for potential future re-enable.
+        <View style={styles.actionDivider} />
 
         <TouchableOpacity
           style={styles.actionBtn}
@@ -385,8 +419,9 @@ const BookingCard = ({
           <Ionicons name="person-outline" size={sw(14)} color="#1C46CF" />
           <Text style={styles.actionTextBlue}>Track Expert</Text>
         </TouchableOpacity>
+        */}
       </View>
-    )}
+    ) : null}
 
     {/* ── Invoice download result — in-app styled modal, not the OS Alert ── */}
     <Modal
@@ -803,6 +838,34 @@ const styles = StyleSheet.create({
     fontSize: sw(14.5),
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+  cancelModalBtnRow: {
+    flexDirection: 'row',
+    width: '100%',
+    gap: sw(12),
+  },
+  cancelModalNoBtn: {
+    flex: 1,
+    height: sw(48),
+    borderRadius: sw(14),
+    borderWidth: 1,
+    borderColor: '#D4D4D4',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelModalNoBtnText: {
+    fontFamily: fonts.title,
+    fontSize: sw(14.5),
+    fontWeight: '700',
+    color: '#373737',
+  },
+  cancelModalYesBtn: {
+    flex: 1,
+    height: sw(48),
+    borderRadius: sw(14),
+    backgroundColor: '#FB1616',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
 

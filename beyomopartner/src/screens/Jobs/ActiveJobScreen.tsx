@@ -537,7 +537,7 @@ const ActiveJobScreen = ({navigation, route}: any) => {
                       </TouchableOpacity>
                       {isSelected ? (
                         <View style={styles.inlineQty}>
-                          <TouchableOpacity onPress={() => setSvcCart(prev => prev.map(c => c.svc.id === item.id ? {...c, qty: Math.max(1, c.qty - 1)} : c))}>
+                          <TouchableOpacity onPress={() => setSvcCart(prev => cartItem.qty <= 1 ? prev.filter(c => c.svc.id !== item.id) : prev.map(c => c.svc.id === item.id ? {...c, qty: c.qty - 1} : c))}>
                             <Ionicons name="remove-circle" size={sw(22)} color="#105641" />
                           </TouchableOpacity>
                           <Text style={styles.inlineQtyNum}>{cartItem.qty}</Text>
@@ -726,12 +726,17 @@ const styles = StyleSheet.create({
     fontSize: sw(13),
     color: '#171816',
     fontWeight: '500',
+    // Without this, a long name ignores the row's width and renders straight
+    // over the "You Added" tag and the price column beside it instead of
+    // truncating — RN's flex layout doesn't shrink Text by default.
+    flexShrink: 1,
   },
   addedTag: {
     backgroundColor: '#FDD77A',
     borderRadius: sw(6),
     paddingHorizontal: sw(5),
     paddingVertical: sw(1),
+    flexShrink: 0,
   },
   addedTagText: {
     fontFamily: fonts.textFont,

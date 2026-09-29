@@ -1,11 +1,15 @@
 import {Platform} from 'react-native';
 import {BASE_URL, endpoints} from '../config/config';
+import DeviceInfo from 'react-native-device-info';
+
 
 // Bump this at every release to match android/app/build.gradle's versionName
 // (and the matching iOS build version) — this is what gets compared against the
 // admin-configured minimum version at splash.
-export const CURRENT_APP_VERSION = '1.0.2';
-
+// export const CURRENT_APP_VERSION = '1.0.2';
+// export const CURRENT_APP_VERSION = '1.1.0';
+export const CURRENT_APP_VERSION = DeviceInfo.getVersion();
+console.log('VERSION CHECK Current App Version==============>', CURRENT_APP_VERSION);
 // Simple dot-separated numeric version compare (e.g. "1.0.2" vs "1.1") — good
 // enough for our versioning scheme, no need for a semver dependency.
 export const isVersionBelow = (current: string, min: string): boolean => {

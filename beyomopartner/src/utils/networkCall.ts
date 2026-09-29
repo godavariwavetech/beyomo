@@ -32,7 +32,14 @@ const networkCall = async (
 ) => {
   const makeCall = async () => {
     try {
-      const fullUrl = /(http(s?)):\/\//i.test(url) ? url : baseURL + '/' + url;
+      // baseURL never has a trailing slash and most `endpoints.*` constants already
+      // start with one (e.g. '/api/v1/partners/...'), so a plain `baseURL + '/' + url`
+      // produced 'https://host//api/v1/...' for those callers. Express doesn't match a
+      // double-slashed path against '/api/v1/...' routes, so every such call 404'd with
+      // "Route //api/v1/... not found" — normalize both sides so it works either way.
+      const fullUrl = /(http(s?)):\/\//i.test(url)
+        ? url
+        : `${baseURL.replace(/\/+$/, '')}/${url.replace(/^\/+/, '')}`;
       console.log('fullURL ==', fullUrl)
       const AuthData = store.getState()?.Auth;
       const token = AuthData.token;

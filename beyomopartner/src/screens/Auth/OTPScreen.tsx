@@ -10,6 +10,7 @@ import {
   StatusBar,
   KeyboardAvoidingView,
   Platform,
+  ScrollView,
   ActivityIndicator,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
@@ -112,7 +113,10 @@ const OTPScreen = ({navigation, route}: any) => {
           <Ionicons name="arrow-back" size={sw(22)} color="#FDD77A" />
         </TouchableOpacity>
 
-        <View style={styles.content}>
+        <ScrollView
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}>
           <Image
             source={require('../../assets/beyomo_logo_icon.png')}
             style={styles.logo}
@@ -178,7 +182,7 @@ const OTPScreen = ({navigation, route}: any) => {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </LinearGradient>
   );
@@ -202,7 +206,7 @@ const styles = StyleSheet.create({
   },
 
   content: {
-    flex: 1,
+    flexGrow: 1,
     justifyContent: 'center',
     paddingHorizontal: sw(24),
     paddingVertical: sw(60),

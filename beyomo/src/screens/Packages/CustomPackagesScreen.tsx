@@ -164,7 +164,9 @@ const CustomPackagesScreen = ({navigation}: Props) => {
       </View>
 
       {loading ? (
-        <ActivityIndicator size="large" color="#105641" style={{marginTop: sw(40)}} />
+        <View style={styles.loadingWrap}>
+          <ActivityIndicator size="large" color="#105641" />
+        </View>
       ) : (
         <>
           {packages.length > 1 && (
@@ -307,6 +309,8 @@ const styles = StyleSheet.create({
 
   scroll: {flex: 1},
   scrollContent: {paddingHorizontal: sw(16), paddingBottom: sw(24), gap: sw(16)},
+
+  loadingWrap: {flex: 1, alignItems: 'center', justifyContent: 'center'},
 
   emptyText: {
     textAlign: 'center',

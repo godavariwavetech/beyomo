@@ -1,12 +1,13 @@
-import React, {useState, useCallback, useEffect} from 'react';
+import React, {useState, useCallback, useEffect, useRef} from 'react';
 import {
   View, Text, Image, ScrollView, TouchableOpacity, StyleSheet,
   Dimensions, StatusBar, Modal, TextInput, FlatList,
-  ActivityIndicator, Linking, KeyboardAvoidingView, Platform,
+  ActivityIndicator, Linking, KeyboardAvoidingView, Platform, AppState,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import {useFocusEffect} from '@react-navigation/native';
 import {fonts} from '../../config/theme';
 import networkCall from '../../utils/networkCall';
 import api from '../../utils/api';
@@ -268,8 +269,53 @@ const JobChecklistScreen = ({navigation, route}: any) => {
   const syncFromBooking = (updated: any) => {
     setServices(tagWithOrigIndex(parseServices(updated.services)));
     setTotalAmount(parseFloat(updated.totalAmount ?? 0));
-    setJob((prev: any) => ({...prev, services: updated.services, packages: updated.packages, packageId: updated.packageId, totalAmount: updated.totalAmount, partnerEarning: updated.partnerEarning, taxAmount: updated.taxAmount}));
+    setJob((prev: any) => ({...prev, services: updated.services, packages: updated.packages, packageId: updated.packageId, totalAmount: updated.totalAmount, partnerEarning: updated.partnerEarning, taxAmount: updated.taxAmount, status: updated.status ?? prev?.status, otpVerifiedAt: updated.otpVerifiedAt ?? prev?.otpVerifiedAt}));
   };
+
+  // Refs so the background poll below always reads the latest values without having
+  // to restart its interval every time these change.
+  const hasChangesRef = useRef(hasChanges);
+  useEffect(() => { hasChangesRef.current = hasChanges; }, [hasChanges]);
+  const editingRef = useRef(false);
+  useEffect(() => {
+    editingRef.current = showModal || showAddPackageModal || showOtpModal || pickingPackage != null;
+  }, [showModal, showAddPackageModal, showOtpModal, pickingPackage]);
+
+  // Keep this order's details live while the screen is focused — mirrors JobDetailsScreen.
+  // Skipped whenever there are unsaved local edits or an add/OTP sheet is open, so a
+  // background refresh can't silently overwrite services the partner is mid-editing.
+  const pollJob = useCallback(async () => {
+    if (!job?.id || hasChangesRef.current || editingRef.current) return;
+    try {
+      const res = await api.get(endpoints.PARTNER_BOOKING_DETAIL(String(job.id)));
+      const updated = res.data?.data ?? res.data;
+      if (updated) syncFromBooking(updated);
+    } catch {}
+  }, [job?.id]);
+
+  useFocusEffect(
+    useCallback(() => {
+      pollJob();
+      let interval: ReturnType<typeof setInterval> | null = setInterval(pollJob, 10000);
+
+      const sub = AppState.addEventListener('change', state => {
+        if (state === 'active') {
+          if (!interval) {
+            pollJob();
+            interval = setInterval(pollJob, 10000);
+          }
+        } else if (interval) {
+          clearInterval(interval);
+          interval = null;
+        }
+      });
+
+      return () => {
+        if (interval) clearInterval(interval);
+        sub.remove();
+      };
+    }, [pollJob]),
+  );
 
   const fetchPackages = useCallback(async () => {
     if (availablePackages.length > 0) return;

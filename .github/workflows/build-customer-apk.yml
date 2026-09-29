@@ -1,0 +1,116 @@
+# name: Build Customer APK
+
+# on:
+#   push:
+#     branches: [master]
+#     paths:
+#       - "beyomo/**"
+#       - ".github/workflows/build-customer-apk.yml"
+#   workflow_dispatch: {}
+
+# jobs:
+#   build:
+#     runs-on: ubuntu-latest
+
+#     steps:
+#       - name: Checkout latest code
+#         uses: actions/checkout@v4
+
+#       - name: Set up Node.js
+#         uses: actions/setup-node@v4
+#         with:
+#           node-version: 20
+
+#       - name: Set up Java
+#         uses: actions/setup-java@v4
+#         with:
+#           distribution: temurin
+#           java-version: 17
+
+#       - name: Install dependencies
+#         working-directory: beyomo
+#         # run: npm ci
+#         run: npm ci --legacy-peer-deps
+
+#       # - name: Build APK
+#       #   working-directory: beyomo/android
+#       #   run: ./gradlew assembleRelease
+
+#       - name: Build APK
+#   working-directory: beyomo/android
+#   run: |
+#     chmod +x gradlew
+#     ./gradlew assembleRelease
+
+
+#       - name: Upload APK
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: beyomo-customer-release-apk
+#           path: beyomo/android/app/build/outputs/apk/release/*.apk
+
+
+
+
+name: Build Customer APK
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "beyomo/**"
+      - ".github/workflows/build-customer-apk.yml"
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout latest code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install dependencies
+        working-directory: beyomo
+        run: npm ci --legacy-peer-deps
+
+      - name: Build APK
+        working-directory: beyomo/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Build AAB
+        working-directory: beyomo/android
+        run: |
+          chmod +x gradlew
+          ./gradlew bundleDebug
+
+
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          # name: beyomo-customer-release-apk
+          # path: beyomo/android/app/build/outputs/apk/release/*.apk
+          name: beyomo-customer-debug-apk
+          path: beyomo/android/app/build/outputs/apk/debug/*.apk
+
+      - name: Upload AAB
+        uses: actions/upload-artifact@v4
+        with:
+          # name: beyomo-customer-release-aab
+          # path: beyomo/android/app/build/outputs/bundle/release/*.aab
+          name: beyomo-customer-debug-aab
+          path: beyomo/android/app/build/outputs/bundle/debug/*.aab

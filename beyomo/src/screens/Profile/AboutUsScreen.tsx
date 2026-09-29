@@ -13,6 +13,7 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import LinearGradient from 'react-native-linear-gradient';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {fonts} from '../../config/theme';
+import { DeviceInfo } from 'react-native-device-info';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
@@ -95,7 +96,8 @@ const AboutUsScreen = ({navigation}: any) => {
 
         {/* Version info */}
         <View style={styles.versionCard}>
-          <Text style={styles.versionText}>Beyomo v1.0.1</Text>
+          {/* <Text style={styles.versionText}>Beyomo v1.0.1</Text> */}
+          <Text style={styles.versionText}>Beyomo v{DeviceInfo.getVersion()}</Text>
           <Text style={styles.versionSub}>Copyright © 2026 Beyomo — Beauty & Wellness at Home.</Text>
           <Text style={styles.versionSub}>All Rights Reserved.</Text>
         </View>

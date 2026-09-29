@@ -89,9 +89,11 @@ const ProfileScreen = ({navigation}: Props) => {
           <TouchableOpacity activeOpacity={0.7} onPress={() => navigation?.navigate('Notifications')}>
             <Ionicons name="notifications-outline" size={sw(20)} color="#5C5C5C" />
           </TouchableOpacity>
+          {/* Settings icon — hidden per request, keep for potential future re-enable.
           <TouchableOpacity activeOpacity={0.7} onPress={() => Alert.alert('Settings', 'App settings coming soon!')}>
             <Ionicons name="settings-outline" size={sw(20)} color="#5C5C5C" />
           </TouchableOpacity>
+          */}
         </View>
       </View>
 
