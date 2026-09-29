@@ -187,7 +187,7 @@ const IncomingRequestScreen = ({navigation, route}: any) => {
 
   // ── Main UI ──────────────────────────────────────────────────────────────────
   return (
-    <View style={[styles.root, {paddingBottom: insets.bottom}]}>
+    <View style={styles.root}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
       {/* ── Header ── */}

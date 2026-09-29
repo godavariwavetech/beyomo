@@ -9,6 +9,7 @@ import {
   StatusBar,
   Alert,
   TextInput,
+  KeyboardAvoidingView,
   Modal,
   ActivityIndicator,
   Platform,
@@ -1025,11 +1026,14 @@ const MyAddressesScreen = ({navigation}: any) => {
           </View>
 
           {/* Form */}
-          <ScrollView
-            style={styles.formScroll}
-            contentContainerStyle={[styles.formContent, {paddingBottom: insets.bottom + sw(24)}]}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled">
+          <KeyboardAvoidingView
+            style={{flex: 1}}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+            <ScrollView
+              style={styles.formScroll}
+              contentContainerStyle={[styles.formContent, {paddingBottom: insets.bottom + sw(24)}]}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled">
 
             <View style={styles.formTitleRow}>
               <Text style={styles.formTitle}>
@@ -1127,7 +1131,8 @@ const MyAddressesScreen = ({navigation}: any) => {
                 ? <ActivityIndicator color="#FFFFFF" />
                 : <Text style={styles.saveBtnText}>{editAddr ? 'Update Address' : 'Save Address'}</Text>}
             </TouchableOpacity>
-          </ScrollView>
+            </ScrollView>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
     </View>

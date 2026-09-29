@@ -578,7 +578,7 @@ const JobChecklistScreen = ({navigation, route}: any) => {
   );
 
   return (
-    <View style={[styles.root, {paddingBottom: insets.bottom}]}>
+    <View style={styles.root}>
       <StatusBar barStyle="light-content" backgroundColor="#022723" />
 
       <LinearGradient colors={['#0E5843', '#022723']}

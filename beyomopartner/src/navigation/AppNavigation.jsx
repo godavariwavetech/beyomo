@@ -40,6 +40,7 @@ import {navigationRef} from './navigationRef';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
+const swipeScreenOptions = {gestureResponseDistance: {horizontal: 16}};
 
 const MainTabs = () => (
   <Tab.Navigator
@@ -82,10 +83,10 @@ const AppNavigation = () => {
         <Stack.Screen name="AccountStatus" component={AccountStatusScreen} />
         <Stack.Screen name="Main" component={MainTabs} />
         <Stack.Screen name="AvailableBookings" component={AvailableBookingsScreen} />
-        <Stack.Screen name="IncomingRequest" component={IncomingRequestScreen} />
-        <Stack.Screen name="JobDetails" component={JobDetailsScreen} />
-        <Stack.Screen name="JobChecklist" component={JobChecklistScreen} />
-        <Stack.Screen name="ActiveJob" component={ActiveJobScreen} />
+        <Stack.Screen name="IncomingRequest" component={IncomingRequestScreen} options={swipeScreenOptions} />
+        <Stack.Screen name="JobDetails" component={JobDetailsScreen} options={swipeScreenOptions} />
+        <Stack.Screen name="JobChecklist" component={JobChecklistScreen} options={swipeScreenOptions} />
+        <Stack.Screen name="ActiveJob" component={ActiveJobScreen} options={swipeScreenOptions} />
         <Stack.Screen name="SettlementHistory" component={SettlementHistoryScreen} />
         <Stack.Screen name="Notifications" component={NotificationsScreen} />
         <Stack.Screen name="EditProfile" component={EditProfileScreen} />
