@@ -714,11 +714,20 @@ const MyAddressesScreen = ({navigation}: any) => {
     setLocating(true);
     setShowModal(true);
 
-    // Nothing is drawn until the device says where it is — there is no default city to
-    // fall back on, because a map silently centred on somewhere else is precisely the
-    // bug this screen kept producing. If no fix can be had, the overlay says why and
-    // offers a retry; the search box above still works in the meantime.
-    const result = await locateDevice();
+    const locationRequest = locateDevice();
+    const cachedLocation = await loadCachedLocation();
+    if (cachedLocation && !mapBuilt.current) {
+      mapBuilt.current = true;
+      pendingCenter.current = cachedLocation;
+      setMapHtml(buildMapHtml(cachedLocation.lat, cachedLocation.lng));
+    }
+
+    // The saved fix is only a starting map centre. Without one, nothing is drawn until
+    // the device says where it is — there is no default city to fall back on, because
+    // a map silently centred on somewhere else is precisely the bug this screen kept
+    // producing. If no fix can be had, the overlay says why and offers a retry; the
+    // search box above still works in the meantime.
+    const result = await locationRequest;
     if (!result.ok) explainLocationFailure(result.reason);
   };
 
