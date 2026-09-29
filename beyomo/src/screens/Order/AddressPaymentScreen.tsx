@@ -1116,7 +1116,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
             <View style={styles.calendarIconBox}>
               <MaterialIcons name="calendar-today" size={sw(15)} color="#FEFEFE" />
             </View>
-            <View>
+            <View style={styles.dateTextWrap}>
               <Text style={styles.dateLabel}>Date & time</Text>
               {!!dateError && <Text style={styles.dateErrorText}>{dateError}</Text>}
             </View>
@@ -2106,7 +2106,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: sw(12),
     gap: sw(8),
   },
-  dateLeft: {flexDirection: 'row', alignItems: 'center', gap: sw(8)},
+  dateLeft: {flexDirection: 'row', alignItems: 'center', gap: sw(8), flex: 1, minWidth: 0},
+  dateTextWrap: {flex: 1, minWidth: 0},
   calendarIconBox: {
     width: sw(30),
     height: sw(30),
@@ -2120,7 +2121,7 @@ const styles = StyleSheet.create({
   dateCardError: {borderWidth: 1, borderColor: '#FF2F2F'},
   dateErrorText: {fontFamily: fonts.textFont, fontSize: sw(12), color: '#FF2F2F', marginTop: sw(2)},
   dateLabel: {fontFamily: fonts.textFont, fontSize: sw(12), color: '#012823'},
-  dateValue: {fontFamily: fonts.textFont, fontSize: sw(14), fontWeight: '500', color: '#171816'},
+  dateValue: {fontFamily: fonts.textFont, fontSize: sw(14), fontWeight: '500', color: '#171816', flexShrink: 0},
 
   /* ── Offer banner ── */
   offerBanner: {
