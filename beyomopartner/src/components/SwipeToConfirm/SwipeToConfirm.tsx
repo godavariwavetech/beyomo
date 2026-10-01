@@ -1,5 +1,5 @@
 import React, {useRef, useState, useEffect} from 'react';
-import {View, Text, Animated, PanResponder, StyleSheet, Dimensions, ActivityIndicator, Easing} from 'react-native';
+import {View, Text, Animated, PanResponder, StyleSheet, Dimensions, ActivityIndicator, Easing, Platform} from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import {fonts} from '../../config/theme';
@@ -221,6 +221,7 @@ export default function SwipeToConfirm({
 
   return (
     <LinearGradient
+      {...(Platform.OS === 'ios' ? {testID: 'beyomo-swipe-confirm-no-pop'} : {})}
       colors={gradient}
       start={{x: 0, y: 0}}
       end={{x: 1, y: 0}}

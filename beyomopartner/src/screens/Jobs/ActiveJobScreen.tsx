@@ -54,9 +54,16 @@ interface AvailableSvc {
   id: number;
   name: string;
   basePrice: string;
+  offerPrice?: string | number | null;
   duration: number;
 }
 type CartItem = {svc: AvailableSvc; qty: number};
+
+const servicePrice = (service: AvailableSvc) => {
+  const base = Number(service.basePrice);
+  const offer = service.offerPrice == null ? NaN : Number(service.offerPrice);
+  return Number.isFinite(offer) && offer > 0 && offer < base ? offer : base;
+};
 
 const ActiveJobScreen = ({navigation, route}: any) => {
   const insets = useSafeAreaInsets();
@@ -139,19 +146,20 @@ const ActiveJobScreen = ({navigation, route}: any) => {
   const fetchAvailableServices = useCallback(async () => {
     setLoadingServices(true);
     try {
-      const result = await networkCall(`api/v1/services?limit=500`, 'GET');
+      const cityParam = job?.cityId ? `&cityId=${job.cityId}` : '';
+      const result = await networkCall(`api/v1/services?limit=500${cityParam}`, 'GET');
       if (result.response?.status) {
         const raw = result.response?.data?.data ?? result.response?.data ?? [];
         setAvailableServices(Array.isArray(raw) ? raw : []);
       }
     } catch {}
     setLoadingServices(false);
-  }, []);
+  }, [job?.cityId]);
 
   const openAddModal = () => {
     setSvcCart([]);
     setSearchQuery('');
-    if (availableServices.length === 0) fetchAvailableServices();
+    fetchAvailableServices();
     setShowAddModal(true);
   };
 
@@ -246,7 +254,7 @@ const ActiveJobScreen = ({navigation, route}: any) => {
   const filteredServices = availableServices.filter(s =>
     s.name.toLowerCase().includes(searchQuery.toLowerCase()),
   );
-  const cartTotal = svcCart.reduce((sum, item) => sum + parseFloat(item.svc.basePrice) * item.qty, 0);
+  const cartTotal = svcCart.reduce((sum, item) => sum + servicePrice(item.svc) * item.qty, 0);
 
   return (
     <View style={styles.root}>
@@ -532,7 +540,13 @@ const ActiveJobScreen = ({navigation, route}: any) => {
                           {item.name}
                         </Text>
                         <Text style={styles.svcItemMeta}>
-                          {item.duration} min  •  ₹{formatAmount(item.basePrice)}
+                          {item.duration} min  •  ₹{formatAmount(servicePrice(item))}
+                          {servicePrice(item) < Number(item.basePrice) && (
+                            <>
+                              <Text style={{textDecorationLine: 'line-through'}}>  ₹{formatAmount(item.basePrice)}</Text>
+                              <Text style={{color: '#105641', fontWeight: '700'}}>  {Math.round((Number(item.basePrice) - servicePrice(item)) / Number(item.basePrice) * 100)}% OFF</Text>
+                            </>
+                          )}
                         </Text>
                       </TouchableOpacity>
                       {isSelected ? (

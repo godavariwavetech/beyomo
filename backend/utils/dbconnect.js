@@ -133,6 +133,7 @@ const ADDITIVE_SCHEMA = [
   // Separate from `description` (Customer/Partner apps) — the website's own
   // description, edited independently from the admin dashboard.
   "ALTER TABLE services ADD COLUMN IF NOT EXISTS websiteDescription TEXT NULL",
+  "ALTER TABLE services ADD COLUMN IF NOT EXISTS offerPrice DECIMAL(10,2) NULL DEFAULT NULL",
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────

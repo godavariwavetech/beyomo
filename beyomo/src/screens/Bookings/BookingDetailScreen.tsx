@@ -684,6 +684,15 @@ const BookingDetailScreen = ({navigation, route}: any) => {
               const isRemoved = !!svc.removed;
               const isFreeOffer = !!svc.addedByOffer;
               const qty = Number(svc.qty) || 1;
+              const offerPrice = Number(svc.offerPrice);
+              const originalPrice = Number(svc.basePrice);
+              const hasOfferPrice = svc.offerPrice != null
+                && Number.isFinite(offerPrice)
+                && offerPrice > 0
+                && originalPrice > offerPrice;
+              const offerPercent = hasOfferPrice
+                ? Math.round(((originalPrice - offerPrice) / originalPrice) * 100)
+                : 0;
               // svc.price is the UNIT price, but the subtotal bills unit × qty — so a
               // qty-3 line showed ₹299 next to a ₹897 subtotal and the column simply
               // didn't add up. Show the line total, with the unit price spelled out
@@ -720,9 +729,23 @@ const BookingDetailScreen = ({navigation, route}: any) => {
                   {isFreeOffer ? (
                     <Text style={[styles.servicePrice, {color: '#1B6B3A'}]}>FREE</Text>
                   ) : !!svc.price ? (
-                    <Text style={[styles.servicePrice, isRemoved && {textDecorationLine: 'line-through', color: '#9CA3AF'}]}>
-                      ₹{formatAmount(lineTotal)}
-                    </Text>
+                    hasOfferPrice ? (
+                      <View style={{alignItems: 'flex-end', gap: sw(2)}}>
+                        <Text style={[styles.servicePrice, isRemoved && {textDecorationLine: 'line-through', color: '#9CA3AF'}]}>
+                          ₹{formatAmount(lineTotal)}
+                        </Text>
+                        <Text style={[styles.serviceDuration, {textDecorationLine: 'line-through'}]}>
+                          ₹{formatAmount(originalPrice * qty)}
+                        </Text>
+                        <Text style={[styles.serviceDuration, {color: '#1B6B3A', fontWeight: '700'}]}>
+                          {offerPercent}% OFF
+                        </Text>
+                      </View>
+                    ) : (
+                      <Text style={[styles.servicePrice, isRemoved && {textDecorationLine: 'line-through', color: '#9CA3AF'}]}>
+                        ₹{formatAmount(lineTotal)}
+                      </Text>
+                    )
                   ) : null}
                 </View>
               );

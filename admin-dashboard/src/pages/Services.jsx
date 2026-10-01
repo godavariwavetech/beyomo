@@ -304,6 +304,7 @@ export default function Services() {
         // per-city override); baseServicePrice is always the global figure.
         basePrice: parseFloat(s.basePrice ?? 0),
         baseServicePrice: parseFloat(s.baseServicePrice ?? s.basePrice ?? 0),
+        offerPrice: s.offerPrice == null ? '' : parseFloat(s.offerPrice),
         cityMappings: Array.isArray(s.cityMappings) ? s.cityMappings : [],
         partners: s.partners ?? 0,
         revenue: s.revenue ?? 0,
@@ -537,6 +538,7 @@ export default function Services() {
       // The global base price, never the selected city's overridden one — otherwise
       // saving from a city view would write that city's rate onto every other city.
       basePrice: svc.baseServicePrice ?? svc.basePrice,
+      offerPrice: svc.offerPrice == null ? '' : String(svc.offerPrice),
       duration: svc.duration ?? 60,
       description: svc.description ?? '',
       websiteDescription: svc.websiteDescription ?? '',
@@ -574,6 +576,14 @@ export default function Services() {
   const handleCityRemove = (cityId) =>
     setEditMappings(prev => prev.filter(m => m.cityId !== cityId));
 
+  const calculateOfferPercentage = (originalPrice, offerPrice) => {
+    const original = Number(originalPrice);
+    const offer = Number(offerPrice);
+    return original > 0 && offer > 0 && offer < original
+      ? Math.round(((original - offer) / original) * 100)
+      : 0;
+  };
+
   const saveEdit = async () => {
     const payload = {
       name: form.name,
@@ -581,6 +591,7 @@ export default function Services() {
       // "" is the form's "None" option; the backend turns it into a real NULL.
       subcategoryId: form.subcategoryId === '' || form.subcategoryId == null ? null : Number(form.subcategoryId),
       basePrice: +form.basePrice,
+      offerPrice: form.offerPrice === '' || form.offerPrice == null ? null : +form.offerPrice,
       duration: +form.duration,
       description: form.description ?? '',
       websiteDescription: form.websiteDescription ?? '',
@@ -618,6 +629,7 @@ export default function Services() {
       categoryId: String(form.categoryId),
       subcategoryId: form.subcategoryId === '' || form.subcategoryId == null ? null : Number(form.subcategoryId),
       basePrice: +form.basePrice,
+      offerPrice: form.offerPrice === '' || form.offerPrice == null ? null : +form.offerPrice,
       duration: +form.duration,
       description: form.description ?? '',
       websiteDescription: form.websiteDescription ?? '',
@@ -637,6 +649,7 @@ export default function Services() {
         id: String(s.id ?? Date.now()),
         status: 'active', isActive: true,
         basePrice: parseFloat(s.basePrice ?? form.basePrice),
+        offerPrice: s.offerPrice == null ? null : parseFloat(s.offerPrice),
         partners: 0, totalBookings: 0, monthlyBookings: 0, rating: 0, revenue: 0,
         category: catName,
         icon: '✨',
@@ -672,6 +685,7 @@ export default function Services() {
     );
 
   const selectedCityName = cities.find(c => c.id === cityId)?.name ?? '';
+  const offerPercent = calculateOfferPercentage(form.basePrice, form.offerPrice);
 
   const getCityNames = (cityIds = []) =>
     cityIds.map(id => cities.find(c => c.id === id)?.name ?? `City ${id}`).join(', ');
@@ -729,7 +743,7 @@ export default function Services() {
               <FolderOpen size={14}/> Subcategories
             </button>
             */}
-            <button className="btn btn-primary btn-sm" onClick={() => { setAdding(true); setForm({ name: '', basePrice: '', duration: 60, description: '', websiteDescription: '', image: '', cityIds: [] }); }} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <button className="btn btn-primary btn-sm" onClick={() => { setAdding(true); setForm({ name: '', basePrice: '', offerPrice: '', duration: 60, description: '', websiteDescription: '', image: '', cityIds: [] }); }} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <Plus size={14}/> Add Service
             </button>
           </div>
@@ -752,7 +766,6 @@ export default function Services() {
                             {...dragProvided.draggableProps}
                             style={{
                               display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px',
-                              border: '1px solid var(--c-border)', borderRadius: 'var(--r-md)', marginBottom: 8,
                               background: dragSnapshot.isDragging ? 'var(--c-border-light)' : '#fff',
                               ...dragProvided.draggableProps.style,
                             }}
@@ -770,7 +783,15 @@ export default function Services() {
                               {svc.duration ? `${svc.duration} min` : ''}
                             </div>
                             <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--c-text-secondary)' }}>
-                              {svc.priceStartsFrom && <span style={{ fontWeight: 400 }}>Starts from </span>}₹{svc.basePrice.toLocaleString()}
+                              {svc.offerPrice != null && Number(svc.offerPrice) > 0 && Number(svc.offerPrice) < Number(svc.basePrice) ? (
+                                <>
+                                  <span style={{ color: '#105641' }}>₹{Number(svc.offerPrice).toLocaleString()}</span>{' '}
+                                  <span style={{ color: 'var(--c-text-muted)', fontSize: 11, textDecoration: 'line-through' }}>₹{svc.basePrice.toLocaleString()}</span>{' '}
+                                  <span style={{ color: '#166534', fontSize: 10, fontWeight: 700 }}>{Math.round(((Number(svc.basePrice) - Number(svc.offerPrice)) / Number(svc.basePrice)) * 100)}% OFF</span>
+                                </>
+                              ) : (
+                                <>{svc.priceStartsFrom && <span style={{ fontWeight: 400 }}>Starts from </span>}₹{svc.basePrice.toLocaleString()}</>
+                              )}
                               {hasCityPrice(svc) && (
                                 <span
                                   title={`${selectedCityName} has its own price (base is ₹${(svc.baseServicePrice ?? 0).toLocaleString()})`}
@@ -874,8 +895,19 @@ export default function Services() {
                 <div>
                   <div style={{ fontSize: 11, color: 'var(--c-text-secondary)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Price</div>
                   <div style={{ fontWeight: 700, fontSize: 14 }}>
-                    {svc.priceStartsFrom && <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--c-text-muted)', display: 'block' }}>Starts from</span>}
-                    ₹{svc.basePrice.toLocaleString()}
+                    {svc.offerPrice != null && Number(svc.offerPrice) > 0 && Number(svc.offerPrice) < Number(svc.basePrice) ? (
+                      <>
+                        {svc.priceStartsFrom && <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--c-text-muted)', display: 'block' }}>Starts from</span>}
+                        <span style={{ color: '#105641' }}>₹{Number(svc.offerPrice).toLocaleString()}</span>{' '}
+                        <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--c-text-muted)', textDecoration: 'line-through' }}>₹{svc.basePrice.toLocaleString()}</span>{' '}
+                        <span style={{ fontSize: 10, fontWeight: 700, color: '#166534' }}>{Math.round(((Number(svc.basePrice) - Number(svc.offerPrice)) / Number(svc.basePrice)) * 100)}% OFF</span>
+                      </>
+                    ) : (
+                      <>
+                        {svc.priceStartsFrom && <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--c-text-muted)', display: 'block' }}>Starts from</span>}
+                        ₹{svc.basePrice.toLocaleString()}
+                      </>
+                    )}
                     {hasCityPrice(svc) && (
                     <span
                       title={`${selectedCityName} has its own price (base is ₹${(svc.baseServicePrice ?? 0).toLocaleString()})`}
@@ -968,12 +1000,20 @@ export default function Services() {
               )}
             </div>
             <div className="form-group">
-              <label className="form-label">Base Price (₹)</label>
+              <label className="form-label">Original Price (₹)</label>
               <input className="form-input" type="number" value={form.basePrice || ''} onChange={e => setForm(f => ({ ...f, basePrice: e.target.value }))} />
               <div style={{ fontSize: 11, color: 'var(--c-text-muted)', marginTop: 4 }}>
                 The default price in every city. Set a different price for an individual
                 city below — that city only.
               </div>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Offer Price (₹)</label>
+              <input className="form-input" type="number" min="0" step="0.01" value={form.offerPrice ?? ''} onChange={e => setForm(f => ({ ...f, offerPrice: e.target.value }))} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Offer Percentage</label>
+              <input className="form-input" value={form.offerPrice ? `${offerPercent}%` : '—'} readOnly />
             </div>
             <div className="form-group">
               <label className="form-label">Duration (minutes)</label>
@@ -1093,8 +1133,16 @@ export default function Services() {
             hint="Select cities where this service is available. No selection = available in all cities."
           />
           <div className="form-group">
-            <label className="form-label">Base Price (₹) *</label>
+            <label className="form-label">Original Price (₹) *</label>
             <input className="form-input" type="number" placeholder="500" value={form.basePrice || ''} onChange={e => setForm(f => ({ ...f, basePrice: e.target.value }))} />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Offer Price (₹)</label>
+            <input className="form-input" type="number" min="0" step="0.01" value={form.offerPrice ?? ''} onChange={e => setForm(f => ({ ...f, offerPrice: e.target.value }))} />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Offer Percentage</label>
+            <input className="form-input" value={form.offerPrice ? `${offerPercent}%` : '—'} readOnly />
           </div>
           <div className="form-group">
             <label className="form-label">Duration (minutes)</label>

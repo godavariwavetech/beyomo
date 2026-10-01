@@ -63,6 +63,26 @@ target 'beyomopartner' do
   )
 
   post_install do |installer|
+    # Exclude only SwipeToConfirm touches from native iOS back recognition.
+    # JS PanResponder cannot veto UIKit's interactive pop gesture. Apply this
+    # additive guard at pod install so it survives dependency reinstalls.
+    screen_stack_path = File.join(__dir__, '../node_modules/react-native-screens/ios/RNSScreenStack.mm')
+    screen_stack_source = File.read(screen_stack_path)
+    swipe_guard_marker = 'beyomo-swipe-confirm-no-pop'
+    unless screen_stack_source.include?(swipe_guard_marker)
+      touch_delegate = "- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldReceiveTouch:(UITouch *)touch;\n{\n"
+      raise 'SwipeToConfirm: native touch delegate changed; review the iOS gesture guard' unless screen_stack_source.include?(touch_delegate)
+      swipe_guard = <<~OBJC
+          // Keep native back gestures outside SwipeToConfirm unchanged.
+          for (UIView *view = touch.view; view != nil; view = view.superview) {
+            if ([view.accessibilityIdentifier isEqualToString:@"beyomo-swipe-confirm-no-pop"]) {
+              return NO;
+            }
+          }
+      OBJC
+      File.write(screen_stack_path, screen_stack_source.sub(touch_delegate, touch_delegate + swipe_guard))
+    end
+
     # https://github.com/facebook/react-native/blob/main/packages/react-native/scripts/react_native_pods.rb#L197-L202
     react_native_post_install(
       installer,

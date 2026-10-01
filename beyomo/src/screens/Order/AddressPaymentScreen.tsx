@@ -39,12 +39,20 @@ import {isCityServiceable} from '../../utils/geoUtils';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
+const serviceCheckoutPrice = (service: any) => {
+  const basePrice = Number(service?.price) || 0;
+  const offerPrice = Number(service?.offerPrice);
+  return service?.offerPrice != null && Number.isFinite(offerPrice) && offerPrice > 0 && offerPrice < basePrice
+    ? offerPrice
+    : basePrice;
+};
 
 type ServiceItem = {
   id: string | number;
   name: string;
   duration?: string | number;
   price: number;
+  offerPrice?: number | null;
   image?: string;
   qty: number;
 };
@@ -364,8 +372,8 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
   // cart lets you adjust a package's quantity directly at checkout.
   const currentPackageQty = packageItems[0]?.qty ?? 1;
   const packageItemsIndividualSum = packageItems.reduce((sum, s) => sum + (parseFloat(String(s.price)) || 0) * s.qty, 0);
-  const extraItemsSubtotal = extraItems.reduce((sum, s) => sum + (parseFloat(String(s.price)) || 0) * s.qty, 0);
-  const servicesSubtotal = services.reduce((sum, s) => sum + (parseFloat(String(s.price)) || 0) * s.qty, 0);
+  const extraItemsSubtotal = extraItems.reduce((sum, s) => sum + serviceCheckoutPrice(s) * s.qty, 0);
+  const servicesSubtotal = services.reduce((sum, s) => sum + serviceCheckoutPrice(s) * s.qty, 0);
 
   const cartPackageTotal = cartItems.reduce((sum, item) => sum + item.packagePrice * item.qty, 0);
   const cartOriginalTotal = cartItems.reduce(
@@ -447,7 +455,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
 
   const filteredAddSvcs = allServicesForAdd.filter(s =>
     !addSvcSearch || s.name?.toLowerCase().includes(addSvcSearch.toLowerCase()));
-  const addSvcCartTotal = addSvcCart.reduce((sum, item) => sum + (parseFloat(item.svc.basePrice) || 0) * item.qty, 0);
+  const addSvcCartTotal = addSvcCart.reduce((sum, item) => sum + serviceCheckoutPrice({price: item.svc.basePrice, offerPrice: item.svc.offerPrice}) * item.qty, 0);
 
   const handleConfirmAddServices = () => {
     if (!addSvcCart.length) return;
@@ -455,6 +463,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
       id: item.svc.id,
       name: item.svc.name,
       price: parseFloat(item.svc.basePrice) || 0,
+      offerPrice: item.svc.offerPrice == null ? null : parseFloat(item.svc.offerPrice),
       duration: item.svc.duration ? `${item.svc.duration} min` : undefined,
       image: item.svc.image,
       qty: item.qty,
@@ -511,7 +520,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
       return;
     }
     const serviceIds = paidServices.map(s => Number(s.id));
-    const total = paidServices.reduce((sum, s) => sum + (parseFloat(String(s.price)) || 0) * s.qty, 0);
+    const total = paidServices.reduce((sum, s) => sum + serviceCheckoutPrice(s) * s.qty, 0);
     api.post(endpoints.OFFERS_CHECK, {serviceIds, totalAmount: total})
       .then(res => {
         const eligible: any[] = res.data?.data ?? [];
@@ -596,7 +605,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
       let servicesToSubmit = effectiveServices.filter((s: any) => !s.isFree);
       if (appliedOffer) {
         const serviceIds = servicesToSubmit.map(s => Number(s.id));
-        const total = servicesToSubmit.reduce((sum, s) => sum + (parseFloat(String(s.price)) || 0) * s.qty, 0);
+        const total = servicesToSubmit.reduce((sum, s) => sum + serviceCheckoutPrice(s) * s.qty, 0);
         try {
           const checkRes = await api.post(endpoints.OFFERS_CHECK, {serviceIds, totalAmount: total});
           const eligible: any[] = checkRes.data?.data ?? [];
@@ -1037,7 +1046,18 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
         )}
 
         {/* ── Service items ── */}
-        {displayServiceRows.map(item => (
+        {displayServiceRows.map(item => {
+          const offerPrice = Number((item as any).offerPrice);
+          const hasOfferPrice = !(item as any).isPackageItem
+            && !(item as any).isFree
+            && (item as any).offerPrice != null
+            && offerPrice > 0
+            && offerPrice < Number(item.price);
+          const offerPercent = hasOfferPrice
+            ? Math.round(((Number(item.price) - offerPrice) / Number(item.price)) * 100)
+            : 0;
+
+          return (
           <TouchableOpacity
             key={item.rowKey}
             style={styles.serviceCard}
@@ -1072,9 +1092,23 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
                   </>
                 ) : (
                   <>
-                    <Text style={styles.priceText}>
-                      ₹{formatAmount(item.price * item.qty)}
-                    </Text>
+                    {hasOfferPrice ? (
+                      <View style={{flexDirection: 'row', alignItems: 'center', gap: sw(6), flexShrink: 1, flexWrap: 'wrap'}}>
+                        <Text style={[styles.priceText, {color: '#105641'}]}>
+                          ₹{formatAmount(offerPrice * item.qty)}
+                        </Text>
+                        <Text style={styles.priceTextStrikethrough}>
+                          ₹{formatAmount(item.price * item.qty)}
+                        </Text>
+                        <Text style={[styles.detailSheetPillText, {color: '#008F30'}]}>
+                          {offerPercent}% OFF
+                        </Text>
+                      </View>
+                    ) : (
+                      <Text style={styles.priceText}>
+                        ₹{formatAmount(item.price * item.qty)}
+                      </Text>
+                    )}
                     <View style={styles.stepper}>
                       <TouchableOpacity
                         style={styles.stepBtn}
@@ -1099,7 +1133,8 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
               </View>
             </View>
           </TouchableOpacity>
-        ))}
+          );
+        })}
 
         {/* ── Add more services ── */}
         <TouchableOpacity style={styles.addMoreBtn} activeOpacity={0.8} onPress={handleAddMoreServices}>
@@ -1266,16 +1301,43 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
                   </Text>
                 </View>
               ))}
-              {effectiveServices.map(s => (
-                <View key={String((s as any).isFree ? `free-${s.id}` : s.id)} style={styles.billRow}>
-                  <Text style={styles.billLabel} numberOfLines={1}>
-                    {s.name}{s.qty > 1 ? ` ×${s.qty}` : ''}
-                  </Text>
-                  <Text style={styles.billValue}>
-                    ₹{formatAmount(s.price * s.qty)}
-                  </Text>
-                </View>
-              ))}
+              {effectiveServices.map(s => {
+                const isFree = !!(s as any).isFree;
+                const isPackageItem = !!(s as any).isPackageItem;
+                const offerPrice = Number((s as any).offerPrice);
+                const hasOfferPrice = !isFree && !isPackageItem
+                  && (s as any).offerPrice != null
+                  && offerPrice > 0
+                  && offerPrice < Number(s.price);
+                const offerPercent = hasOfferPrice
+                  ? Math.round(((Number(s.price) - offerPrice) / Number(s.price)) * 100)
+                  : 0;
+
+                return (
+                  <View key={String(isFree ? `free-${s.id}` : s.id)} style={styles.billRow}>
+                    <Text style={styles.billLabel} numberOfLines={1}>
+                      {s.name}{s.qty > 1 ? ` ×${s.qty}` : ''}
+                    </Text>
+                    {hasOfferPrice ? (
+                      <View style={{flexDirection: 'row', alignItems: 'center', gap: sw(6)}}>
+                        <Text style={[styles.billValue, {color: '#105641', fontWeight: '700'}]}>
+                          ₹{formatAmount(offerPrice * s.qty)}
+                        </Text>
+                        <Text style={styles.priceTextStrikethrough}>
+                          ₹{formatAmount(s.price * s.qty)}
+                        </Text>
+                        <Text style={[styles.detailSheetPillText, {color: '#008F30'}]}>
+                          {offerPercent}% OFF
+                        </Text>
+                      </View>
+                    ) : (
+                      <Text style={styles.billValue}>
+                        ₹{formatAmount(s.price * s.qty)}
+                      </Text>
+                    )}
+                  </View>
+                );
+              })}
               {isCartMode ? (
                 packageSavings > 0 && (
                   <View style={styles.billRow}>
@@ -1583,9 +1645,19 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
             const detailIsFree = !!(detailItem as any).isFree;
             const detailIsPackageItem = !!(detailItem as any).isPackageItem;
             const detailPrice = Number(detailItem.price) || 0;
-            const detailOriginalPrice = Number((detailItem as any).originalPrice ?? detailItem.price) || detailPrice;
-            const detailDiscountPct = (detailItem as any).discountPct ?? (detailItem as any).discountPercent ??
-              (detailOriginalPrice > detailPrice ? Math.round(((detailOriginalPrice - detailPrice) / detailOriginalPrice) * 100) : 0);
+            const detailOfferPrice = Number((detailItem as any).offerPrice);
+            const detailHasOfferPrice = !detailIsFree && !detailIsPackageItem
+              && (detailItem as any).offerPrice != null
+              && detailOfferPrice > 0
+              && detailOfferPrice < detailPrice;
+            const detailDisplayPrice = detailHasOfferPrice ? detailOfferPrice : detailPrice;
+            const detailOriginalPrice = detailHasOfferPrice
+              ? detailPrice
+              : Number((detailItem as any).originalPrice ?? detailItem.price) || detailPrice;
+            const detailDiscountPct = detailHasOfferPrice
+              ? Math.round(((detailPrice - detailOfferPrice) / detailPrice) * 100)
+              : (detailItem as any).discountPct ?? (detailItem as any).discountPercent ??
+                (detailOriginalPrice > detailPrice ? Math.round(((detailOriginalPrice - detailPrice) / detailOriginalPrice) * 100) : 0);
             const detailBullets = (detailItem as any).bullets ?? (detailItem as any).highlights?.join('\n') ?? (detailItem as any).description ?? '';
             return (
               <Animated.View style={[styles.detailSheet, {paddingBottom: insets.bottom + sw(16)}, {transform: [{translateY: sheetTranslateY}]}]}>
@@ -1605,9 +1677,9 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
                   />
                   <View style={styles.detailSheetHeroPriceBadge}>
                     <Text style={styles.detailSheetHeroPrice}>
-                      {(detailItem as any).priceStartsFrom ? 'Starts at ' : ''}₹{formatAmount(detailPrice)}
+                      {(detailItem as any).priceStartsFrom ? 'Starts at ' : ''}₹{formatAmount(detailDisplayPrice)}
                     </Text>
-                    {detailOriginalPrice > detailPrice && (
+                    {detailOriginalPrice > detailDisplayPrice && (
                       <Text style={styles.detailSheetHeroOriginal}>₹{formatAmount(detailOriginalPrice)}</Text>
                     )}
                   </View>
