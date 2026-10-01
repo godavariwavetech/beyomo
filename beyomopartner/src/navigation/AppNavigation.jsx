@@ -82,10 +82,10 @@ const AppNavigation = () => {
         <Stack.Screen name="AccountStatus" component={AccountStatusScreen} />
         <Stack.Screen name="Main" component={MainTabs} />
         <Stack.Screen name="AvailableBookings" component={AvailableBookingsScreen} />
-        <Stack.Screen name="IncomingRequest" component={IncomingRequestScreen} />
-        <Stack.Screen name="JobDetails" component={JobDetailsScreen} />
-        <Stack.Screen name="JobChecklist" component={JobChecklistScreen} />
-        <Stack.Screen name="ActiveJob" component={ActiveJobScreen} />
+        <Stack.Screen name="IncomingRequest" component={IncomingRequestScreen} options={{gestureResponseDistance: {start: 8}}} />
+        <Stack.Screen name="JobDetails" component={JobDetailsScreen} options={{gestureResponseDistance: {start: 8}}} />
+        <Stack.Screen name="JobChecklist" component={JobChecklistScreen} options={{gestureResponseDistance: {start: 8}}} />
+        <Stack.Screen name="ActiveJob" component={ActiveJobScreen} options={{gestureResponseDistance: {start: 8}}} />
         <Stack.Screen name="SettlementHistory" component={SettlementHistoryScreen} />
         <Stack.Screen name="Notifications" component={NotificationsScreen} />
         <Stack.Screen name="EditProfile" component={EditProfileScreen} />
