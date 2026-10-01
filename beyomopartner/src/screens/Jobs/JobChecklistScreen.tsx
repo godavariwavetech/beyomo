@@ -21,6 +21,12 @@ const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
 const FALLBACK_IMG = 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=800&q=90&fit=crop';
 
+const servicePrice = (service: any) => {
+  const base = Number(service.basePrice);
+  const offer = service.offerPrice == null ? NaN : Number(service.offerPrice);
+  return Number.isFinite(offer) && offer > 0 && offer < base ? offer : base;
+};
+
 const parseServices = (s: any): any[] => {
   if (Array.isArray(s)) return s;
   if (typeof s === 'string') { try { return JSON.parse(s); } catch { return []; } }
@@ -31,7 +37,7 @@ const parseServices = (s: any): any[] => {
 // into the server's last-saved `services` array (null if it was added locally this
 // session and never saved yet), and `_removed` soft-marks a deletion so we can diff
 // against the baseline at save time instead of guessing from array positions.
-const tagWithOrigIndex = (svcs: any[]) => svcs.map((s, i) => ({...s, _origIndex: i, _removed: false}));
+const tagWithOrigIndex = (svcs: any[]) => svcs.map((s, i) => ({...s, _origIndex: i, _removed: !!s.removed}));
 
 const JobChecklistScreen = ({navigation, route}: any) => {
   const insets = useSafeAreaInsets();
@@ -77,6 +83,7 @@ const JobChecklistScreen = ({navigation, route}: any) => {
   const [addMode, setAddMode] = useState<'catalog' | 'combo' | 'package' | 'addon'>('catalog');
   const [allServices, setAllServices] = useState<any[]>([]);
   const [loadingSvcs, setLoadingSvcs] = useState(false);
+  const [servicesError, setServicesError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [selectedSvc, setSelectedSvc] = useState<any>(null);
   const [addQty, setAddQty] = useState(1);
@@ -96,19 +103,28 @@ const JobChecklistScreen = ({navigation, route}: any) => {
 
   const fetchAllServices = useCallback(async () => {
     setLoadingSvcs(true);
-    const svcPath = endpoints.SERVICES.replace(/^\//, '');
-    const result = await networkCall(`${svcPath}?limit=500`, 'GET');
-    const raw = result.response?.data ?? result.response ?? [];
-    setAllServices(Array.isArray(raw) ? raw : []);
-    setLoadingSvcs(false);
-  }, []);
+    setServicesError(null);
+    try {
+      const result = await api.get(endpoints.SERVICES, {
+        params: {limit: 500, ...(job?.cityId ? {cityId: job.cityId} : {})},
+      });
+      if (!result.data?.status || !Array.isArray(result.data.data)) {
+        throw new Error('Unable to load services. Please try again.');
+      }
+      setAllServices(result.data.data);
+    } catch (error: any) {
+      setServicesError(error.response?.data?.message || 'Unable to load services. Please try again.');
+    } finally {
+      setLoadingSvcs(false);
+    }
+  }, [job?.cityId]);
 
   const openModal = () => {
     setAddMode('catalog');
     setSelectedSvc(null); setAddQty(1); setSearch('');
     setAddonName(''); setAddonPrice('');
     setPickingPackage(null); setFlexiblePicks([]);
-    if (allServices.length === 0) fetchAllServices();
+    fetchAllServices();
     fetchPackages();
     setShowModal(true);
   };
@@ -120,7 +136,9 @@ const JobChecklistScreen = ({navigation, route}: any) => {
     const newSvc = {
       serviceId: selectedSvc.id,
       name: selectedSvc.name,
-      price: parseFloat(selectedSvc.basePrice),
+      price: servicePrice(selectedSvc),
+      basePrice: Number(selectedSvc.basePrice),
+      offerPrice: servicePrice(selectedSvc) < Number(selectedSvc.basePrice) ? servicePrice(selectedSvc) : null,
       qty: addQty,
       duration: selectedSvc.duration || null,
       image: selectedSvc.image || null,
@@ -228,7 +246,9 @@ const JobChecklistScreen = ({navigation, route}: any) => {
 
   // Diff against the last-saved baseline to build the API payload
   const pendingAdds = services.filter(s => s._origIndex == null && !s._removed);
-  const pendingRemoveIndices = services.filter(s => s._origIndex != null && s._removed).map(s => s._origIndex);
+  const pendingRemoveIndices = services.filter(s =>
+    s._origIndex != null && s._removed && !parseServices(job?.services)[s._origIndex]?.removed
+  ).map(s => s._origIndex);
   const pendingQtyChanges = services.filter(s => {
     if (s._origIndex == null || s._removed) return false;
     const original = parseServices(job?.services)[s._origIndex];
@@ -253,10 +273,7 @@ const JobChecklistScreen = ({navigation, route}: any) => {
       });
       if (res.data?.status) {
         const updated = res.data.data;
-        const freshServices = parseServices(updated.services);
-        setServices(tagWithOrigIndex(freshServices));
-        setTotalAmount(parseFloat(updated.totalAmount ?? 0));
-        setJob((prev: any) => ({...prev, services: updated.services, totalAmount: updated.totalAmount}));
+        syncFromBooking(updated);
       }
     } catch (e: any) {
       showAlert('Error', e.response?.data?.message ?? 'Failed to save changes.');
@@ -289,7 +306,7 @@ const JobChecklistScreen = ({navigation, route}: any) => {
     try {
       const res = await api.get(endpoints.PARTNER_BOOKING_DETAIL(String(job.id)));
       const updated = res.data?.data ?? res.data;
-      if (updated) syncFromBooking(updated);
+      if (updated && !hasChangesRef.current && !editingRef.current) syncFromBooking(updated);
     } catch {}
   }, [job?.id]);
 
@@ -712,8 +729,8 @@ const JobChecklistScreen = ({navigation, route}: any) => {
                   {/* Qty stepper */}
                   {!isFree && (
                     <View style={styles.qtyStepper}>
-                      <TouchableOpacity onPress={() => updateQty(idx, -1)} style={styles.qtyBtn}>
-                        <Ionicons name="remove" size={sw(14)} color="#105641" />
+                      <TouchableOpacity onPress={() => (svc.qty || 1) === 1 ? deleteService(idx) : updateQty(idx, -1)} style={styles.qtyBtn}>
+                        <Ionicons name={(svc.qty || 1) === 1 ? "trash-outline" : "remove"} size={sw(14)} color={(svc.qty || 1) === 1 ? "#DB1919" : "#105641"} />
                       </TouchableOpacity>
                       <Text style={styles.qtyVal}>{svc.qty || 1}</Text>
                       <TouchableOpacity onPress={() => updateQty(idx, 1)} style={styles.qtyBtn}>
@@ -723,6 +740,12 @@ const JobChecklistScreen = ({navigation, route}: any) => {
                   )}
                 </View>
                 <View style={{alignItems: 'flex-end', gap: sw(6)}}>
+                  {Number(svc.basePrice) > Number(svc.price) && !isFree && (
+                    <>
+                      <Text style={[styles.pickMeta, {textDecorationLine: 'line-through'}]}>₹{formatAmount(Number(svc.basePrice) * (svc.qty || 1))}</Text>
+                      <Text style={[styles.pickMeta, {color: '#105641', fontWeight: '700'}]}>{Math.round((Number(svc.basePrice) - Number(svc.price)) / Number(svc.basePrice) * 100)}% OFF</Text>
+                    </>
+                  )}
                   <Text style={[styles.svcPrice, isFree && {color: '#9CA3AF'}]}>
                     {isFree ? 'FREE' : `₹${formatAmount(svc.price * (svc.qty || 1))}`}
                   </Text>
@@ -915,6 +938,13 @@ const JobChecklistScreen = ({navigation, route}: any) => {
               </View>
               {loadingSvcs ? (
                 <ActivityIndicator color="#105641" style={{marginVertical: sw(24)}} />
+              ) : servicesError ? (
+                <View>
+                  <Text style={styles.emptyPick}>{servicesError}</Text>
+                  <TouchableOpacity onPress={fetchAllServices} style={styles.confirmBtn}>
+                    <Text style={styles.confirmBtnText}>Retry</Text>
+                  </TouchableOpacity>
+                </View>
               ) : (
                 <FlatList
                   data={filteredSvcs}
@@ -932,7 +962,13 @@ const JobChecklistScreen = ({navigation, route}: any) => {
                         <View style={{flex: 1}}>
                           <Text style={styles.pickName}>{item.name}</Text>
                           <Text style={styles.pickMeta}>
-                            {item.duration ? `${item.duration} min  ·  ` : ''}₹{formatAmount(item.basePrice)}
+                            {item.duration ? `${item.duration} min  ·  ` : ''}₹{formatAmount(servicePrice(item))}
+                            {servicePrice(item) < Number(item.basePrice) && (
+                              <>
+                                <Text style={{textDecorationLine: 'line-through'}}>  ₹{formatAmount(item.basePrice)}</Text>
+                                <Text style={{color: '#105641', fontWeight: '700'}}>  {Math.round((Number(item.basePrice) - servicePrice(item)) / Number(item.basePrice) * 100)}% OFF</Text>
+                              </>
+                            )}
                           </Text>
                           {commission && <Text style={styles.pickCommission}>{commission}</Text>}
                         </View>
@@ -947,15 +983,15 @@ const JobChecklistScreen = ({navigation, route}: any) => {
                 <View style={styles.qtyRow}>
                   <Text style={styles.qtyLabel}>Quantity</Text>
                   <View style={styles.qtyStepper}>
-                    <TouchableOpacity onPress={() => setAddQty(q => Math.max(1, q - 1))} style={styles.qtyBtn}>
-                      <Ionicons name="remove" size={sw(16)} color="#105641" />
+                    <TouchableOpacity onPress={() => addQty === 1 ? setSelectedSvc(null) : setAddQty(q => q - 1)} style={styles.qtyBtn}>
+                      <Ionicons name={addQty === 1 ? "trash-outline" : "remove"} size={sw(16)} color={addQty === 1 ? "#DB1919" : "#105641"} />
                     </TouchableOpacity>
                     <Text style={styles.qtyVal}>{addQty}</Text>
                     <TouchableOpacity onPress={() => setAddQty(q => q + 1)} style={styles.qtyBtn}>
                       <Ionicons name="add" size={sw(16)} color="#105641" />
                     </TouchableOpacity>
                   </View>
-                  <Text style={styles.qtyTotal}>₹{formatAmount(Number(selectedSvc.basePrice) * addQty)}</Text>
+                  <Text style={styles.qtyTotal}>₹{formatAmount(servicePrice(selectedSvc) * addQty)}</Text>
                 </View>
               )}
               <TouchableOpacity style={[styles.confirmBtn, !selectedSvc && {opacity: 0.5}]}

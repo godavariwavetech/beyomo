@@ -143,13 +143,24 @@ const prepareBooking = async (userId, bookingData) => {
   // Build enriched services list and calculate base amount
   const serviceMap = Object.fromEntries(foundServices.map(s => [s.id, s]));
   const priceOf = await cityPriceResolver(uniqueServiceIds, cityId);
-  const enrichItems = (items) => items.map(item => {
+  const offerPriceOf = (service, basePrice) => {
+    if (service.offerPrice == null) return null;
+    const offerPrice = Number(service.offerPrice);
+    return Number.isFinite(offerPrice) && offerPrice > 0 && offerPrice < basePrice
+      ? offerPrice
+      : null;
+  };
+  const enrichItems = (items, useOfferPrice = true) => items.map(item => {
     const svc = serviceMap[parseInt(item.id)];
     const qty = item.qty || 1;
+    const basePrice = priceOf(svc);
+    const offerPrice = useOfferPrice ? offerPriceOf(svc, basePrice) : null;
+    const hasOfferPrice = offerPrice != null;
     return {
       serviceId: svc.id,
       name: svc.name,
-      price: priceOf(svc),
+      price: hasOfferPrice ? offerPrice : basePrice,
+      ...(hasOfferPrice ? {basePrice, offerPrice} : {}),
       qty,
       duration: svc.duration || null,
       image: svc.image || null,
@@ -171,7 +182,7 @@ const prepareBooking = async (userId, bookingData) => {
     baseAmount = built.packageBaseAmount;
     multiPackageInfo = { packagesSummary: built.packagesSummary, ratePools: built.ratePools };
   } else {
-    enrichedServices = enrichItems(serviceItems);
+    enrichedServices = enrichItems(serviceItems, !packageId);
     baseAmount = enrichedServices.reduce((sum, s) => sum + s.price * s.qty, 0);
 
     // If booking via a single package, override the base amount with the package price

@@ -888,10 +888,14 @@ const addExtraServices = async (partnerId, bookingId, { services: serviceItems =
     const priceOf = await cityPriceResolver(serviceIds, booking.cityId);
     newCatalogEntries = catalogItems.map(item => {
       const svc = serviceMap[parseInt(item.id)];
+      const basePrice = priceOf(svc);
+      const offer = svc.offerPrice == null ? NaN : Number(svc.offerPrice);
+      const offerPrice = Number.isFinite(offer) && offer > 0 && offer < basePrice ? offer : null;
       return {
         serviceId: svc.id,
         name: svc.name,
-        price: priceOf(svc),
+        price: offerPrice ?? basePrice,
+        ...(offerPrice != null ? {basePrice, offerPrice} : {}),
         qty: item.qty || 1,
         duration: svc.duration || null,
         image: svc.image || null,

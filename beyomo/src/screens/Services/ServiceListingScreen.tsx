@@ -26,7 +26,7 @@ import {
   removeFreeService,
 } from '../../redux/reducers/cart';
 import {formatAmount} from '../../utils/utils';
-import {deriveVariants} from '../../utils/serviceVariants';
+import {deriveVariants, variantKeyOf} from '../../utils/serviceVariants';
 import {getCachedServices, setCachedServices, clearCachedServices} from '../../utils/servicesCache';
 import {BASE_URL, endpoints} from '../../config/config';
 
@@ -40,20 +40,36 @@ const sw = (px: number) => (px / 393) * width;
 const SUBCAT_GAP = sw(10);
 const SUBCAT_CARD_W = (width - sw(16) * 2 - SUBCAT_GAP * 2) / 3;
 
-const normalizeService = (s: any) => ({
-  id:            s._id ?? s.id ?? '',
-  name:          s.name ?? '',
-  duration:      s.duration ? (typeof s.duration === 'number' ? `${s.duration} mins` : s.duration) : '',
-  bookedCount:   s.bookedCount ?? s.bookingCount ?? '',
-  bullets:       s.bullets ?? s.highlights?.join('\n') ?? s.description ?? '',
-  price:         s.price ?? s.basePrice ?? s.discountedPrice ?? 0,
-  originalPrice: s.originalPrice ?? s.mrp ?? s.price ?? 0,
-  discountPct:   s.discountPercent ?? s.discountPct ?? (s.originalPrice && s.price ? Math.round(((s.originalPrice - s.price) / s.originalPrice) * 100) : 0),
-  image:         s.image ?? s.photo ?? s.thumbnail ?? '',
-  priceStartsFrom: s.priceStartsFrom ?? false,
-  // null for services not filed under a subcategory.
-  subcategoryId: s.subcategoryId ?? null,
-});
+const normalizeService = (s: any) => {
+  const price = s.price ?? s.basePrice ?? s.discountedPrice ?? 0;
+  const offerPrice = s.offerPrice == null ? null : Number(s.offerPrice);
+  const offerOriginalPrice = Number(s.basePrice ?? s.price ?? s.originalPrice ?? s.mrp ?? price);
+  const hasOfferPrice = offerPrice != null && offerPrice > 0 && offerPrice < offerOriginalPrice;
+  const originalPrice = hasOfferPrice
+    ? offerOriginalPrice
+    : s.originalPrice ?? s.mrp ?? s.price ?? 0;
+  const discountPct = hasOfferPrice
+    ? Math.round(((offerOriginalPrice - offerPrice) / offerOriginalPrice) * 100)
+    : s.discountPercent ?? s.discountPct ?? (s.originalPrice && s.price
+      ? Math.round(((s.originalPrice - s.price) / s.originalPrice) * 100)
+      : 0);
+
+  return {
+    id:            s._id ?? s.id ?? '',
+    name:          s.name ?? '',
+    duration:      s.duration ? (typeof s.duration === 'number' ? `${s.duration} mins` : s.duration) : '',
+    bookedCount:   s.bookedCount ?? s.bookingCount ?? '',
+    bullets:       s.bullets ?? s.highlights?.join('\n') ?? s.description ?? '',
+    price,
+    originalPrice,
+    offerPrice,
+    discountPct,
+    image:         s.image ?? s.photo ?? s.thumbnail ?? '',
+    priceStartsFrom: s.priceStartsFrom ?? false,
+    // null for services not filed under a subcategory.
+    subcategoryId: s.subcategoryId ?? null,
+  };
+};
 
 interface Props {
   navigation?: any;
@@ -132,6 +148,14 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
     return map;
   }, [cartServices]);
   const [detailItem, setDetailItem] = useState<any>(null);
+  const detailOfferPrice = Number(detailItem?.offerPrice);
+  const detailHasOfferPrice = detailItem?.offerPrice != null
+    && detailOfferPrice > 0
+    && detailOfferPrice < Number(detailItem?.price);
+  const detailDisplayPrice = detailHasOfferPrice ? detailOfferPrice : Number(detailItem?.price) || 0;
+  const detailOriginalPrice = detailHasOfferPrice
+    ? Number(detailItem?.price)
+    : Number(detailItem?.originalPrice) || detailDisplayPrice;
   // Swipe-down-to-close on the detail sheet's handle — the handle bar was previously
   // decorative only (no gesture attached), so dragging it did nothing.
   const sheetTranslateY = useRef(new Animated.Value(0)).current;
@@ -348,6 +372,17 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
     if (offerType === 'specific_services' && offerRequiredIds.size > 0) {
       list = list.filter(s => offerRequiredIds.has(String(s.id)));
     }
+    if (subcategories.length > 0) {
+      if (apiSubcategories.length > 0) {
+        list = list.filter(s => s.subcategoryId == null);
+      } else {
+        const childVariantKeys = new Set(subcategories.map(sub => sub.key));
+        list = list.filter(s => {
+          const key = variantKeyOf(s.name);
+          return key == null || !childVariantKeys.has(key);
+        });
+      }
+    }
     // Exclude the free service from the regular list (we pin it at top separately)
     if (freeServiceItem) {
       list = list.filter(s => String(s.id) !== freeServiceItem.id);
@@ -365,6 +400,7 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
     if (freeServiceItem) list = [freeServiceItem, ...list];
     return list;
   })();
+  const showServiceList = subcategories.length === 0 || displayServices.length > 0;
 
   const activeFilterCount = (filterDiscount ? 1 : 0) + (filterDuration !== 'all' ? 1 : 0);
 
@@ -423,6 +459,16 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
     const svc = addedServicesMap[id];
     return svc && !svc.isFree ? acc + svc.price * qty : acc;
   }, 0);
+  const cartOfferTotal = Object.entries(quantities).reduce((acc, [id, qty]) => {
+    const svc = addedServicesMap[id];
+    if (!svc || svc.isFree) return acc;
+    const offerPrice = Number(svc.offerPrice);
+    const displayPrice = svc.offerPrice != null && offerPrice > 0 && offerPrice < Number(svc.price)
+      ? offerPrice
+      : Number(svc.price) || 0;
+    return acc + displayPrice * qty;
+  }, 0);
+  const hasCartOffer = cartOfferTotal < cartTotal;
 
   const handleCheckout = () => {
     // Nothing to commit — every Add already went straight into the shared cart (the
@@ -550,11 +596,9 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
         </ScrollView>
       )}
 
-      {/* Filter / Sort By / count + the service list itself only apply to a flat
-          category (no subcategories). Once a category has subcategories, browsing its
-          services happens exclusively via SubcategoryServicesScreen after tapping a
-          card above — showing the same services again here would just duplicate them. */}
-      {subcategories.length === 0 && !showCategoryLoader && (
+        {/* Categories with subcategories show only services not represented by a child,
+          so each service remains discoverable without duplicating child-list contents. */}
+        {showServiceList && !showCategoryLoader && (
         <>
           <View style={styles.filterRow}>
             <View style={styles.filterLeft}>
@@ -617,7 +661,12 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
       {(addedCount > 0 || freeServiceItem) && (
         <View style={[styles.cartBar, {paddingBottom: insets.bottom + sw(8)}]}>
           <View>
-            <Text style={styles.cartPrice}>₹{formatAmount(cartTotal)}</Text>
+            <View style={styles.priceRow}>
+              <Text style={styles.cartPrice}>₹{formatAmount(hasCartOffer ? cartOfferTotal : cartTotal)}</Text>
+              {hasCartOffer && (
+                <Text style={styles.originalPrice}>₹{formatAmount(cartTotal)}</Text>
+              )}
+            </View>
             <View style={styles.cartSubRow}>
               <Text style={styles.cartSubText}>
                 {addedCount} item{addedCount !== 1 ? 's' : ''}{freeServiceItem ? ' + 1 FREE' : ''}
@@ -743,9 +792,9 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
                 />
                 {/* Price badge over image */}
                 <View style={styles.sheetHeroPriceBadge}>
-                  <Text style={styles.sheetHeroPrice}>{detailItem.priceStartsFrom ? 'Starts at ' : ''}₹{formatAmount(detailItem.price)}</Text>
-                  {detailItem.originalPrice > detailItem.price && (
-                    <Text style={styles.sheetHeroOriginal}>₹{formatAmount(detailItem.originalPrice)}</Text>
+                  <Text style={styles.sheetHeroPrice}>{detailItem.priceStartsFrom ? 'Starts at ' : ''}₹{formatAmount(detailDisplayPrice)}</Text>
+                  {detailOriginalPrice > detailDisplayPrice && (
+                    <Text style={styles.sheetHeroOriginal}>₹{formatAmount(detailOriginalPrice)}</Text>
                   )}
                 </View>
                 {/* Close button */}
@@ -814,7 +863,7 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
                     onPress={() => { increment(String(detailItem.id)); setDetailItem(null); }}>
                     <Text style={styles.sheetAddBtnText}>Add to Cart</Text>
                     <View style={styles.sheetAddBtnPriceBadge}>
-                      <Text style={styles.sheetAddBtnPrice}>₹{formatAmount(detailItem.price)}</Text>
+                      <Text style={styles.sheetAddBtnPrice}>₹{formatAmount(detailDisplayPrice)}</Text>
                     </View>
                   </TouchableOpacity>
                 ) : (
@@ -856,7 +905,12 @@ const ServiceCard = ({
   onIncrement: () => void;
   onDecrement: () => void;
   onViewDetails: () => void;
-}) => (
+}) => {
+  const offerPrice = Number(item.offerPrice);
+  const hasOfferPrice = item.offerPrice != null && offerPrice > 0 && offerPrice < Number(item.originalPrice);
+  const displayPrice = hasOfferPrice ? offerPrice : item.price;
+
+  return (
   <View style={styles.card}>
     <View style={styles.cardBody}>
       <View style={styles.cardLeft}>
@@ -873,15 +927,17 @@ const ServiceCard = ({
             <View style={styles.priceBlock}>
               {item.priceStartsFrom && <Text style={styles.startsAtLabel}>Starts at</Text>}
               <View style={styles.priceRow}>
-                <Text style={styles.currentPrice}>₹{formatAmount(item.price)}</Text>
-                {item.originalPrice > item.price && (
+                <Text style={styles.currentPrice}>₹{formatAmount(displayPrice)}</Text>
+                {item.originalPrice > displayPrice && (
                   <Text style={styles.originalPrice}>₹{formatAmount(item.originalPrice)}</Text>
                 )}
-                {item.discountPct > 0 && (
+                {item.discountPct > 0 && (hasOfferPrice ? (
+                  <Text style={styles.discountText}>{item.discountPct}% OFF</Text>
+                ) : (
                   <View style={styles.discountPill}>
                     <Text style={styles.discountPillText}>{item.discountPct}% OFF</Text>
                   </View>
-                )}
+                ))}
               </View>
             </View>
           )}
@@ -943,7 +999,8 @@ const ServiceCard = ({
       </View>
     </View>
   </View>
-);
+  );
+};
 
 const styles = StyleSheet.create({
   root: {flex: 1, backgroundColor: '#FBEADB'},

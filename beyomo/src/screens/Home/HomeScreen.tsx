@@ -285,6 +285,7 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
       name: svc.name,
       duration: svc.duration ? `${svc.duration} mins` : '',
       price: parseFloat(svc.basePrice) || 0,
+      offerPrice: svc.offerPrice == null ? null : parseFloat(svc.offerPrice),
       image: svc.image,
       qty: 1,
     }]));
@@ -649,6 +650,15 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
                 const id = String(svc.id ?? svc._id);
                 const cartLine = (cartServices as any[]).find(s => String(s.id) === id && !s.isFree);
                 const qty = cartLine?.qty ?? 0;
+                const originalPrice = Number(svc.basePrice) || 0;
+                const offerPrice = Number(svc.offerPrice);
+                const hasOfferPrice = svc.offerPrice != null
+                  && Number.isFinite(offerPrice)
+                  && offerPrice > 0
+                  && offerPrice < originalPrice;
+                const offerPercent = hasOfferPrice
+                  ? Math.round(((originalPrice - offerPrice) / originalPrice) * 100)
+                  : 0;
                 return (
                   <View key={id} style={styles.popularCard}>
                     <View style={styles.popularImgWrap}>
@@ -682,9 +692,23 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
                           <Text style={styles.popularDuration}>{svc.duration} mins</Text>
                         </View>
                       ) : null}
-                      <Text style={styles.popularPrice}>
-                        {svc.priceStartsFrom ? 'From ' : ''}₹{formatAmount(parseFloat(svc.basePrice) || 0)}
-                      </Text>
+                      {hasOfferPrice ? (
+                        <View style={{flexDirection: 'row', alignItems: 'baseline', flexWrap: 'wrap', gap: sw(5)}}>
+                          <Text style={[styles.popularPrice, {color: '#105641'}]}>
+                            {svc.priceStartsFrom ? 'From ' : ''}₹{formatAmount(offerPrice)}
+                          </Text>
+                          <Text style={{fontFamily: fonts.textFont, fontSize: sw(12), color: '#777777', textDecorationLine: 'line-through'}}>
+                            ₹{formatAmount(originalPrice)}
+                          </Text>
+                          <Text style={{fontFamily: fonts.textFont, fontSize: sw(10), fontWeight: '700', color: '#008F30'}}>
+                            {offerPercent}% OFF
+                          </Text>
+                        </View>
+                      ) : (
+                        <Text style={styles.popularPrice}>
+                          {svc.priceStartsFrom ? 'From ' : ''}₹{formatAmount(parseFloat(svc.basePrice) || 0)}
+                        </Text>
+                      )}
                       <TouchableOpacity
                         activeOpacity={0.7}
                         onPress={() => setDetailItem(svc)}
@@ -738,10 +762,20 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
             {detailItem && (() => {
               const detailId = String(detailItem.id ?? detailItem._id);
               const detailQty = (cartServices as any[]).find((s: any) => String(s.id) === detailId && !s.isFree)?.qty ?? 0;
-              const detailPrice = parseFloat(detailItem.basePrice) || 0;
-              const detailOriginalPrice = parseFloat(detailItem.originalPrice ?? detailItem.mrp) || detailPrice;
-              const detailDiscountPct = detailItem.discountPct ?? detailItem.discountPercent ??
-                (detailOriginalPrice > detailPrice ? Math.round(((detailOriginalPrice - detailPrice) / detailOriginalPrice) * 100) : 0);
+              const detailBasePrice = parseFloat(detailItem.basePrice) || 0;
+              const detailOfferPrice = Number(detailItem.offerPrice);
+              const detailHasOfferPrice = detailItem.offerPrice != null
+                && Number.isFinite(detailOfferPrice)
+                && detailOfferPrice > 0
+                && detailOfferPrice < detailBasePrice;
+              const detailPrice = detailHasOfferPrice ? detailOfferPrice : detailBasePrice;
+              const detailOriginalPrice = detailHasOfferPrice
+                ? detailBasePrice
+                : parseFloat(detailItem.originalPrice ?? detailItem.mrp) || detailPrice;
+              const detailDiscountPct = detailHasOfferPrice
+                ? Math.round(((detailBasePrice - detailOfferPrice) / detailBasePrice) * 100)
+                : detailItem.discountPct ?? detailItem.discountPercent ??
+                  (detailOriginalPrice > detailPrice ? Math.round(((detailOriginalPrice - detailPrice) / detailOriginalPrice) * 100) : 0);
               const detailBullets = detailItem.bullets ?? detailItem.highlights?.join('\n') ?? detailItem.description ?? '';
               return (
                 <Animated.View style={[styles.sheet, { paddingBottom: insets.bottom + sw(16) }, { transform: [{ translateY: sheetTranslateY }] }]}>

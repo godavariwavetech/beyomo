@@ -36,6 +36,18 @@ export default function CartBar({navigation}: {navigation: any}) {
   const totalPrice =
     cartItems.reduce((sum: number, item: any) => sum + item.packagePrice * item.qty, 0) +
     cartServices.reduce((sum: number, s: any) => sum + (s.isFree ? 0 : s.price * s.qty), 0);
+  const offerTotalPrice =
+    cartItems.reduce((sum: number, item: any) => sum + item.packagePrice * item.qty, 0) +
+    cartServices.reduce((sum: number, s: any) => {
+      if (s.isFree) return sum;
+      const offerPrice = Number(s.offerPrice);
+      const hasOfferPrice = s.offerPrice != null && Number.isFinite(offerPrice) && offerPrice > 0 && offerPrice < Number(s.price);
+      return sum + (hasOfferPrice ? offerPrice : Number(s.price) || 0) * s.qty;
+    }, 0);
+  const hasCartOffer = offerTotalPrice < totalPrice;
+  const offerPercent = hasCartOffer && totalPrice > 0
+    ? Math.round(((totalPrice - offerTotalPrice) / totalPrice) * 100)
+    : 0;
 
   return (
     <View style={[styles.cartBar, {paddingBottom: bottomInset + sw(10)}]}>
@@ -49,7 +61,15 @@ export default function CartBar({navigation}: {navigation: any}) {
           )}
         </View>
         <View>
-          <Text style={styles.cartPrice}>₹{formatAmount(totalPrice)}</Text>
+          {hasCartOffer ? (
+            <View style={styles.cartOfferPriceRow}>
+              <Text style={[styles.cartPrice, styles.cartOfferPrice]}>₹{formatAmount(offerTotalPrice)}</Text>
+              <Text style={styles.cartOriginalPrice}>₹{formatAmount(totalPrice)}</Text>
+              <Text style={styles.cartOfferPercent}>{offerPercent}% OFF</Text>
+            </View>
+          ) : (
+            <Text style={styles.cartPrice}>₹{formatAmount(totalPrice)}</Text>
+          )}
           <Text style={styles.cartSubText}>{totalQty} item{totalQty !== 1 ? 's' : ''} added</Text>
         </View>
       </View>
@@ -117,6 +137,10 @@ const styles = StyleSheet.create({
   },
   cartCountDotText: {fontFamily: fonts.textFont, fontSize: sw(9), fontWeight: '700', color: '#012823'},
   cartPrice: {fontFamily: fonts.textFont, fontSize: sw(19), fontWeight: '700', color: '#012823'},
+  cartOfferPriceRow: {flexDirection: 'row', alignItems: 'baseline', flexWrap: 'wrap', gap: sw(5)},
+  cartOfferPrice: {color: '#105641'},
+  cartOriginalPrice: {fontFamily: fonts.textFont, fontSize: sw(12), color: '#777777', textDecorationLine: 'line-through'},
+  cartOfferPercent: {fontFamily: fonts.textFont, fontSize: sw(10), fontWeight: '700', color: '#008F30'},
   cartSubText: {fontFamily: fonts.textFont, fontSize: sw(12), color: '#5C5C5C', marginTop: sw(1)},
   cartAddBtn: {
     flexDirection: 'row',

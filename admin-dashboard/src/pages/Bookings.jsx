@@ -22,6 +22,27 @@ const STATUSES = ['all','pending','confirmed','in_progress','completed','cancell
 
 const fmt = (n) => formatAmount(n);
 
+const catalogPrice = (service) => {
+  const base = Number(service.basePrice || 0);
+  const offer = service.offerPrice == null ? NaN : Number(service.offerPrice);
+  return Number.isFinite(offer) && offer > 0 && offer < base ? offer : base;
+};
+
+const CatalogPrice = ({service}) => (
+  <>
+    {formatRupee(catalogPrice(service))}
+    {catalogPrice(service) < Number(service.basePrice) && (
+      <>
+        <span style={{marginLeft:6, textDecoration:'line-through'}}>{formatRupee(service.basePrice)}</span>
+        <span style={{marginLeft:6, color:'var(--c-brand-primary)', fontWeight:600}}>
+          {Math.round((Number(service.basePrice) - catalogPrice(service)) / Number(service.basePrice) * 100)}% OFF
+        </span>
+      </>
+    )}
+  </>
+);
+
+
 const ONE_HOUR_MS = 60 * 60 * 1000;
 const ONE_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -885,6 +906,15 @@ export default function Bookings() {
                         completed:  { bg:'#dcfce7', text:'#166534' },
                       }[svc.serviceStatus] ?? { bg:'#f3f4f6', text:'#6b7280' };
                       const tag = svcTag(svc);
+                      const offerPrice = Number(svc.offerPrice);
+                      const originalPrice = Number(svc.basePrice);
+                      const hasOfferPrice = svc.offerPrice != null
+                        && Number.isFinite(offerPrice)
+                        && offerPrice > 0
+                        && originalPrice > offerPrice;
+                      const offerPercent = hasOfferPrice
+                        ? Math.round(((originalPrice - offerPrice) / originalPrice) * 100)
+                        : 0;
 
                       return (
                         <div key={idx} style={{ padding:'10px 0', borderBottom: idx < servicesList.length-1 ? '1px solid var(--c-border-light)':undefined, opacity: svc.removed ? 0.6 : 1 }}>
@@ -924,9 +954,23 @@ export default function Bookings() {
                                 const isDirty = draftQty !== baseQty;
                                 return (
                               <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:4 }}>
-                                <div style={{ fontSize:13, fontWeight:700, textAlign:'right', textDecoration: svc.removed ? 'line-through' : 'none', color: svc.removed ? 'var(--c-text-muted)' : isDirty ? '#d97706' : undefined }}>
-                                  ₹{fmt(svc.price * draftQty)}
-                                </div>
+                                  {hasOfferPrice ? (
+                                    <>
+                                      <div style={{ fontSize:13, fontWeight:700, textAlign:'right', textDecoration: svc.removed ? 'line-through' : 'none', color: svc.removed ? 'var(--c-text-muted)' : isDirty ? '#d97706' : '#166534' }}>
+                                        ₹{fmt(offerPrice * draftQty)}
+                                      </div>
+                                      <div style={{ fontSize:11, color:'var(--c-text-muted)', textDecoration:'line-through' }}>
+                                        ₹{fmt(originalPrice * draftQty)}
+                                      </div>
+                                      <div style={{ fontSize:10, fontWeight:700, color:'#166534' }}>
+                                        {offerPercent}% OFF
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <div style={{ fontSize:13, fontWeight:700, textAlign:'right', textDecoration: svc.removed ? 'line-through' : 'none', color: svc.removed ? 'var(--c-text-muted)' : isDirty ? '#d97706' : undefined }}>
+                                      ₹{fmt(svc.price * draftQty)}
+                                    </div>
+                                  )}
                                 {!svc.removed && !['completed','cancelled'].includes(selected.status) ? (
                                   <div style={{ display:'flex', alignItems:'center', gap:4 }}>
                                     <button
@@ -1121,7 +1165,7 @@ export default function Bookings() {
                                 )}
                               </div>
                               <div style={{ fontSize:11, color:'var(--c-text-muted)' }}>
-                                {formatRupee(s.basePrice)} · {s.duration} min
+                                <CatalogPrice service={s} /> · {s.duration} min
                               </div>
                               {s.category?.adminPercent != null && (
                                 <div style={{ fontSize:10, color:'var(--c-text-muted)' }}>
@@ -1148,7 +1192,7 @@ export default function Bookings() {
                       <div style={{ fontSize:12, color:'var(--c-text-secondary)', marginBottom:8, display:'flex', justifyContent:'space-between' }}>
                         <span>{svcCart.length} service(s) selected</span>
                         <span style={{ fontWeight:700, color:'var(--c-brand-primary)' }}>
-                          {formatRupee(svcCart.reduce((sum, item) => sum + parseFloat(item.svc.basePrice || 0) * item.qty, 0))}
+                          {formatRupee(svcCart.reduce((sum, item) => sum + catalogPrice(item.svc) * item.qty, 0))}
                         </span>
                       </div>
                     )}
@@ -1464,7 +1508,7 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
   };
 
   const addonTotal = cart.reduce((sum, item) => {
-    const price = item.type === 'catalog' ? parseFloat(item.svc.basePrice || 0) : parseFloat(item.price || 0);
+    const price = item.type === 'catalog' ? catalogPrice(item.svc) : parseFloat(item.price || 0);
     return sum + price * item.qty;
   }, 0);
 
@@ -1642,7 +1686,7 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
                           style={{ cursor:'pointer', width:15, height:15, flexShrink:0 }} />
                         <div style={{ flex:1, minWidth:0 }}>
                           <div style={{ fontSize:13, fontWeight: cartItem ? 600 : 400 }}>{s.name}</div>
-                          <div style={{ fontSize:11, color:'var(--c-text-muted)' }}>{formatRupee(s.basePrice)} · {s.duration} min</div>
+                          <div style={{ fontSize:11, color:'var(--c-text-muted)' }}><CatalogPrice service={s} /> · {s.duration} min</div>
                         </div>
                         {cartItem && (
                           <div style={{ display:'flex', alignItems:'center', gap:4 }}>
@@ -1693,7 +1737,7 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
                       {' '}× {item.qty}
                     </span>
                     <span style={{ display:'flex', alignItems:'center', gap:8 }}>
-                      <span style={{ fontWeight:600 }}>₹{fmt((item.type === 'catalog' ? item.svc.basePrice : item.price) * item.qty)}</span>
+                      <span style={{ fontWeight:600 }}>₹{fmt((item.type === 'catalog' ? catalogPrice(item.svc) : item.price) * item.qty)}</span>
                       <button className="btn btn-ghost btn-icon" style={{ width:20, height:20 }} onClick={() => setCart(prev => prev.filter((_, idx) => idx !== i))}><XCircle size={13} /></button>
                     </span>
                   </div>
