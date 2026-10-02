@@ -21,6 +21,7 @@ const {
 } = require("../../../../utils/revenueSplit");
 const AppError = require("../../../../utils/errorHandlers/appError");
 const logger = require("../../../../utils/logger");
+const refreshRemovedServiceOffers = require('./staleServiceOffers');
 
 const getProfile = async (partnerId) => {
   const partner = await Partner.findByPk(partnerId);
@@ -355,11 +356,13 @@ const updateBookingStatus = async (partnerId, bookingId, status, cashCollected =
     if (booking.serviceOtp && !booking.otpVerifiedAt) {
       throw new AppError("Enter the customer's 4-digit OTP to start this service", 403);
     }
+    if (booking.status === 'confirmed' && (await refreshRemovedServiceOffers(booking)).length) return booking;
     await booking.update({ status: "in_progress" });
     return booking.reload();
   }
 
   if (status === "completed") {
+    if (booking.status === 'in_progress' && (await refreshRemovedServiceOffers(booking)).length) return booking;
     // Edge case 9: must be in_progress before completing (both old and new flow)
     if (!["in_progress", "confirmed"].includes(booking.status)) {
       throw new AppError(`Cannot complete a booking with status "${booking.status}"`, 400);
@@ -838,7 +841,7 @@ const acceptBooking = async (partnerId, bookingId) => {
  * free-form add-on `{isAddOn: true, name, price, qty}`. `removeIndices` soft-removes
  * existing entries; `updateQty` changes quantities on existing (non-removed) entries.
  */
-const addExtraServices = async (partnerId, bookingId, { services: serviceItems = [], removeIndices = [], updateQty = [] } = {}) => {
+const addExtraServices = async (partnerId, bookingId, { services: serviceItems = [], removeIndices = [], updateQty = [], refreshRemovedOffers = false } = {}) => {
   const Notification = require('../../../notifications/models/notification.model');
   const { sendPushNotification, pushTokensFor } = require('../../../../utils/firebaseUtils');
 
@@ -850,6 +853,11 @@ const addExtraServices = async (partnerId, bookingId, { services: serviceItems =
   const isAuthorised = String(booking.partnerId) === String(partnerId)
     || svcs.some(s => String(s.assignedPartnerId) === String(partnerId));
   if (!isAuthorised) throw new AppError('Booking not found or not currently in progress', 404);
+
+  if (refreshRemovedOffers) {
+    await refreshRemovedServiceOffers(booking);
+    return booking;
+  }
 
   let updatedServices = [...svcs];
 

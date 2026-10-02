@@ -16,6 +16,7 @@ import {resolveImageUrl, formatAmount} from '../../utils/utils';
 import {useAppAlert} from '../../hooks/useAppAlert';
 import AppAlertModal from '../../components/AppAlertModal/AppAlertModal';
 import SwipeToConfirm from '../../components/SwipeToConfirm/SwipeToConfirm';
+import usePartnerStaleOffers, {staleOfferMessage, retainServiceOfferSnapshots} from '../../hooks/usePartnerStaleOffers';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
@@ -43,6 +44,8 @@ const JobChecklistScreen = ({navigation, route}: any) => {
   const insets = useSafeAreaInsets();
   const [job, setJob] = useState<any>(route?.params?.job ?? null);
   const [services, setServices] = useState<any[]>(() => tagWithOrigIndex(parseServices(route?.params?.job?.services)));
+  const servicesRef = useRef(services);
+  servicesRef.current = services;
   const [totalAmount, setTotalAmount] = useState<number>(Number(route?.params?.job?.totalAmount ?? 0));
   const [saving, setSaving] = useState(false);
   const [starting, setStarting] = useState(false);
@@ -90,6 +93,39 @@ const JobChecklistScreen = ({navigation, route}: any) => {
   const [addonName, setAddonName] = useState('');
   const [addonPrice, setAddonPrice] = useState('');
   const {alertConfig, showAlert, hideAlert} = useAppAlert();
+  const refreshStaleOffers = usePartnerStaleOffers({
+    bookingId: job?.id,
+    cityId: job?.cityId,
+    savedServices: parseServices(job?.services),
+    localServices: [
+      ...services.filter(s => s._origIndex == null),
+      ...(showModal && selectedSvc ? [selectedSvc] : []),
+    ],
+    onLocalUpdates: updates => {
+      setSelectedSvc((previous: any) => {
+        const latest = previous && updates.get(String(previous.id));
+        return latest ? {...previous, ...latest} : previous;
+      });
+      setAllServices(previous => previous.map(s => updates.get(String(s.id)) ?? s));
+      setServices(previous => previous.map(s => {
+        if (s._origIndex != null || s._removed || s.isAddOn || s.addedByPackage || s.addedByOffer) return s;
+        const latest = updates.get(String(s.serviceId));
+        return latest ? {...s, price: Number(latest.basePrice), basePrice: Number(latest.basePrice), offerPrice: null} : s;
+      }));
+    },
+    onBookingUpdate: updated => {
+      // Preserve unsaved quantity/removal edits and local additions.
+      const saved = parseServices(updated.services);
+      setServices(previous => previous.map(s => {
+        if (s._origIndex == null) return s;
+        const latest = saved[s._origIndex];
+        return latest ? {...s, price: latest.price, basePrice: latest.basePrice, offerPrice: latest.offerPrice} : s;
+      }));
+      setTotalAmount(Number(updated.totalAmount));
+      setJob((previous: any) => ({...previous, ...updated}));
+    },
+    showAlert,
+  });
 
   // Add Package modal — fixed packages apply their fixed service list immediately;
   // flexible packages need the partner to pick `serviceCount` services first.
@@ -120,6 +156,7 @@ const JobChecklistScreen = ({navigation, route}: any) => {
   }, [job?.cityId]);
 
   const openModal = () => {
+    refreshStaleOffers().catch(() => {});
     setAddMode('catalog');
     setSelectedSvc(null); setAddQty(1); setSearch('');
     setAddonName(''); setAddonPrice('');
@@ -131,8 +168,14 @@ const JobChecklistScreen = ({navigation, route}: any) => {
 
   // Add a catalog service to the local list — carries its category's commission
   // split so it's visible immediately, before the change is even saved.
-  const handleAddService = () => {
+  const handleAddService = async () => {
     if (!selectedSvc) return;
+    try {
+      if (await refreshStaleOffers()) return;
+    } catch (error: any) {
+      showAlert('Error', error.response?.data?.message || error.message || 'Unable to verify the current service price. Please try again.');
+      return;
+    }
     const newSvc = {
       serviceId: selectedSvc.id,
       name: selectedSvc.name,
@@ -261,6 +304,7 @@ const JobChecklistScreen = ({navigation, route}: any) => {
     if (!job?.id) return;
     setSaving(true);
     try {
+      if (await refreshStaleOffers()) return;
       const servicesPayload = pendingAdds.map(item =>
         item.isAddOn
           ? {isAddOn: true, name: item.name, price: item.price, qty: item.qty || 1}
@@ -278,15 +322,16 @@ const JobChecklistScreen = ({navigation, route}: any) => {
     } catch (e: any) {
       showAlert('Error', e.response?.data?.message ?? 'Failed to save changes.');
     }
-    setSaving(false);
+    finally {setSaving(false);}
   };
 
   // Pulls a fresh booking (post add/remove-package) back into local state — same
   // shape handleSaveChanges applies after its own save.
   const syncFromBooking = (updated: any) => {
-    setServices(tagWithOrigIndex(parseServices(updated.services)));
+    const savedServices = retainServiceOfferSnapshots(parseServices(updated.services), servicesRef.current);
+    setServices(tagWithOrigIndex(savedServices));
     setTotalAmount(parseFloat(updated.totalAmount ?? 0));
-    setJob((prev: any) => ({...prev, services: updated.services, packages: updated.packages, packageId: updated.packageId, totalAmount: updated.totalAmount, partnerEarning: updated.partnerEarning, taxAmount: updated.taxAmount, status: updated.status ?? prev?.status, otpVerifiedAt: updated.otpVerifiedAt ?? prev?.otpVerifiedAt}));
+    setJob((prev: any) => ({...prev, services: savedServices, packages: updated.packages, packageId: updated.packageId, totalAmount: updated.totalAmount, partnerEarning: updated.partnerEarning, taxAmount: updated.taxAmount, status: updated.status ?? prev?.status, otpVerifiedAt: updated.otpVerifiedAt ?? prev?.otpVerifiedAt}));
   };
 
   // Refs so the background poll below always reads the latest values without having
@@ -454,12 +499,19 @@ const JobChecklistScreen = ({navigation, route}: any) => {
 
     setStarting(true);
     try {
-      await api.patch(endpoints.PARTNER_BOOKING_STATUS(String(job.id)), {status: 'in_progress'});
+      if (await refreshStaleOffers()) return;
+      const result = await api.patch(endpoints.PARTNER_BOOKING_STATUS(String(job.id)), {status: 'in_progress'});
+      const updated = result.data?.data;
+      if (updated?.staleOfferServices?.length) {
+        syncFromBooking(updated);
+        showAlert('Offer no longer available', staleOfferMessage(updated.staleOfferServices));
+        return;
+      }
       navigation.navigate('ActiveJob', {job: {...job, services: visibleServices, totalAmount, status: 'in_progress'}});
     } catch (e: any) {
       showAlert('Error', e.response?.data?.message ?? 'Failed to start service. Please try again.');
     }
-    setStarting(false);
+    finally {setStarting(false);}
   };
 
   // Derived

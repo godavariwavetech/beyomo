@@ -29,6 +29,7 @@ import type {RootState} from '../../redux/store';
 import {updateBookingStatus} from '../../redux/reducers/partner';
 import {useAppAlert} from '../../hooks/useAppAlert';
 import AppAlertModal from '../../components/AppAlertModal/AppAlertModal';
+import usePartnerStaleOffers, {staleOfferMessage, retainServiceOfferSnapshots} from '../../hooks/usePartnerStaleOffers';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
@@ -67,7 +68,7 @@ const servicePrice = (service: AvailableSvc) => {
 
 const ActiveJobScreen = ({navigation, route}: any) => {
   const insets = useSafeAreaInsets();
-  const job = route?.params?.job ?? null;
+  const [job, setJob] = useState<any>(route?.params?.job ?? null);
   const dispatch = useDispatch<any>();
   const myPartnerId = useSelector(
     (s: RootState) => s.Auth?.partnerId ?? (s.Auth?.partner as any)?.id,
@@ -129,6 +130,25 @@ const ActiveJobScreen = ({navigation, route}: any) => {
   const [svcCart, setSvcCart] = useState<CartItem[]>([]);
   const [adding, setAdding] = useState(false);
   const [completing, setCompleting] = useState(false);
+  const refreshStaleOffers = usePartnerStaleOffers({
+    bookingId: job?.id,
+    cityId: job?.cityId,
+    savedServices: services,
+    localServices: svcCart.map(item => item.svc),
+    onLocalUpdates: updates => {
+      setSvcCart(previous => previous.map(item => {
+        const latest = updates.get(String(item.svc.id));
+        return latest ? {...item, svc: {...item.svc, ...latest}} : item;
+      }));
+      setAvailableServices(previous => previous.map(s => updates.get(String(s.id)) ?? s));
+    },
+    onBookingUpdate: updated => {
+      setServices(parseServices(updated.services));
+      setTotalAmount(Number(updated.totalAmount));
+      setJob((previous: any) => ({...previous, ...updated}));
+    },
+    showAlert,
+  });
 
   const orderId = job?.bookingCode ?? '—';
   const customerName =
@@ -157,6 +177,7 @@ const ActiveJobScreen = ({navigation, route}: any) => {
   }, [job?.cityId]);
 
   const openAddModal = () => {
+    refreshStaleOffers().catch(() => {});
     setSvcCart([]);
     setSearchQuery('');
     fetchAvailableServices();
@@ -167,6 +188,7 @@ const ActiveJobScreen = ({navigation, route}: any) => {
     if (!svcCart.length || !job?.id) return;
     setAdding(true);
     try {
+      if (await refreshStaleOffers()) return;
       const endpoint = endpoints.PARTNER_EXTRA_SERVICES(String(job.id));
       const result = await networkCall(
         endpoint,
@@ -175,8 +197,12 @@ const ActiveJobScreen = ({navigation, route}: any) => {
       );
       if (result.response?.status && result.response?.data) {
         const updated = result.response.data;
-        setServices(parseServices(updated.services));
+        setServices(retainServiceOfferSnapshots(parseServices(updated.services), [
+          ...services,
+          ...svcCart.map(item => ({...item.svc, serviceId: item.svc.id})),
+        ]));
         setTotalAmount(parseFloat(updated.totalAmount) || totalAmount);
+        setJob((previous: any) => ({...previous, ...updated}));
         const n = svcCart.length;
         setSvcCart([]);
         setShowAddModal(false);
@@ -190,10 +216,16 @@ const ActiveJobScreen = ({navigation, route}: any) => {
     } catch {
       showAlert('Error', 'Failed to add service. Please try again.');
     }
-    setAdding(false);
+    finally {setAdding(false);}
   };
 
-  const handleMarkComplete = () => {
+  const handleMarkComplete = async () => {
+    try {
+      if (await refreshStaleOffers()) return;
+    } catch (error: any) {
+      showAlert('Error', error.response?.data?.message || error.message || 'Unable to verify the current service price. Please try again.');
+      return;
+    }
     // Payment may not be settled yet — either it's a COD job, or it was booked online but
     // the payment never went through. Either way, don't block completion: ask whether the
     // partner collected cash on the spot instead, rather than refusing to close the job.
@@ -219,7 +251,15 @@ const ActiveJobScreen = ({navigation, route}: any) => {
                 ...(needsPaymentConfirmation ? {cashCollected: true} : {}),
               }));
               if (result.meta.requestStatus === 'fulfilled') {
-                setStatus('completed');
+                const updated = result.payload;
+                if (updated?.staleOfferServices?.length) {
+                  setServices(parseServices(updated.services));
+                  setTotalAmount(Number(updated.totalAmount));
+                  setJob((previous: any) => ({...previous, ...updated}));
+                  showAlert('Offer no longer available', staleOfferMessage(updated.staleOfferServices));
+                } else {
+                  setStatus('completed');
+                }
               } else {
                 showAlert('Could not complete job', result.payload ?? 'Please try again.');
               }
