@@ -93,6 +93,7 @@ const BookingDetailScreen = ({navigation, route}: any) => {
   const [loadingSvcs, setLoadingSvcs] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [svcCart, setSvcCart] = useState<CartItem[]>([]);
+  const [serviceAddedModal, setServiceAddedModal] = useState<{title: string; message: string} | null>(null);
 
   const [showAddPackageModal, setShowAddPackageModal] = useState(false);
   const [availablePackages, setAvailablePackages] = useState<any[]>([]);
@@ -198,10 +199,15 @@ const BookingDetailScreen = ({navigation, route}: any) => {
       const n = svcCart.length;
       setSvcCart([]);
       setShowAddModal(false);
-      Alert.alert(
-        'Services Added',
-        `${n} service(s) added to your booking. New total: ₹${formatAmount(parseFloat(result.payload?.totalAmount ?? 0))}`,
-      );
+      // Native confirmation retained; use the in-app modal below instead.
+      // Alert.alert(
+      //   'Services Added',
+      //   `${n} service(s) added to your booking. New total: ₹${formatAmount(parseFloat(result.payload?.totalAmount ?? 0))}`,
+      // );
+      setServiceAddedModal({
+        title: n === 1 ? 'Service Added' : 'Services Added',
+        message: `${n} ${n === 1 ? 'service' : 'services'} added to your booking. New total: ₹${formatAmount(parseFloat(result.payload?.totalAmount ?? 0))}`,
+      });
     } else {
       Alert.alert('Error', result.payload ?? 'Failed to add services. Please try again.');
     }
@@ -1106,6 +1112,22 @@ const BookingDetailScreen = ({navigation, route}: any) => {
         </View>
       </Modal>
 
+      {/* Add-service confirmation uses the customer app's in-app modal style. */}
+      <Modal visible={!!serviceAddedModal} transparent animationType="fade"
+        onRequestClose={() => setServiceAddedModal(null)}>
+        <View style={styles.serviceAddedOverlay}>
+          <View style={styles.serviceAddedCard}>
+            <Ionicons name="checkmark-circle" size={sw(40)} color="#105641" />
+            <Text style={styles.serviceAddedTitle}>{serviceAddedModal?.title}</Text>
+            <Text style={styles.serviceAddedMessage}>{serviceAddedModal?.message}</Text>
+            <TouchableOpacity style={styles.serviceAddedBtn} activeOpacity={0.85}
+              onPress={() => setServiceAddedModal(null)}>
+              <Text style={styles.serviceAddedBtnText}>OK</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       <DatePicker
         modal
         open={showReschedDatePicker}
@@ -1420,6 +1442,27 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   cancelBtnText: {fontFamily: fonts.title, fontSize: sw(13), fontWeight: '600', color: '#FB1616'},
+  serviceAddedOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center',
+    justifyContent: 'center', paddingHorizontal: sw(32),
+  },
+  serviceAddedCard: {
+    width: '100%', maxWidth: sw(340), backgroundColor: '#FFFFFF', borderRadius: sw(20),
+    paddingVertical: sw(24), paddingHorizontal: sw(22), alignItems: 'center',
+  },
+  serviceAddedTitle: {
+    fontFamily: fonts.title, fontSize: sw(17), fontWeight: '800', color: '#171816',
+    textAlign: 'center', marginTop: sw(14), marginBottom: sw(8),
+  },
+  serviceAddedMessage: {
+    fontFamily: fonts.textFont, fontSize: sw(13.5), color: '#5C5F5B', textAlign: 'center',
+    lineHeight: sw(19), marginBottom: sw(20),
+  },
+  serviceAddedBtn: {
+    width: '100%', height: sw(48), borderRadius: sw(14), backgroundColor: '#105641',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  serviceAddedBtnText: {fontFamily: fonts.title, fontSize: sw(14.5), fontWeight: '700', color: '#FFFFFF'},
 });
 
 export default BookingDetailScreen;
