@@ -172,6 +172,7 @@ const serviceSchema = Joi.object({
   // Website-only description, separate from `description` above (Customer/Partner apps).
   websiteDescription: Joi.string().trim().allow("", null),
   basePrice: Joi.number().positive().required(),
+  offerPrice: Joi.number().positive().allow(null),
   // Optional second level under the category; null = lists under the category only.
   subcategoryId: Joi.number().integer().positive().allow(null, ""),
   duration: Joi.number().integer().positive().default(60),
@@ -200,6 +201,7 @@ const serviceUpdateSchema = Joi.object({
   description: Joi.string().trim().allow("", null),
   websiteDescription: Joi.string().trim().allow("", null),
   basePrice: Joi.number().positive(),
+  offerPrice: Joi.number().positive().allow(null),
   subcategoryId: Joi.number().integer().positive().allow(null, ""),
   duration: Joi.number().integer().positive(),
   tags: Joi.array().items(Joi.string()),

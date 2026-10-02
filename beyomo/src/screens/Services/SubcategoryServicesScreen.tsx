@@ -63,6 +63,14 @@ const SubcategoryServicesScreen = ({navigation, route}: Props) => {
   const cartServices = useSelector((st: any) => st.Cart?.services ?? []);
 
   const [detailItem, setDetailItem] = useState<any>(null);
+  const detailOfferPrice = Number(detailItem?.offerPrice);
+  const detailHasOfferPrice = detailItem?.offerPrice != null
+    && detailOfferPrice > 0
+    && detailOfferPrice < Number(detailItem?.price);
+  const detailDisplayPrice = detailHasOfferPrice ? detailOfferPrice : Number(detailItem?.price) || 0;
+  const detailOriginalPrice = detailHasOfferPrice
+    ? Number(detailItem?.price)
+    : Number(detailItem?.originalPrice) || detailDisplayPrice;
   // Swipe-down-to-close on the detail sheet's handle — same gesture as
   // ServiceListingScreen's own detail sheet (this screen has its own separate
   // component state, so it needs its own PanResponder rather than sharing one).
@@ -195,6 +203,16 @@ const SubcategoryServicesScreen = ({navigation, route}: Props) => {
     const svc = addedServicesMap[id];
     return svc && !svc.isFree ? acc + svc.price * qty : acc;
   }, 0);
+  const cartOfferTotal = Object.entries(quantities).reduce((acc, [id, qty]) => {
+    const svc = addedServicesMap[id];
+    if (!svc || svc.isFree) return acc;
+    const offerPrice = Number(svc.offerPrice);
+    const displayPrice = svc.offerPrice != null && offerPrice > 0 && offerPrice < Number(svc.price)
+      ? offerPrice
+      : Number(svc.price) || 0;
+    return acc + displayPrice * qty;
+  }, 0);
+  const hasCartOffer = cartOfferTotal < cartTotal;
 
   const handleCheckout = () => {
     navigation?.navigate('AddressPayment', {
@@ -277,7 +295,12 @@ const SubcategoryServicesScreen = ({navigation, route}: Props) => {
       {addedCount > 0 && (
         <View style={[styles.cartBar, {paddingBottom: insets.bottom + sw(8)}]}>
           <View>
-            <Text style={styles.cartPrice}>₹{formatAmount(cartTotal)}</Text>
+            <View style={styles.priceRow}>
+              <Text style={styles.cartPrice}>₹{formatAmount(hasCartOffer ? cartOfferTotal : cartTotal)}</Text>
+              {hasCartOffer && (
+                <Text style={styles.originalPrice}>₹{formatAmount(cartTotal)}</Text>
+              )}
+            </View>
             <View style={styles.cartSubRow}>
               <Text style={styles.cartSubText}>
                 {addedCount} item{addedCount !== 1 ? 's' : ''}
@@ -400,9 +423,9 @@ const SubcategoryServicesScreen = ({navigation, route}: Props) => {
                   style={styles.sheetHeroGradient}
                 />
                 <View style={styles.sheetHeroPriceBadge}>
-                  <Text style={styles.sheetHeroPrice}>{detailItem.priceStartsFrom ? 'Starts at ' : ''}₹{formatAmount(detailItem.price)}</Text>
-                  {detailItem.originalPrice > detailItem.price && (
-                    <Text style={styles.sheetHeroOriginal}>₹{formatAmount(detailItem.originalPrice)}</Text>
+                  <Text style={styles.sheetHeroPrice}>{detailItem.priceStartsFrom ? 'Starts at ' : ''}₹{formatAmount(detailDisplayPrice)}</Text>
+                  {detailOriginalPrice > detailDisplayPrice && (
+                    <Text style={styles.sheetHeroOriginal}>₹{formatAmount(detailOriginalPrice)}</Text>
                   )}
                 </View>
                 <TouchableOpacity style={styles.sheetCloseBtn} onPress={() => setDetailItem(null)} activeOpacity={0.8}>
@@ -464,7 +487,7 @@ const SubcategoryServicesScreen = ({navigation, route}: Props) => {
                     onPress={() => { increment(String(detailItem.id)); setDetailItem(null); }}>
                     <Text style={styles.sheetAddBtnText}>Add to Cart</Text>
                     <View style={styles.sheetAddBtnPriceBadge}>
-                      <Text style={styles.sheetAddBtnPrice}>₹{formatAmount(detailItem.price)}</Text>
+                      <Text style={styles.sheetAddBtnPrice}>₹{formatAmount(detailDisplayPrice)}</Text>
                     </View>
                   </TouchableOpacity>
                 ) : (

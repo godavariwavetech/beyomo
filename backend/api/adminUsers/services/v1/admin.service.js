@@ -592,8 +592,12 @@ const createBookingForCustomer = async (adminId, data) => {
     const priceOf = await cityPriceResolver(serviceIds, cityId);
     enrichedServices = catalogItems.map(item => {
       const svc = serviceMap[parseInt(item.id)];
+      const basePrice = priceOf(svc);
+      const offer = svc.offerPrice == null ? NaN : Number(svc.offerPrice);
+      const offerPrice = Number.isFinite(offer) && offer > 0 && offer < basePrice ? offer : null;
       return {
-        serviceId: svc.id, name: svc.name, price: priceOf(svc), qty: item.qty || 1,
+        serviceId: svc.id, name: svc.name, price: offerPrice ?? basePrice, qty: item.qty || 1,
+        ...(offerPrice != null ? {basePrice, offerPrice} : {}),
         duration: svc.duration || null, image: svc.image || null,
         serviceStatus: "unassigned", assignedPartnerId: null, assignedPartnerName: null,
         addedByAdmin: true,
@@ -908,8 +912,12 @@ const editBookingServices = async (bookingId, serviceItems = [], removeIndices =
     const priceOf = await cityPriceResolver(serviceIds, booking.cityId);
     const newEntries = catalogItems.map(item => {
       const svc = serviceMap[parseInt(item.id)];
+      const basePrice = priceOf(svc);
+      const offer = svc.offerPrice == null ? NaN : Number(svc.offerPrice);
+      const offerPrice = Number.isFinite(offer) && offer > 0 && offer < basePrice ? offer : null;
       return {
-        serviceId: svc.id, name: svc.name, price: priceOf(svc), qty: item.qty || 1,
+        serviceId: svc.id, name: svc.name, price: offerPrice ?? basePrice, qty: item.qty || 1,
+        ...(offerPrice != null ? {basePrice, offerPrice} : {}),
         duration: svc.duration || null, image: svc.image || null, addedByAdmin: true,
         adminPercent: svc.category ? parseFloat(svc.category.adminPercent) : DEFAULT_ADMIN_PERCENT,
         partnerPercent: svc.category ? parseFloat(svc.category.partnerPercent) : DEFAULT_PARTNER_PERCENT,

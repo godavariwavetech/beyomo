@@ -14,6 +14,7 @@ const Service = sequelize.define("Service", {
   // shows only this field, editable independently from the admin dashboard.
   websiteDescription: { type: DataTypes.TEXT, allowNull: true },
   basePrice: { type: DataTypes.DECIMAL(10, 2), allowNull: false },
+  offerPrice: { type: DataTypes.DECIMAL(10, 2), allowNull: true, defaultValue: null },
   duration: { type: DataTypes.INTEGER, defaultValue: 60 },
   tags: { type: DataTypes.JSON, defaultValue: [] },
   image: { type: DataTypes.TEXT, allowNull: true, defaultValue: null },
