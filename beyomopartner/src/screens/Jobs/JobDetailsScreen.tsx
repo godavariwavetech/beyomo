@@ -308,9 +308,11 @@ const JobDetailsScreen = ({navigation, route}: any) => {
                         <Text style={styles.metaChipText}>×{svc.qty}</Text>
                       </View>
                     ) : null}
-                    {svc.addedByPartner && (
-                      <View style={[styles.metaChip, {backgroundColor: '#FEF3C7'}]}>
-                        <Text style={[styles.metaChipText, {color: '#92400E'}]}>Added</Text>
+                    {(svc.removed || svc.addedByPartner) && (
+                      <View style={[styles.metaChip, {backgroundColor: svc.removed ? '#FEE2E2' : '#FEF3C7'}]}>
+                        <Text style={[styles.metaChipText, {color: svc.removed ? '#B91C1C' : '#92400E'}]}>
+                          {svc.removed ? 'Removed' : 'Added'}
+                        </Text>
                       </View>
                     )}
                   </View>
