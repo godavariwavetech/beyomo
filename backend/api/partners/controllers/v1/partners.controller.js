@@ -10,6 +10,7 @@ const claimServicesSchema = Joi.object({
 });
 
 const addExtraServicesSchema = Joi.object({
+  refreshRemovedOffers: Joi.boolean().optional(),
   services: Joi.array().items(
     Joi.alternatives().try(
       Joi.object({
@@ -309,7 +310,7 @@ const claimServices = catchAsync(async (req, res, next) => {
 const addExtraServices = catchAsync(async (req, res, next) => {
   const { error, value } = addExtraServicesSchema.validate(req.body);
   if (error) return next(new AppError(error.details[0].message, 400));
-  if (!value.services.length && !value.removeIndices.length && !value.updateQty.length)
+  if (!value.refreshRemovedOffers && !value.services.length && !value.removeIndices.length && !value.updateQty.length)
     return next(new AppError("Provide services to add, indices to remove, or quantities to update", 400));
 
   const booking = await partnersService.addExtraServices(req.partner.userId, req.params.id, value);
