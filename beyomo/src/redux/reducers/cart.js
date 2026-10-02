@@ -62,6 +62,17 @@ const cartSlice = createSlice({
         }
       }
     },
+    // Refresh pricing without adding an item or changing its quantity/selection.
+    updateServicePricing: (state, action) => {
+      const {id, price, offerPrice} = action.payload;
+      const svc = state.services.find(s => String(s.id) === String(id) && !s.isFree && !s.isPackageItem);
+      if (svc) {
+        svc.price = price;
+        svc.offerPrice = offerPrice;
+        svc.originalPrice = price;
+        svc.discountPct = 0;
+      }
+    },
     incrementServiceQty: (state, action) => {
       const svc = state.services.find(s => String(s.id) === String(action.payload));
       if (svc && !svc.isFree) svc.qty = Math.min(svc.qty + 1, MAX_SERVICE_QTY);
@@ -98,5 +109,6 @@ export const {
   addPackageToCart, incrementItemQty, decrementItemQty, removeItemFromCart,
   addServicesToCart, incrementServiceQty, decrementServiceQty, removeServiceFromCart, removeFreeService,
   clearCart,
+  updateServicePricing,
 } = cartSlice.actions;
 export default cartSlice.reducer;

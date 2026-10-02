@@ -31,11 +31,13 @@ import {
   incrementItemQty, decrementItemQty, removeItemFromCart,
   addServicesToCart, incrementServiceQty, decrementServiceQty, removeServiceFromCart, removeFreeService,
   clearCart,
+  updateServicePricing,
 } from '../../redux/reducers/cart';
 import {payWithRazorpay, openQuoteCheckout} from '../../utils/payments';
 import type {RootState} from '../../redux/store';
 import {formatAmount} from '../../utils/utils';
 import {isCityServiceable} from '../../utils/geoUtils';
+import {useAutomaticRefresh} from '../../utils/useAutomaticRefresh';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
@@ -505,6 +507,54 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
   // already-free services). Cart mode reads/writes the free item via Redux; legacy
   // mode keeps using local `services` state.
   const effectiveServices = isCartMode ? cartServices : services;
+  // Service-price offers are separate from the existing free-item offer flow.
+  const refreshRemovedServiceOffers = useCallback(async (
+    items: ServiceItem[],
+    isCancelled: () => boolean = () => false,
+  ): Promise<boolean> => {
+    const offeredServices = items.filter((s: any) =>
+      !s.isFree && !s.isPackageItem && serviceCheckoutPrice(s) < Number(s.price),
+    );
+    const updates = (await Promise.all(offeredServices.map(async service => {
+      const response = await api.get(`${endpoints.SERVICES}/${service.id}`, {
+        params: {cityId: selectedCity?.id ?? undefined},
+      });
+      const latest = response.data?.data;
+      const price = Number(latest?.basePrice);
+      if (latest?.basePrice == null || !Number.isFinite(price) || price < 0) {
+        throw new Error('Unable to verify the current service price.');
+      }
+      if (serviceCheckoutPrice({price, offerPrice: latest.offerPrice}) < price) return null;
+      return {id: service.id, name: service.name, price, offerPrice: null};
+    }))).filter((update): update is NonNullable<typeof update> => update !== null);
+    if (isCancelled() || updates.length === 0) return false;
+
+    if (isCartMode) {
+      updates.forEach(update => dispatch(updateServicePricing(update)));
+    } else {
+      setServices(prev => prev.map((service: any) => {
+        if (service.isFree || service.isPackageItem) return service;
+        const update = updates.find(item => String(item.id) === String(service.id));
+        return update ? {...service, price: update.price, offerPrice: null, originalPrice: update.price, discountPct: 0} : service;
+      }));
+    }
+    setDetailItem((prev: any) => {
+      if (!prev || prev.isFree || prev.isPackageItem) return prev;
+      const update = updates.find(item => String(item.id) === String(prev.id));
+      return update ? {...prev, price: update.price, offerPrice: null, originalPrice: update.price, discountPct: 0} : prev;
+    });
+    setInfoModal({
+      title: 'Offer no longer available',
+      message: `${updates.map(service => service.name).join(', ')}: The offer is no longer available for this service. The normal price has been restored and your cart total updated. Please review the total before continuing.`,
+    });
+    return true;
+  }, [dispatch, isCartMode, selectedCity?.id]);
+
+  useAutomaticRefresh(
+    isCancelled => refreshRemovedServiceOffers(effectiveServices, isCancelled),
+    `${selectedCity?.id ?? ''}:${isCartMode}`,
+  );
+
   const clearFreeItem = () => {
     if (isCartMode) dispatch(removeFreeService());
     else setServices(prev => prev.some((s: any) => s.isFree) ? prev.filter((s: any) => !s.isFree) : prev);
@@ -596,6 +646,8 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
     }
     setBooking(true);
     try {
+      if (await refreshRemovedServiceOffers(effectiveServices)) return;
+
       // Defensive re-check: the background eligibility check (above) is debounced by a
       // network round-trip, so it can lag behind a just-removed item if the user taps
       // Confirm Booking quickly. Re-validate right before submitting so we never send an
@@ -716,6 +768,9 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
         const quote = quoteRes.data?.data;
 
         const attemptOnlinePayment = async (): Promise<boolean> => {
+          // A quote can outlive its service offer, including while the customer
+          // decides whether to retry payment. Recheck before opening each attempt.
+          if (await refreshRemovedServiceOffers(effectiveServices)) return false;
           const payResult = await openQuoteCheckout({
             keyId: quote.keyId,
             amount: quote.amount,
@@ -738,13 +793,13 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
             bk = created.data?.data;
             return true;
           }
-          return new Promise<boolean>(resolve => {
+          return new Promise<boolean>((resolve, reject) => {
             Alert.alert(
               'Payment Not Completed',
               `${payResult.message} No booking has been created. You can retry the payment now or cancel.`,
               [
                 {text: 'Cancel', style: 'cancel', onPress: () => resolve(false)},
-                {text: 'Retry Payment', onPress: () => attemptOnlinePayment().then(resolve)},
+                {text: 'Retry Payment', onPress: () => attemptOnlinePayment().then(resolve, reject)},
               ],
             );
           });
@@ -994,6 +1049,11 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
                 </TouchableOpacity>
               </View>
             </View>
+            {item.services.length > 0 && (
+              <Text style={[styles.packageBannerSub, {flex: 0, marginTop: sw(4)}]}>
+                {item.services.map((service: any) => `• ${service.name}`).join('\n')}
+              </Text>
+            )}
           </View>
         ))}
 
