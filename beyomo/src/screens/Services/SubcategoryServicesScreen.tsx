@@ -13,6 +13,7 @@ import {
   RefreshControl,
   Animated,
   PanResponder,
+  Alert,
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -20,7 +21,10 @@ import LinearGradient from 'react-native-linear-gradient';
 import {useDispatch, useSelector} from 'react-redux';
 import {fonts} from '../../config/theme';
 import {fetchServices} from '../../redux/reducers/services';
-import {addServicesToCart, decrementServiceQty} from '../../redux/reducers/cart';
+import {addServicesToCart, decrementServiceQty, updateServicePricing} from '../../redux/reducers/cart';
+import api from '../../utils/api';
+import {endpoints} from '../../config/config';
+import {useAutomaticRefresh} from '../../utils/useAutomaticRefresh';
 import {formatAmount} from '../../utils/utils';
 import {variantKeyOf} from '../../utils/serviceVariants';
 import {getCachedServices, setCachedServices, clearCachedServices} from '../../utils/servicesCache';
@@ -107,6 +111,45 @@ const SubcategoryServicesScreen = ({navigation, route}: Props) => {
   const [localServices, setLocalServices] = useState<any[] | null>(null);
   const [localLoading, setLocalLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+
+  // These cards have their own cached state; refreshing the parent screen alone
+  // cannot update them while this screen is open.
+  useAutomaticRefresh(async isCancelled => {
+    if (!categoryId) return;
+    const response = await api.get(endpoints.SERVICES, {
+      params: {categoryId, limit: 500, cityId: selectedCityId ?? undefined},
+    });
+    const data = response.data?.data;
+    if (!Array.isArray(data) || isCancelled()) return;
+    setCachedServices(categoryId, selectedCityId, data);
+    setLocalServices(data);
+    const offeredItems = cartServices.filter((item: any) =>
+      !item.isFree && !item.isPackageItem && item.offerPrice != null
+      && Number(item.offerPrice) > 0 && Number(item.offerPrice) < Number(item.price),
+    );
+    const results = await Promise.allSettled(offeredItems.map(async (item: any) => {
+      const row = data.find((service: any) => String(service.id) === String(item.id));
+      const latest = row ?? (await api.get(`${endpoints.SERVICES}/${item.id}`, {
+        params: {cityId: selectedCityId ?? undefined},
+      })).data?.data;
+      const price = Number(latest?.basePrice);
+      const offerPrice = Number(latest?.offerPrice);
+      if (latest?.basePrice == null || !Number.isFinite(price) || price < 0) return null;
+      if (latest.offerPrice != null && offerPrice > 0 && offerPrice < price) return null;
+      return {id: item.id, name: item.name, price, offerPrice: null};
+    }));
+    if (isCancelled()) return;
+    const updates = results.flatMap(result => result.status === 'fulfilled' && result.value ? [result.value] : []);
+    updates.forEach(update => dispatch(updateServicePricing(update)));
+    setDetailItem((previous: any) => {
+      if (!previous || previous.isFree || previous.isPackageItem) return previous;
+      const latest = data.find((service: any) => String(service.id) === String(previous.id));
+      const update = updates.find(item => String(item.id) === String(previous.id));
+      return latest ? normalizeService(latest) : update ? {...previous, ...update, originalPrice: update.price, discountPct: 0} : previous;
+    });
+    if (updates.length) Alert.alert('Offer no longer available',
+      `${updates.map(item => item.name).join(', ')}: The offer is no longer available for this service. The normal price has been restored and your cart total updated.`);
+  }, `${selectedCityId ?? ''}:${categoryId ?? ''}:${subcategoryId ?? subcategoryKey ?? ''}`);
 
   useEffect(() => {
     if (!categoryId) return;

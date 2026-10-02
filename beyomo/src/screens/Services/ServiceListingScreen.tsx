@@ -13,6 +13,7 @@ import {
   RefreshControl,
   Animated,
   PanResponder,
+  Alert,
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -24,11 +25,14 @@ import {
   addServicesToCart,
   decrementServiceQty,
   removeFreeService,
+  updateServicePricing,
 } from '../../redux/reducers/cart';
 import {formatAmount} from '../../utils/utils';
 import {deriveVariants, variantKeyOf} from '../../utils/serviceVariants';
 import {getCachedServices, setCachedServices, clearCachedServices} from '../../utils/servicesCache';
 import {BASE_URL, endpoints} from '../../config/config';
+import api from '../../utils/api';
+import {useAutomaticRefresh} from '../../utils/useAutomaticRefresh';
 
 const MAX_SERVICE_QTY = 5;
 
@@ -204,6 +208,47 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
   const [localServices, setLocalServices] = useState<any[] | null>(null);
   const [localLoading, setLocalLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+
+  useAutomaticRefresh(async isCancelled => {
+    if (!activeCategoryId && offerType !== 'specific_services') return;
+    const response = await api.get(endpoints.SERVICES, {
+      params: {limit: 500, ...(offerType === 'specific_services' ? {} : {categoryId: activeCategoryId}), cityId: selectedCityId ?? undefined},
+    });
+    const data = response.data?.data;
+    if (!Array.isArray(data) || isCancelled()) return;
+    if (offerType === 'specific_services') {
+      dispatch(fetchServices.fulfilled(data, 'automatic-refresh', {}));
+    } else {
+      setLocalServices(data);
+      setCachedServices(activeCategoryId, selectedCityId, data);
+    }
+    const offeredItems = cartServices.filter((item: any) =>
+      !item.isFree && !item.isPackageItem && item.offerPrice != null
+      && Number(item.offerPrice) > 0 && Number(item.offerPrice) < Number(item.price),
+    );
+    const results = await Promise.allSettled(offeredItems.map(async (item: any) => {
+      const row = data.find((service: any) => String(service.id) === String(item.id));
+      const latest = row ?? (await api.get(`${endpoints.SERVICES}/${item.id}`, {
+        params: {cityId: selectedCityId ?? undefined},
+      })).data?.data;
+      const price = Number(latest?.basePrice);
+      const offerPrice = Number(latest?.offerPrice);
+      if (latest?.basePrice == null || !Number.isFinite(price) || price < 0) return null;
+      if (latest.offerPrice != null && offerPrice > 0 && offerPrice < price) return null;
+      return {id: item.id, name: item.name, price, offerPrice: null};
+    }));
+    if (isCancelled()) return;
+    const updates = results.flatMap(result => result.status === 'fulfilled' && result.value ? [result.value] : []);
+    updates.forEach(update => dispatch(updateServicePricing(update)));
+    setDetailItem((previous: any) => {
+      if (!previous || previous.isFree || previous.isPackageItem) return previous;
+      const latest = data.find((service: any) => String(service.id) === String(previous.id));
+      const update = updates.find(item => String(item.id) === String(previous.id));
+      return latest ? normalizeService(latest) : update ? {...previous, ...update, originalPrice: update.price, discountPct: 0} : previous;
+    });
+    if (updates.length) Alert.alert('Offer no longer available',
+      `${updates.map(item => item.name).join(', ')}: The offer is no longer available for this service. The normal price has been restored and your cart total updated.`);
+  }, `${selectedCityId ?? ''}:${activeCategoryId ?? ''}:${offerType}`);
 
   // Keep the free service in sync with whether its offer's condition is currently met —
   // add it once the required items are in the cart, remove it the moment they're not.
@@ -400,7 +445,7 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
     if (freeServiceItem) list = [freeServiceItem, ...list];
     return list;
   })();
-  const showServiceList = subcategories.length === 0 || displayServices.length > 0;
+  const showServiceList = apiSubcategories.length === 0 && (subcategories.length === 0 || displayServices.length > 0);
 
   const activeFilterCount = (filterDiscount ? 1 : 0) + (filterDuration !== 'all' ? 1 : 0);
 
