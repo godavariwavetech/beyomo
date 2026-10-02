@@ -72,6 +72,10 @@ platform :ios do
       output_directory: "./build",
       output_name: "#{SCHEME}.ipa",
       clean: true,
+      # Fresh runners must not create development certificates just to archive.
+      # Automatic distribution signing happens during export using xcargs above.
+      skip_codesigning: !xcargs.nil?,
+      export_options: xcargs ? { signingStyle: "automatic", teamID: TEAM_ID } : nil,
       xcargs: xcargs
     )
 
