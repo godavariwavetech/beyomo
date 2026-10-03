@@ -898,13 +898,15 @@ const JobChecklistScreen = ({navigation, route}: any) => {
 
       {/* Start-Service OTP Modal — the customer reads the code off their booking in
           the Beyomo app. Verification only: passing it unlocks the "Start Service"
-          swipe below rather than starting the job outright. No dismiss-on-backdrop
-          here, so a stray tap can't silently drop the partner out of the step. */}
+          swipe below rather than starting the job outright. Tapping the backdrop
+          closes the modal without changing OTP verification. */}
       <Modal visible={showOtpModal} animationType="slide" transparent onRequestClose={() => setShowOtpModal(false)}>
         <KeyboardAvoidingView
           style={styles.otpModalFlex}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-          <View style={styles.overlay} />
+          <View style={styles.overlay}
+            onStartShouldSetResponder={() => true}
+            onResponderRelease={() => setShowOtpModal(false)} />
           <View style={[styles.sheet, {paddingBottom: insets.bottom + sw(16)}]}>
             <View style={styles.handle} />
             <Text style={styles.sheetTitle}>Enter Customer OTP</Text>
