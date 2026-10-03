@@ -17,6 +17,8 @@ interface Props {
   onConfirm: () => void;
   disabled?: boolean;
   loading?: boolean;
+  /** Lets an embedded swipe suspend its parent scroll view while dragging on iOS. */
+  onSwipeActiveChange?: (active: boolean) => void;
   /**
    * Track (pill) base color. Default: brand dark green.
    * Use a different color per action e.g. gold for "Service Completed".
@@ -79,6 +81,7 @@ export default function SwipeToConfirm({
   onConfirm,
   disabled,
   loading,
+  onSwipeActiveChange,
   trackColor = SWIPE_GREEN,
   trackColors,
   iconColor,
@@ -99,10 +102,12 @@ export default function SwipeToConfirm({
   const disabledRef = useRef(disabled);
   const loadingRef = useRef(loading);
   const onConfirmRef = useRef(onConfirm);
+  const onSwipeActiveChangeRef = useRef(onSwipeActiveChange);
   trackWRef.current = trackW;
   disabledRef.current = disabled;
   loadingRef.current = loading;
   onConfirmRef.current = onConfirm;
+  onSwipeActiveChangeRef.current = onSwipeActiveChange;
 
   // Every animation here runs on the JS driver, not because it's preferable but
   // because `pan` drives the progress fill's *width* — a layout prop the native
@@ -127,7 +132,11 @@ export default function SwipeToConfirm({
     PanResponder.create({
       onStartShouldSetPanResponder: () => !disabledRef.current && !loadingRef.current,
       onMoveShouldSetPanResponder: () => !disabledRef.current && !loadingRef.current,
+      // Only the opted-in embedded iOS swipe keeps its responder until release.
+      onPanResponderTerminationRequest: () =>
+        !(Platform.OS === 'ios' && onSwipeActiveChangeRef.current),
       onPanResponderGrant: () => {
+        if (Platform.OS === 'ios') onSwipeActiveChangeRef.current?.(true);
         Animated.spring(press, {toValue: 1.08, useNativeDriver: false, friction: 6, tension: 120}).start();
       },
       onPanResponderMove: (_, g) => {
@@ -136,6 +145,7 @@ export default function SwipeToConfirm({
         pan.setValue(x);
       },
       onPanResponderRelease: (_, g) => {
+        if (Platform.OS === 'ios') onSwipeActiveChangeRef.current?.(false);
         Animated.spring(press, {toValue: 1, useNativeDriver: false, friction: 6, tension: 120}).start();
         if (confirmedRef.current) return;
         const maxSlide = Math.max(0, trackWRef.current - thumbSize - sw(8));
@@ -160,6 +170,7 @@ export default function SwipeToConfirm({
         }
       },
       onPanResponderTerminate: () => {
+        if (Platform.OS === 'ios') onSwipeActiveChangeRef.current?.(false);
         Animated.spring(press, {toValue: 1, useNativeDriver: false, friction: 6, tension: 120}).start();
         if (confirmedRef.current) return;
         Animated.spring(pan, {toValue: 0, useNativeDriver: false, bounciness: 8}).start();

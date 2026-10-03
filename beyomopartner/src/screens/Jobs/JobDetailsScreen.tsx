@@ -12,6 +12,7 @@ import {
   ActivityIndicator,
   RefreshControl,
   AppState,
+  Platform,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -56,6 +57,7 @@ const JobDetailsScreen = ({navigation, route}: any) => {
   const job = liveJob ?? routeJob;
   const [arriving, setArriving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [arrivalSwipeActive, setArrivalSwipeActive] = useState(false);
   const {alertConfig, showAlert, hideAlert} = useAppAlert();
 
   const onRefresh = async () => {
@@ -228,6 +230,10 @@ const JobDetailsScreen = ({navigation, route}: any) => {
       </LinearGradient>
 
       <ScrollView showsVerticalScrollIndicator={false}
+        {...(Platform.OS === 'ios' ? {
+          scrollEnabled: !arrivalSwipeActive,
+          canCancelContentTouches: !arrivalSwipeActive,
+        } : {})}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#FDD77A" />}
         contentContainerStyle={{padding: sw(16), gap: sw(14), paddingBottom: sw(32)}}>
 
@@ -459,6 +465,7 @@ const JobDetailsScreen = ({navigation, route}: any) => {
         {rawStatus === 'confirmed' && (
           <SwipeToConfirm
             label="Reached to Customer Location"
+            onSwipeActiveChange={setArrivalSwipeActive}
             onConfirm={() => navigation.navigate('JobChecklist', {job, promptOtp: true})}
           />
         )}
