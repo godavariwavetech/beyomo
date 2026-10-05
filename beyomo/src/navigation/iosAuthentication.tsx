@@ -10,7 +10,7 @@ export const browsingDestination = (token: unknown) =>
 
 export const isIOSGuest = (token: unknown) => Platform.OS === 'ios' && !token;
 
-// Check at the action boundary, before adding anything to the shared cart.
+// Reserved for protected account actions; browsing and cart edits stay public.
 export const requireIOSAuthentication = (navigation: any) => {
   if (Platform.OS !== 'ios') return true;
   if (!isIOSGuest(store.getState().Auth?.token)) return true;
@@ -27,4 +27,19 @@ export const withIOSAuthentication = (Screen: React.ComponentType<any>) => {
     return token ? <Screen {...props} /> : <LoginScreen {...props} />;
   };
   return AuthenticatedScreen;
+};
+
+// Clear auth screens after login while keeping the Redux cart and checkout details.
+export const finishAuthentication = (navigation: any, returnToCheckout?: boolean) => {
+  if (Platform.OS === 'ios' && returnToCheckout) {
+    let root = navigation;
+    while (root?.getParent?.()) root = root.getParent();
+    const checkout = root?.getState?.()?.routes?.find((route: any) => route.name === 'AddressPayment');
+    root?.reset({
+      index: 1,
+      routes: [{name: 'Main'}, checkout ?? {name: 'AddressPayment'}],
+    });
+    return true;
+  }
+  return false;
 };

@@ -33,8 +33,6 @@ import {getCachedServices, setCachedServices, clearCachedServices} from '../../u
 import {BASE_URL, endpoints} from '../../config/config';
 import api from '../../utils/api';
 import {useAutomaticRefresh} from '../../utils/useAutomaticRefresh';
-import {requireIOSAuthentication, isIOSGuest} from '../../navigation/iosAuthentication';
-import {store} from '../../redux/store';
 
 const MAX_SERVICE_QTY = 5;
 
@@ -256,7 +254,6 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
   // add it once the required items are in the cart, remove it the moment they're not.
   useEffect(() => {
     if (!freeServiceItem) return;
-    if (isIOSGuest(store.getState().Auth?.token)) return;
     const paidQty = Object.entries(quantities).filter(([id]) => id !== freeServiceItem.id);
     let conditionMet = false;
     if (offerType === 'specific_services') {
@@ -479,7 +476,6 @@ const ServiceListingScreen = ({navigation, route}: Props) => {
   };
 
   const increment = (id: string) => {
-    if (!requireIOSAuthentication(navigation)) return;
     // Prefer the freshly fetched row over the cart's copy so fields the cart line may
     // be missing (originalPrice, discountPct — Home adds a leaner object) get filled
     // in; falls back to the cart for services from a category no longer loaded.

@@ -38,6 +38,7 @@ import type {RootState} from '../../redux/store';
 import {formatAmount} from '../../utils/utils';
 import {isCityServiceable} from '../../utils/geoUtils';
 import {useAutomaticRefresh} from '../../utils/useAutomaticRefresh';
+import {isIOSGuest} from '../../navigation/iosAuthentication';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
@@ -139,12 +140,13 @@ interface Props {
 const AddressPaymentScreen = ({navigation, route}: Props) => {
   const insets = useSafeAreaInsets();
   const dispatch = useDispatch<any>();
+  const guest = useSelector((state: RootState) => isIOSGuest(state.Auth?.token));
   const {profile, error: profileError} = useSelector((state: RootState) => state.User as any);
   const selectedCity = useSelector((state: RootState) => (state as any).City?.selectedCity);
   // Appended to service requests so the picker only offers services available in
   // the user's city (the backend applies each service's city mapping off this).
   const cityParam = selectedCity?.id ? `&cityId=${selectedCity.id}` : '';
-  const addresses: SavedAddress[] = profile?.addresses ?? [];
+  const addresses: SavedAddress[] = guest ? [] : profile?.addresses ?? [];
 
   const isLocationAvailable = (city?: string | null) =>
     isCityServiceable(city, selectedCity);
@@ -317,8 +319,10 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
   } | null>(null);
 
   useEffect(() => {
-    if (!profile) dispatch(fetchProfile());
-  }, []);
+    if (!guest && !profile) dispatch(fetchProfile());
+    // Fetch on entry and when an iOS guest signs in; retain Android mount behavior.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [guest]);
 
   // Re-sync from route.params whenever this screen is navigated to again with a
   // different booking. A native-stack navigate() to a screen already in the stack
@@ -561,6 +565,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
   };
 
   useEffect(() => {
+    if (guest) return;
     const paidServices = effectiveServices.filter((s: any) => !s.isFree);
     if (paidServices.length === 0) {
       // No paid services left — remove free service and clear both offer states
@@ -589,7 +594,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
       })
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveServices]);
+  }, [effectiveServices, guest]);
 
   const addFreeService = () => {
     if (!eligibleOffer) return;
@@ -616,6 +621,10 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
   };
 
   const handleBooking = async () => {
+    if (guest) {
+      navigation?.navigate('Login', {returnToCheckout: true});
+      return;
+    }
     if (isCartMode ? cartItems.length === 0 && cartServices.length === 0 : services.length === 0) {
       Alert.alert('No services', 'Please add at least one service.');
       return;
@@ -941,7 +950,9 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
             <Text style={styles.sectionTitle}>Delivery Address</Text>
           </View>
 
-          {!profile && profileError ? (
+          {guest ? (
+            <Text style={styles.addAddrText}>Log in to select your address and place your order.</Text>
+          ) : !profile && profileError ? (
             <View style={{alignItems: 'center', paddingVertical: sw(12), gap: sw(8)}}>
               <Text style={{fontFamily: fonts.textFont, fontSize: sw(12), color: '#888'}}>
                 {profileError}
@@ -1849,14 +1860,14 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
           </View>
         </View>
         <TouchableOpacity
-          style={[styles.continueBtn, (booking || !selectedAddr || subtotal < MIN_BOOKING_AMOUNT) && {opacity: 0.6}]}
+          style={[styles.continueBtn, (booking || (!guest && (!selectedAddr || subtotal < MIN_BOOKING_AMOUNT))) && {opacity: 0.6}]}
           activeOpacity={0.85}
-          disabled={booking || !selectedAddr || subtotal < MIN_BOOKING_AMOUNT}
+          disabled={booking || (!guest && (!selectedAddr || subtotal < MIN_BOOKING_AMOUNT))}
           onPress={handleBooking}>
           {booking ? (
             <ActivityIndicator color="#FFFFFF" />
           ) : (
-            <Text style={styles.continueText}>Continue</Text>
+            <Text style={styles.continueText}>{guest ? 'Continue with Login' : 'Continue'}</Text>
           )}
         </TouchableOpacity>
       </View>

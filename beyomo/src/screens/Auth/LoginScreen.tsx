@@ -25,7 +25,7 @@ import {resetTo} from '../../navigation/navigationReset';
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
 
-const LoginScreen = ({navigation}: any) => {
+const LoginScreen = ({navigation, route}: any) => {
   const dispatch = useDispatch<AppDispatch>();
   const {loading, message} = useSelector((state: RootState) => state.Auth);
   const [phone, setPhone] = useState('');
@@ -42,7 +42,7 @@ const LoginScreen = ({navigation}: any) => {
     if (!isValid || loading) return;
     const result = await dispatch(requestLoginOtp(phone));
     if (requestLoginOtp.fulfilled.match(result)) {
-      navigation.navigate('OTP', {phone});
+      navigation.navigate('OTP', {phone, ...(Platform.OS === 'ios' && route?.params?.returnToCheckout ? {returnToCheckout: true} : {})});
     }
   };
 
@@ -131,9 +131,23 @@ const LoginScreen = ({navigation}: any) => {
           </View>
 
           {Platform.OS === 'ios' && (
-            <TouchableOpacity activeOpacity={0.7} onPress={() => resetTo(navigation, 'Main')}>
-              <Text style={[styles.terms, styles.termsLink]}>Continue browsing</Text>
-            </TouchableOpacity>
+            <View style={styles.browseSection}>
+              <View style={styles.browseDivider}>
+                <View style={styles.browseDividerLine} />
+                <Text style={styles.browseDividerText}>or</Text>
+                <View style={styles.browseDividerLine} />
+              </View>
+              <TouchableOpacity
+                style={styles.browseButton}
+                activeOpacity={0.75}
+                accessibilityRole="button"
+                accessibilityLabel="Continue browsing without logging in"
+                onPress={() => resetTo(navigation, 'Main')}>
+                <Text style={styles.browseButtonText}>Continue browsing</Text>
+                <Ionicons name="arrow-forward" size={20} color="#FDD77A" />
+              </TouchableOpacity>
+              <Text style={styles.browseHint}>Explore services. Log in when you're ready to book.</Text>
+            </View>
           )}
 
           <View style={styles.bottomDeco}>
@@ -244,6 +258,43 @@ const styles = StyleSheet.create({
     marginTop: -sw(4),
   },
   termsLink: {color: '#C8A84C', fontWeight: '600'},
+  browseSection: {marginTop: sw(20), gap: sw(14)},
+  browseDivider: {flexDirection: 'row', alignItems: 'center', gap: sw(12)},
+  browseDividerLine: {flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.16)'},
+  browseDividerText: {
+    fontFamily: fonts.textFont,
+    fontSize: sw(12),
+    color: 'rgba(255,255,255,0.65)',
+  },
+  browseButton: {
+    minHeight: 48,
+    paddingVertical: sw(14),
+    paddingHorizontal: sw(20),
+    borderRadius: sw(12),
+    borderWidth: 1,
+    borderColor: 'rgba(253,215,122,0.55)',
+    backgroundColor: 'rgba(253,215,122,0.06)',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: sw(10),
+  },
+  browseButtonText: {
+    fontFamily: fonts.title,
+    fontSize: sw(15),
+    fontWeight: '600',
+    color: '#FDD77A',
+    flexShrink: 1,
+    textAlign: 'center',
+  },
+  browseHint: {
+    fontFamily: fonts.textFont,
+    fontSize: sw(12),
+    lineHeight: sw(18),
+    color: 'rgba(255,255,255,0.72)',
+    textAlign: 'center',
+    paddingHorizontal: sw(8),
+  },
   bottomDeco: {
     flexDirection: 'row',
     alignItems: 'center',

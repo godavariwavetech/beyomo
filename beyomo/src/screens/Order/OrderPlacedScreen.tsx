@@ -1,5 +1,6 @@
 import React, {useEffect} from 'react';
 import {
+  Platform,
   View,
   Text,
   TouchableOpacity,
@@ -10,6 +11,7 @@ import {
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import {fonts} from '../../config/theme';
+import {resetTo} from '../../navigation/navigationReset';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
@@ -28,7 +30,8 @@ const OrderPlacedScreen = ({navigation, route}: Props) => {
   useEffect(() => {
     if (!bookingId) return;
     const t = setTimeout(() => {
-      navigation?.replace('BookingDetail', {bookingId});
+      if (Platform.OS === 'ios') resetTo(navigation, 'Main');
+      else navigation?.replace('BookingDetail', {bookingId});
     }, AUTO_REDIRECT_MS);
     return () => clearTimeout(t);
   }, [bookingId]);
@@ -51,8 +54,8 @@ const OrderPlacedScreen = ({navigation, route}: Props) => {
         <TouchableOpacity
           style={styles.homeBtn}
           activeOpacity={0.85}
-          onPress={() => navigation?.replace('BookingDetail', {bookingId})}>
-          <Text style={styles.homeBtnText}>View Booking</Text>
+          onPress={() => Platform.OS === 'ios' ? resetTo(navigation, 'Main') : navigation?.replace('BookingDetail', {bookingId})}>
+          <Text style={styles.homeBtnText}>{Platform.OS === 'ios' ? 'Back to Home' : 'View Booking'}</Text>
         </TouchableOpacity>
       </View>
 
