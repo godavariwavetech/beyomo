@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useDispatch, useSelector} from 'react-redux';
 import {fonts} from '../../config/theme';
 import {requestLoginOtp, clearMessage} from '../../redux/reducers/auth';
@@ -26,6 +27,7 @@ const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
 
 const LoginScreen = ({navigation, route}: any) => {
+  const insets = useSafeAreaInsets();
   const dispatch = useDispatch<AppDispatch>();
   const {loading, message} = useSelector((state: RootState) => state.Auth);
   const [phone, setPhone] = useState('');
@@ -158,12 +160,30 @@ const LoginScreen = ({navigation, route}: any) => {
 
         </ScrollView>
       </KeyboardAvoidingView>
+      {Platform.OS === 'ios' && navigation.canGoBack() && (
+        <TouchableOpacity
+          style={[styles.backButton, {top: insets.top + sw(8)}]}
+          onPress={() => navigation.goBack()}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Go back">
+          <Ionicons name="arrow-back" size={sw(22)} color="#FDD77A" />
+        </TouchableOpacity>
+      )}
     </LinearGradient>
   );
 };
 
 const styles = StyleSheet.create({
   container: {flex: 1},
+  backButton: {
+    position: 'absolute',
+    left: sw(16),
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   flex: {flex: 1},
   scroll: {
     flexGrow: 1,
