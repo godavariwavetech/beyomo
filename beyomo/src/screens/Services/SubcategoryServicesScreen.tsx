@@ -25,6 +25,7 @@ import {addServicesToCart, decrementServiceQty, updateServicePricing} from '../.
 import api from '../../utils/api';
 import {endpoints} from '../../config/config';
 import {useAutomaticRefresh} from '../../utils/useAutomaticRefresh';
+import {requireIOSAuthentication} from '../../navigation/iosAuthentication';
 import {formatAmount} from '../../utils/utils';
 import {variantKeyOf} from '../../utils/serviceVariants';
 import {getCachedServices, setCachedServices, clearCachedServices} from '../../utils/servicesCache';
@@ -228,6 +229,7 @@ const SubcategoryServicesScreen = ({navigation, route}: Props) => {
   const activeFilterCount = (filterDiscount ? 1 : 0) + (filterDuration !== 'all' ? 1 : 0);
 
   const increment = (id: string) => {
+    if (!requireIOSAuthentication(navigation)) return;
     const svc = currentServices.find((s: any) => String(s.id) === id) ?? addedServicesMap[id];
     if (!svc) return;
     dispatch(addServicesToCart([{...svc, id: String(svc.id), qty: 1}]));

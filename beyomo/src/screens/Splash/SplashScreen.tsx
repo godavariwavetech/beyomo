@@ -19,6 +19,7 @@ import {BASE_URL, endpoints} from '../../config/config';
 import {setSelectedCity} from '../../redux/reducers/city';
 import {findCityForLocation} from '../../utils/geoUtils';
 import {checkForceUpdate} from '../../utils/versionCheck';
+import {browsingDestination} from '../../navigation/iosAuthentication';
 import type {RootState} from '../../redux/store';
 
 const {width, height} = Dimensions.get('window');
@@ -76,7 +77,7 @@ const SplashScreen = ({navigation}: any) => {
       navigation.replace(dest, params);
     };
 
-    const mainDest = token ? 'Main' : 'Login';
+    const mainDest = browsingDestination(token);
 
     const minWait = new Promise<void>(r => setTimeout(r, 2500));
 

@@ -18,6 +18,7 @@ import {fetchProfile} from '../../redux/reducers/user';
 import {fetchUserBookings} from '../../redux/reducers/bookings';
 import {logoutUser, actionLogout} from '../../redux/reducers/auth';
 import {resetToLogin} from '../../navigation/navigationReset';
+import {isIOSGuest} from '../../navigation/iosAuthentication';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
@@ -38,10 +39,13 @@ interface Props {
 const ProfileScreen = ({navigation}: Props) => {
   const insets = useSafeAreaInsets();
   const dispatch = useDispatch<any>();
-  const profile = useSelector((s: any) => s.User?.profile);
-  const bookings: any[] = useSelector((s: any) => s.Bookings?.list ?? []);
+  const guest = useSelector((s: any) => isIOSGuest(s.Auth?.token));
+  const profile = useSelector((s: any) => isIOSGuest(s.Auth?.token) ? null : s.User?.profile);
+  const savedBookings: any[] = useSelector((s: any) => s.Bookings?.list ?? []);
+  const bookings = guest ? [] : savedBookings;
 
   useEffect(() => {
+    if (guest) return;
     if (!profile) dispatch(fetchProfile());
     if (bookings.length === 0) dispatch(fetchUserBookings());
   }, []);
@@ -66,7 +70,7 @@ const ProfileScreen = ({navigation}: Props) => {
     ]);
   };
 
-  const displayName = profile?.name ?? profile?.fullName ?? '';
+  const displayName = guest ? 'Login / Register' : profile?.name ?? profile?.fullName ?? '';
   const displayPhone = profile?.phone ?? profile?.phoneNumber ?? '';
   const displayEmail = profile?.email ?? '';
   const displayAvatar = profile?.avatar ?? profile?.photo ?? profile?.profilePic ?? '';
@@ -201,9 +205,10 @@ const ProfileScreen = ({navigation}: Props) => {
           })}
         </View>
 
-        <TouchableOpacity style={styles.logoutBtn} activeOpacity={0.85} onPress={handleLogout}>
+        <TouchableOpacity style={styles.logoutBtn} activeOpacity={0.85}
+          onPress={guest ? () => navigation?.navigate('Login') : handleLogout}>
           <Ionicons name="log-out-outline" size={sw(20)} color="#DB1919" />
-          <Text style={styles.logoutText}>Logout</Text>
+          <Text style={styles.logoutText}>{guest ? 'Login / Register' : 'Logout'}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
