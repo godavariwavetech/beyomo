@@ -18,6 +18,7 @@ import {fonts} from '../../config/theme';
 import api from '../../utils/api';
 import {endpoints} from '../../config/config';
 import {addPackageToCart} from '../../redux/reducers/cart';
+import {requireIOSAuthentication} from '../../navigation/iosAuthentication';
 import CartBar from '../../components/CartBar/CartBar';
 import type {RootState} from '../../redux/store';
 import {formatAmount} from '../../utils/utils';
@@ -122,6 +123,7 @@ const CustomPackagesScreen = ({navigation}: Props) => {
   };
 
   const handleAdd = (pkg: any) => {
+    if (!requireIOSAuthentication(navigation)) return;
     const selectedIds = selections[pkg.id] ?? new Set<number>();
     if (selectedIds.size < pkg.serviceCount) {
       Alert.alert('Select services', `Please select ${pkg.serviceCount} services to continue.`);

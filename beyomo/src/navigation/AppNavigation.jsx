@@ -39,16 +39,30 @@ import CustomPackagesScreen from '../screens/Packages/CustomPackagesScreen';
 import SearchScreen from '../screens/Search/SearchScreen';
 import CustomTabBar from '../components/BottomTabBar/CustomTabBar';
 import {setupForegroundHandler, handleNotificationNavigation} from '../services/NotificationsService';
+import {withIOSAuthentication} from './iosAuthentication';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
+
+const AccountBookingsScreen = withIOSAuthentication(BookingsScreen);
+const AccountAddressPaymentScreen = withIOSAuthentication(AddressPaymentScreen);
+const AccountOrderPlacedScreen = withIOSAuthentication(OrderPlacedScreen);
+const AccountServiceCompletedScreen = withIOSAuthentication(ServiceCompletedScreen);
+const AccountBookingDetailScreen = withIOSAuthentication(BookingDetailScreen);
+const AccountNotificationsScreen = withIOSAuthentication(NotificationsScreen);
+const AccountEditProfileScreen = withIOSAuthentication(EditProfileScreen);
+const AccountDeleteAccountScreen = withIOSAuthentication(DeleteAccountScreen);
+const AccountMyAddressesScreen = withIOSAuthentication(MyAddressesScreen);
+const AccountCouponsScreen = withIOSAuthentication(CouponsScreen);
+const AccountReferEarnScreen = withIOSAuthentication(ReferEarnScreen);
+const AccountMyReviewsScreen = withIOSAuthentication(MyReviewsScreen);
 
 const MainTabs = () => (
   <Tab.Navigator
     tabBar={props => <CustomTabBar {...props} />}
     screenOptions={{headerShown: false}}>
     <Tab.Screen name="Home" component={HomeScreen} />
-    <Tab.Screen name="Bookings" component={BookingsScreen} />
+    <Tab.Screen name="Bookings" component={AccountBookingsScreen} />
     <Tab.Screen name="Profile" component={ProfileScreen} />
   </Tab.Navigator>
 );
@@ -93,17 +107,17 @@ const AppNavigation = () => {
         <Stack.Screen name="PackageDetail" component={PackageDetailScreen} />
         <Stack.Screen name="PackageListing" component={PackageListingScreen} />
         <Stack.Screen name="CustomPackages" component={CustomPackagesScreen} />
-        <Stack.Screen name="AddressPayment" component={AddressPaymentScreen} />
-        <Stack.Screen name="OrderPlaced" component={OrderPlacedScreen} />
-        <Stack.Screen name="ServiceCompleted" component={ServiceCompletedScreen} />
-        <Stack.Screen name="BookingDetail" component={BookingDetailScreen} />
-        <Stack.Screen name="Notifications" component={NotificationsScreen} />
-        <Stack.Screen name="EditProfile" component={EditProfileScreen} />
-        <Stack.Screen name="DeleteAccount" component={DeleteAccountScreen} />
-        <Stack.Screen name="MyAddresses" component={MyAddressesScreen} />
-        <Stack.Screen name="Coupons" component={CouponsScreen} />
-        <Stack.Screen name="ReferEarn" component={ReferEarnScreen} />
-        <Stack.Screen name="MyReviews" component={MyReviewsScreen} />
+        <Stack.Screen name="AddressPayment" component={AccountAddressPaymentScreen} />
+        <Stack.Screen name="OrderPlaced" component={AccountOrderPlacedScreen} />
+        <Stack.Screen name="ServiceCompleted" component={AccountServiceCompletedScreen} />
+        <Stack.Screen name="BookingDetail" component={AccountBookingDetailScreen} />
+        <Stack.Screen name="Notifications" component={AccountNotificationsScreen} />
+        <Stack.Screen name="EditProfile" component={AccountEditProfileScreen} />
+        <Stack.Screen name="DeleteAccount" component={AccountDeleteAccountScreen} />
+        <Stack.Screen name="MyAddresses" component={AccountMyAddressesScreen} />
+        <Stack.Screen name="Coupons" component={AccountCouponsScreen} />
+        <Stack.Screen name="ReferEarn" component={AccountReferEarnScreen} />
+        <Stack.Screen name="MyReviews" component={AccountMyReviewsScreen} />
         <Stack.Screen name="HelpSupport" component={HelpSupportScreen} />
         <Stack.Screen name="AboutUs" component={AboutUsScreen} />
       </Stack.Navigator>

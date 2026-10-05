@@ -20,6 +20,7 @@ import {useDispatch, useSelector} from 'react-redux';
 import {fonts} from '../../config/theme';
 import {requestLoginOtp, clearMessage} from '../../redux/reducers/auth';
 import type {AppDispatch, RootState} from '../../redux/store';
+import {resetTo} from '../../navigation/navigationReset';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
@@ -128,6 +129,12 @@ const LoginScreen = ({navigation}: any) => {
               </Text>
             </Text>
           </View>
+
+          {Platform.OS === 'ios' && (
+            <TouchableOpacity activeOpacity={0.7} onPress={() => resetTo(navigation, 'Main')}>
+              <Text style={[styles.terms, styles.termsLink]}>Continue browsing</Text>
+            </TouchableOpacity>
+          )}
 
           <View style={styles.bottomDeco}>
             <View style={styles.decoLine} />

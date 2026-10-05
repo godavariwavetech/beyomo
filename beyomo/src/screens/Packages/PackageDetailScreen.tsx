@@ -19,6 +19,7 @@ import {fonts} from '../../config/theme';
 import api from '../../utils/api';
 import {endpoints} from '../../config/config';
 import {addPackageToCart} from '../../redux/reducers/cart';
+import {requireIOSAuthentication} from '../../navigation/iosAuthentication';
 import CartBar from '../../components/CartBar/CartBar';
 import {formatAmount} from '../../utils/utils';
 
@@ -147,6 +148,7 @@ const PackageDetailScreen = ({navigation, route}: {navigation: any; route: any})
   };
 
   const handleBook = () => {
+    if (!requireIOSAuthentication(navigation)) return;
     let packageServices: any[];
 
     if (fullPkg.packageType === 'fixed') {
