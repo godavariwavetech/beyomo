@@ -20,11 +20,12 @@ import {fonts} from '../../config/theme';
 import {updateProfile} from '../../redux/reducers/user';
 import type {AppDispatch} from '../../redux/store';
 import {resetTo} from '../../navigation/navigationReset';
+import {finishAuthentication} from '../../navigation/iosAuthentication';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
 
-const RegisterScreen = ({navigation}: any) => {
+const RegisterScreen = ({navigation, route}: any) => {
   const dispatch = useDispatch<AppDispatch>();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -46,7 +47,7 @@ const RegisterScreen = ({navigation}: any) => {
       if (updateProfile.fulfilled.match(result)) {
         // Same reason as OTP: leaving Login/Register in the history lets Android
         // back walk a freshly signed-up user right back out of their session.
-        resetTo(navigation, 'Main');
+        if (!finishAuthentication(navigation, route?.params?.returnToCheckout)) resetTo(navigation, 'Main');
       } else {
         Alert.alert('Error', (result.payload as string) ?? 'Could not save profile. Please try again.');
       }

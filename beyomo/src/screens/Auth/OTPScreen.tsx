@@ -27,6 +27,7 @@ import {findCityForLocation} from '../../utils/geoUtils';
 import type {AppDispatch, RootState} from '../../redux/store';
 import {pollOtpAutofill, cancelOtpAutofill} from '../../utils/otpAutofill';
 import {resetTo} from '../../navigation/navigationReset';
+import {finishAuthentication} from '../../navigation/iosAuthentication';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
@@ -107,9 +108,9 @@ const OTPScreen = ({navigation, route}: any) => {
   // of sign-up returns somewhere sensible rather than closing the app.
   const goNext = (nextRoute: string) => {
     if (nextRoute === 'Main') {
-      resetTo(navigation, 'Main');
+      if (!finishAuthentication(navigation, route?.params?.returnToCheckout)) resetTo(navigation, 'Main');
     } else {
-      navigation.replace(nextRoute);
+      navigation.replace(nextRoute, Platform.OS === 'ios' && route?.params?.returnToCheckout ? {returnToCheckout: true} : undefined);
     }
   };
 

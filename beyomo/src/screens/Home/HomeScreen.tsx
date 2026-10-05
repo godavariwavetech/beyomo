@@ -33,7 +33,7 @@ import api from '../../utils/api';
 import { endpoints } from '../../config/config';
 import { formatAmount } from '../../utils/utils';
 import { useKeyboardVisible } from '../../utils/useKeyboardVisible';
-import {requireIOSAuthentication, isIOSGuest} from '../../navigation/iosAuthentication';
+import {isIOSGuest} from '../../navigation/iosAuthentication';
 
 const BRAND_LOGOS = [
   require('../../assets/brands/b1.png'),
@@ -222,7 +222,6 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
     .slice(0, 3);
 
   const rebookServices = (booking: any) => {
-    if (!requireIOSAuthentication(navigation)) return;
     const services = (booking.services ?? []).map((s: any) => ({
       id: String(s.id ?? s.serviceId ?? ''),
       name: s.name,
@@ -282,7 +281,6 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
   };
 
   const handleAddPopular = (svc: any) => {
-    if (!requireIOSAuthentication(navigation)) return;
     const id = String(svc.id ?? svc._id);
     dispatch(addServicesToCart([{
       id,
@@ -733,14 +731,14 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
                           <TouchableOpacity
                             style={styles.popularStepBtn}
                             activeOpacity={0.7}
-                            onPress={() => requireIOSAuthentication(navigation) && dispatch(decrementServiceQty(id))}>
+                            onPress={() => dispatch(decrementServiceQty(id))}>
                             <Ionicons name="remove" size={sw(14)} color="#105641" />
                           </TouchableOpacity>
                           <Text style={styles.popularStepCount}>{qty}</Text>
                           <TouchableOpacity
                             style={styles.popularStepBtn}
                             activeOpacity={0.7}
-                            onPress={() => requireIOSAuthentication(navigation) && dispatch(incrementServiceQty(id))}>
+                            onPress={() => dispatch(incrementServiceQty(id))}>
                             <Ionicons name="add" size={sw(14)} color="#105641" />
                           </TouchableOpacity>
                         </View>
@@ -866,11 +864,11 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
                     ) : (
                       <View style={styles.sheetStepperRow}>
                         <View style={styles.sheetStepper}>
-                          <TouchableOpacity style={styles.sheetStepBtn} activeOpacity={0.7} onPress={() => requireIOSAuthentication(navigation) && dispatch(decrementServiceQty(detailId))}>
+                          <TouchableOpacity style={styles.sheetStepBtn} activeOpacity={0.7} onPress={() => dispatch(decrementServiceQty(detailId))}>
                             <Ionicons name="remove" size={sw(18)} color="#105641" />
                           </TouchableOpacity>
                           <Text style={styles.sheetStepCount}>{detailQty}</Text>
-                          <TouchableOpacity style={styles.sheetStepBtn} activeOpacity={0.7} onPress={() => requireIOSAuthentication(navigation) && dispatch(incrementServiceQty(detailId))}>
+                          <TouchableOpacity style={styles.sheetStepBtn} activeOpacity={0.7} onPress={() => dispatch(incrementServiceQty(detailId))}>
                             <Ionicons name="add" size={sw(18)} color="#105641" />
                           </TouchableOpacity>
                         </View>
