@@ -20,6 +20,7 @@ import {setSelectedCity} from '../../redux/reducers/city';
 import {clearCart} from '../../redux/reducers/cart';
 import type {RootState} from '../../redux/store';
 import type {CityGeo} from '../../utils/geoUtils';
+import {browsingDestination} from '../../navigation/iosAuthentication';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
@@ -46,7 +47,7 @@ const CitySelectorScreen = ({navigation, route}: Props) => {
   const [selected, setSelected] = useState<CityGeo | null>(currentCity ?? null);
 
   // nextRoute lets SplashScreen tell us where to go after city selection
-  const nextRoute: string = route?.params?.nextRoute ?? (token ? 'Main' : 'Login');
+  const nextRoute: string = route?.params?.nextRoute ?? browsingDestination(token);
   const returnToHome: boolean = route?.params?.returnToHome ?? false;
 
   useEffect(() => {
