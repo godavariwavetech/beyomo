@@ -81,7 +81,7 @@ const SplashScreen = ({navigation}: any) => {
       }
     };
 
-    const mainDest = browsingDestination(token);
+    const mainDest = Platform.OS === 'ios' && !token ? 'Login' : browsingDestination(token);
 
     const minWait = new Promise<void>(r => setTimeout(r, 2500));
 
