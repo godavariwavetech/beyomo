@@ -1,4 +1,4 @@
-import React, {useEffect} from 'react';
+import React, {useEffect, useState} from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,9 @@ import {
   Dimensions,
   StatusBar,
   Alert,
+  Modal,
+  Platform,
+  ActivityIndicator,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
@@ -43,6 +46,8 @@ const ProfileScreen = ({navigation}: Props) => {
   const profile = useSelector((s: any) => isIOSGuest(s.Auth?.token) ? null : s.User?.profile);
   const savedBookings: any[] = useSelector((s: any) => s.Bookings?.list ?? []);
   const bookings = guest ? [] : savedBookings;
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
 
   useEffect(() => {
     if (guest) return;
@@ -56,6 +61,10 @@ const ProfileScreen = ({navigation}: Props) => {
   const completedCount = bookings.filter((b: any) => b.status === 'completed').length;
 
   const handleLogout = () => {
+    if (Platform.OS === 'android') {
+      setShowLogoutModal(true);
+      return;
+    }
     Alert.alert('Logout', 'Are you sure you want to logout?', [
       {text: 'Cancel', style: 'cancel'},
       {
@@ -68,6 +77,19 @@ const ProfileScreen = ({navigation}: Props) => {
         },
       },
     ]);
+  };
+
+  const confirmLogout = async () => {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    try {
+      await dispatch(logoutUser(undefined));
+      dispatch(actionLogout());
+      setShowLogoutModal(false);
+      resetToLogin(navigation);
+    } finally {
+      setLoggingOut(false);
+    }
   };
 
   const displayName = guest ? 'Login / Register' : profile?.name ?? profile?.fullName ?? '';
@@ -218,6 +240,46 @@ const ProfileScreen = ({navigation}: Props) => {
           <Text style={styles.deleteAccountText}>Delete Account</Text>
         </TouchableOpacity>
       </ScrollView>
+      {Platform.OS === 'android' && (
+        <Modal
+          transparent
+          visible={showLogoutModal}
+          animationType="fade"
+          statusBarTranslucent
+          onRequestClose={() => !loggingOut && setShowLogoutModal(false)}>
+          <View style={styles.logoutOverlay}>
+            <View style={styles.logoutModal} accessibilityViewIsModal>
+              <View style={styles.logoutModalIcon}>
+                <Ionicons name="log-out-outline" size={sw(28)} color="#DB1919" />
+              </View>
+              <Text style={styles.logoutModalTitle}>Logout</Text>
+              <Text style={styles.logoutModalMessage}>Are you sure you want to logout?</Text>
+              <View style={styles.logoutModalActions}>
+                <TouchableOpacity
+                  style={styles.logoutCancelButton}
+                  accessibilityRole="button"
+                  disabled={loggingOut}
+                  activeOpacity={0.75}
+                  onPress={() => setShowLogoutModal(false)}>
+                  <Text style={styles.logoutCancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.logoutConfirmButton}
+                  accessibilityRole="button"
+                  accessibilityLabel="Confirm logout"
+                  accessibilityState={{disabled: loggingOut, busy: loggingOut}}
+                  disabled={loggingOut}
+                  activeOpacity={0.75}
+                  onPress={confirmLogout}>
+                  {loggingOut ? <ActivityIndicator color="#FFFFFF" /> : (
+                    <Text style={styles.logoutConfirmText}>Logout</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
     </View>
   );
 };
@@ -324,6 +386,45 @@ const styles = StyleSheet.create({
     paddingVertical: sw(10),
   },
   logoutText: {fontFamily: fonts.textFont, fontSize: sw(12), fontWeight: '500', color: '#DB1919', lineHeight: sw(18)},
+  logoutOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: sw(24),
+  },
+  logoutModal: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: '#FEFEFE',
+    borderRadius: sw(20),
+    padding: sw(24),
+    alignItems: 'center',
+    gap: sw(12),
+  },
+  logoutModalIcon: {
+    width: sw(56),
+    height: sw(56),
+    borderRadius: sw(28),
+    backgroundColor: '#FDECEC',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoutModalTitle: {fontFamily: fonts.title, fontSize: sw(20), fontWeight: '700', color: '#012823'},
+  logoutModalMessage: {fontFamily: fonts.textFont, fontSize: sw(14), color: '#5C5C5C', textAlign: 'center'},
+  logoutModalActions: {flexDirection: 'row', gap: sw(12), marginTop: sw(12)},
+  logoutCancelButton: {
+    flex: 1, minHeight: 48, paddingHorizontal: sw(12), paddingVertical: sw(12),
+    borderRadius: sw(10), borderWidth: 1, borderColor: '#DFDFDF',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  logoutConfirmButton: {
+    flex: 1, minHeight: 48, paddingHorizontal: sw(12), paddingVertical: sw(12),
+    borderRadius: sw(10), backgroundColor: '#DB1919',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  logoutCancelText: {fontFamily: fonts.textFont, fontSize: sw(14), fontWeight: '600', color: '#012823'},
+  logoutConfirmText: {fontFamily: fonts.textFont, fontSize: sw(14), fontWeight: '600', color: '#FFFFFF'},
 
   deleteAccountBtn: {alignItems: 'center', paddingVertical: sw(6)},
   deleteAccountText: {fontFamily: fonts.textFont, fontSize: sw(12), fontWeight: '500', color: '#828282', textDecorationLine: 'underline'},
