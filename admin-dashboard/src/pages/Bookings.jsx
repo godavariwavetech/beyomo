@@ -8,6 +8,7 @@ import { Badge } from '../components/common/Badge';
 import Modal from '../components/common/Modal';
 import api from '../services/api';
 import { formatAmount, formatRupee } from '../utils/format';
+import OrderPackages from '../components/bookings/OrderPackages';
 
 const exportCSV = (data, filename) => {
   const headers = ['ID','Customer','User ID','Partner','Partner ID','Service','Amount','Commission','Status','Date','Slot','Payment'];
@@ -1434,12 +1435,26 @@ export default function Bookings() {
 // ── New Booking (support/admin creates a booking on a customer's behalf, e.g. a
 // phone-support call requesting a one-time service) ──────────────────────────────
 function NewBookingModal({ isOpen, onClose, onCreated }) {
-  const { showToast } = useAuth();
+  const { showToast, user } = useAuth();
 
   const [userSearch, setUserSearch]     = useState('');
   const [userResults, setUserResults]   = useState([]);
   const [searchingUser, setSearchingUser] = useState(false);
+  const [completedUserSearch, setCompletedUserSearch] = useState('');
+  const [userSearchError, setUserSearchError] = useState('');
   const [customer, setCustomer]         = useState(null); // full user record incl. addresses
+  const [newCustomer, setNewCustomer] = useState(null);
+  const [creatingCustomer, setCreatingCustomer] = useState(false);
+  const [cities, setCities] = useState([]);
+  const [packageCatalog, setPackageCatalog] = useState([]);
+  const [packageCart, setPackageCart] = useState([]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogError, setCatalogError] = useState('');
+  const [couponCode, setCouponCode] = useState('');
+  const [offerId, setOfferId] = useState('');
+  const [review, setReview] = useState(null);
+  const [reviewing, setReviewing] = useState(false);
+  const [reviewError, setReviewError] = useState('');
 
   const [addressMode, setAddressMode]   = useState('saved'); // 'saved' | 'new'
   const [selectedAddressId, setSelectedAddressId] = useState('');
@@ -1459,7 +1474,8 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
   const [submitting, setSubmitting]     = useState(false);
 
   const resetAll = () => {
-    setUserSearch(''); setUserResults([]); setCustomer(null);
+    setNewCustomer(null); setPackageCart([]); setCouponCode(''); setOfferId(''); setReview(null); setReviewError('');
+    setUserSearch(''); setUserResults([]); setCompletedUserSearch(''); setUserSearchError(''); setCustomer(null);
     setAddressMode('saved'); setSelectedAddressId('');
     setNewAddress({ label:'Home', line1:'', line2:'', city:'', state:'', pincode:'' });
     setCart([]); setSvcSearch(''); setAddMode('catalog');
@@ -1470,25 +1486,88 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
   useEffect(() => {
     if (!isOpen) return;
     resetAll();
-    if (allServices.length === 0) {
-      api.get('/api/v1/admin/services', { params: { limit: 500 } })
-        .then(res => setAllServices(res.data?.data?.data ?? res.data?.data ?? []))
-        .catch(() => {});
-    }
+    api.get('/api/v1/admin/cities')
+      .then(res => setCities((res.data?.data ?? []).filter(c => c.isActive)))
+      .catch(() => setCatalogError('Unable to load service cities. Close and reopen this form to retry.'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
+  const serviceAddress = addressMode === 'saved'
+    ? (customer?.addresses ?? []).find(a => String(a.id) === selectedAddressId)
+    : newAddress;
+  const serviceCity = cities.find(c => c.name.trim().toLowerCase() === (serviceAddress?.city ?? '').trim().toLowerCase());
+
   useEffect(() => {
-    if (!isOpen || !userSearch.trim()) { setUserResults([]); return; }
+    let active = true;
+    setAllServices([]); setPackageCatalog([]); setCart([]); setPackageCart([]);
+    if (!isOpen || !serviceCity) return;
+    setCatalogLoading(true); setCatalogError('');
+    api.get('/api/v1/admin/booking-catalog', {params: {cityId: serviceCity.id}})
+      .then(res => { if (active) {setAllServices(res.data.data.services); setPackageCatalog(res.data.data.packages);} })
+      .catch(err => {if (active) setCatalogError(err.response?.data?.message ?? 'Unable to load the catalog.');})
+      .finally(() => {if (active) setCatalogLoading(false);});
+    return () => {active = false;};
+  }, [isOpen, serviceCity?.id]);
+
+  const buildPayload = () => ({
+    useCustomerFlow: true, userId: customer?.id ?? customer?._id,
+    cityId: serviceCity?.id,
+    services: cart.map(item => item.type === 'catalog'
+      ? {id: Number(item.svc.id ?? item.svc._id), qty: item.qty}
+      : {isAddOn: true, name: item.name, price: item.price, qty: item.qty}),
+    packages: packageCart.map(item => ({packageId: Number(item.pkg.id), qty: item.qty,
+      services: item.serviceIds.map(id => ({id: Number(id), qty: item.qty}))})),
+    address: serviceAddress ? {
+      label: serviceAddress.label, line1: serviceAddress.line1, line2: serviceAddress.line2,
+      city: serviceAddress.city, state: serviceAddress.state, pincode: serviceAddress.pincode,
+      lat: serviceAddress.lat ?? null, lng: serviceAddress.lng ?? null,
+    } : undefined,
+    scheduledAt: scheduleValue && !Number.isNaN(new Date(scheduleValue).getTime()) ? new Date(scheduleValue).toISOString() : undefined,
+    paymentMode: 'cod', notes: notes || undefined,
+    couponCode: couponCode.trim() || undefined, offerId: offerId ? Number(offerId) : undefined,
+  });
+  const payloadKey = JSON.stringify(buildPayload());
+  const reviewed = review?.key === payloadKey;
+
+  const reviewOrder = async () => {
+    if (!customer || !serviceAddress || !serviceCity) {
+      setReviewError('Select a customer and an address in an active service city.'); return;
+    }
+    const error = validateSchedule();
+    if (error) {setReviewError(error); return;}
+    setReviewing(true); setReviewError('');
+    try {
+      const res = await api.post('/api/v1/admin/bookings/preview', buildPayload());
+      setReview({key: payloadKey, data: res.data.data});
+    } catch (err) {
+      setReview(null); setReviewError(err.response?.data?.message ?? 'Unable to review this booking.');
+    } finally {setReviewing(false);}
+  };
+
+  useEffect(() => {
+    let active = true;
+    const search = userSearch.trim();
+    setUserResults([]); setCompletedUserSearch(''); setUserSearchError('');
+    if (!isOpen || !search || customer || newCustomer) { setSearchingUser(false); return; }
     setSearchingUser(true);
     const t = setTimeout(() => {
-      api.get('/api/v1/admin/users', { params: { search: userSearch.trim(), limit: 10 } })
-        .then(res => setUserResults(res.data?.data?.data ?? res.data?.data ?? []))
-        .catch(() => setUserResults([]))
-        .finally(() => setSearchingUser(false));
+      api.get('/api/v1/admin/users', { params: { search, limit: 10 } })
+        .then(res => {
+          if (!active) return;
+          setUserResults(res.data?.data?.data ?? res.data?.data ?? []);
+          setCompletedUserSearch(search);
+        })
+        .catch(() => { if (active) setUserSearchError('Unable to search customers. Please try again.'); })
+        .finally(() => { if (active) setSearchingUser(false); });
     }, 350);
-    return () => clearTimeout(t);
-  }, [userSearch, isOpen]);
+    return () => {active = false; clearTimeout(t);};
+  }, [userSearch, isOpen, customer, newCustomer]);
+
+  const searchedCustomerName = /\p{L}/u.test(userSearch.trim()) ? userSearch.trim() : '';
+  const searchedCustomerPhone = /^\d{10}$/.test(userSearch.trim()) ? userSearch.trim() : '';
+  const canAddNewCustomer = !!(searchedCustomerName || searchedCustomerPhone)
+    && completedUserSearch === userSearch.trim()
+    && !searchingUser && !userSearchError && userResults.length === 0;
 
   const selectCustomer = async (u) => {
     setUserResults([]);
@@ -1519,44 +1598,35 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
     const now = Date.now();
     if (time < now + ONE_HOUR_MS) return 'Must be scheduled at least 1 hour from now.';
     if (time > now + ONE_MONTH_MS) return 'Cannot be scheduled more than 1 month in advance.';
+    const indiaTime = new Date(time + 5.5 * ONE_HOUR_MS);
+    const minutes = indiaTime.getUTCHours() * 60 + indiaTime.getUTCMinutes();
+    if (minutes < 8 * 60 || minutes > 20 * 60) return 'Choose a slot between 8 AM and 8 PM IST.';
     return '';
   };
 
   const handleSubmit = async () => {
     if (!customer) { showToast('Please select a customer.', 'warning'); return; }
-    if (!cart.length) { showToast('Add at least one service.', 'warning'); return; }
+    if (!cart.length && !packageCart.length) { showToast('Add at least one service or package.', 'warning'); return; }
+    if (!reviewed) {showToast('Review the updated total before creating this booking.', 'warning'); return;}
 
-    let address;
     if (addressMode === 'saved') {
       const saved = (customer.addresses ?? []).find(a => String(a.id) === selectedAddressId);
       if (!saved) { showToast('Please select a saved address.', 'warning'); return; }
-      address = { label: saved.label, line1: saved.line1, line2: saved.line2, city: saved.city, state: saved.state, pincode: saved.pincode, lat: saved.lat, lng: saved.lng };
     } else {
       if (!newAddress.line1.trim() || !newAddress.city.trim() || !newAddress.state.trim() || !newAddress.pincode.trim()) {
         showToast('Please fill in address line, city, state and pincode.', 'warning'); return;
       }
-      address = newAddress;
     }
 
     const scheduleError = validateSchedule();
     if (scheduleError) { showToast(scheduleError, 'warning'); return; }
 
-    const services = cart.map(item => item.type === 'catalog'
-      ? { id: item.svc.id ?? item.svc._id, qty: item.qty }
-      : { isAddOn: true, name: item.name, price: item.price, qty: item.qty });
-
     setSubmitting(true);
     try {
-      await api.post('/api/v1/admin/bookings', {
-        userId: customer.id ?? customer._id,
-        services,
-        address,
-        scheduledAt: new Date(scheduleValue).toISOString(),
-        paymentMode,
-        notes: notes || undefined,
-      });
+      await api.post('/api/v1/admin/bookings', {...buildPayload(), expectedTotal: review.data.totalAmount});
       onCreated();
     } catch (err) {
+      if (err.response?.status === 409) setReview(null);
       const msg = err.response?.data?.message ?? 'Failed to create booking.';
       showToast(msg, 'danger');
     }
@@ -1567,23 +1637,46 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
     <Modal isOpen={isOpen} onClose={onClose} title="New Booking for Customer" size="lg" footer={
       <>
         <button className="btn btn-outline btn-sm" onClick={onClose}>Cancel</button>
-        <button className="btn btn-primary btn-sm" onClick={handleSubmit} disabled={submitting} style={{ display:'flex', alignItems:'center', gap:6 }}>
-          {submitting ? 'Creating…' : <>Create Booking{cart.length ? ` · ₹${fmt(addonTotal)}` : ''}</>}
+        <button className="btn btn-outline btn-sm" onClick={reviewOrder} disabled={reviewing || submitting}>
+          {reviewing ? 'Reviewing…' : 'Review Total'}
+        </button>
+        <button className="btn btn-primary btn-sm" onClick={handleSubmit} disabled={submitting || reviewing || !reviewed} style={{ display:'flex', alignItems:'center', gap:6 }}>
+          {submitting ? 'Creating…' : <>Create Booking{reviewed ? ` · ₹${fmt(review.data.totalAmount)}` : ''}</>}
         </button>
       </>
     }>
       <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
         {/* Customer */}
         <InfoBlock label="Customer">
+          {!customer && (newCustomer || canAddNewCustomer) && ['super_admin', 'admin'].includes(user?.role) && <>
+            {!newCustomer && <p style={{fontSize:12}}>No customer found for {userSearch.trim()}.</p>}
+            <button className="btn btn-outline btn-sm" onClick={() => setNewCustomer(prev => prev ? null : {name:searchedCustomerName, phone:searchedCustomerPhone, email:''})}>
+              {newCustomer ? 'Choose Existing Customer' : 'Add New Customer'}
+            </button>
+            {newCustomer && <div style={{display:'flex', flexDirection:'column', gap:8, margin:'8px 0'}}>
+              {['name', 'phone', 'email'].map(field => <input key={field} className="form-input" placeholder={field === 'email' ? 'Email (optional)' : `Customer ${field}`}
+                value={newCustomer[field]} onChange={e => setNewCustomer(prev => ({...prev, [field]: e.target.value}))} />)}
+              <button className="btn btn-primary btn-sm" disabled={creatingCustomer || !newCustomer.name.trim() || !/^\d{10}$/.test(newCustomer.phone.trim())}
+                onClick={async () => {
+                  setCreatingCustomer(true);
+                  try {
+                    const res = await api.post('/api/v1/admin/users', {...newCustomer, name:newCustomer.name.trim(), phone:newCustomer.phone.trim()});
+                    await selectCustomer(res.data.data); setNewCustomer(null);
+                  } catch (err) {showToast(err.response?.data?.message ?? 'Unable to create customer.', 'danger');}
+                  finally {setCreatingCustomer(false);}
+                }}>{creatingCustomer ? 'Saving…' : 'Save Customer'}</button>
+            </div>}
+          </>}
           {!customer ? (
-            <div style={{ position:'relative' }}>
+            <div style={{ position:'relative', display:newCustomer ? 'none' : undefined }}>
               <input
                 type="text"
                 placeholder="Search by name or phone…"
                 value={userSearch}
-                onChange={e => setUserSearch(e.target.value)}
+                onChange={e => {setUserSearch(e.target.value); setCompletedUserSearch(''); setUserResults([]);}}
                 style={{ width:'100%', border:'1px solid var(--c-border)', borderRadius:'var(--r-sm)', padding:'7px 10px', fontSize:13, background:'var(--c-bg-card)', color:'var(--c-text-primary)', boxSizing:'border-box' }}
               />
+              {userSearchError && <div role="alert" style={{fontSize:12}}>{userSearchError}</div>}
               {(userResults.length > 0 || searchingUser) && (
                 <div style={{ position:'absolute', zIndex:5, top:'calc(100% + 4px)', left:0, right:0, maxHeight:200, overflowY:'auto', border:'1px solid var(--c-border)', borderRadius:'var(--r-sm)', background:'var(--c-bg-card)', boxShadow:'0 4px 12px rgba(0,0,0,0.12)' }}>
                   {searchingUser && <div style={{ padding:10, fontSize:12, color:'var(--c-text-muted)' }}>Searching…</div>}
@@ -1647,7 +1740,11 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
                   { key:'state', placeholder:'State' },
                   { key:'pincode', placeholder:'Pincode' },
                 ].map(f => (
-                  <input key={f.key} type="text" placeholder={f.placeholder} value={newAddress[f.key]}
+                  f.key === 'city' ? <select key={f.key} className="form-input" value={newAddress.city}
+                    onChange={e => setNewAddress(prev => ({...prev, city:e.target.value}))}>
+                    <option value="">Select service city</option>
+                    {cities.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                  </select> : <input key={f.key} type="text" placeholder={f.placeholder} value={newAddress[f.key]}
                     onChange={e => setNewAddress(prev => ({ ...prev, [f.key]: e.target.value }))}
                     style={{ width:'100%', border:'1px solid var(--c-border)', borderRadius:'var(--r-sm)', padding:'6px 10px', fontSize:13, background:'var(--c-bg-card)', color:'var(--c-text-primary)', boxSizing:'border-box' }} />
                 ))}
@@ -1655,6 +1752,12 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
             )}
           </InfoBlock>
         )}
+
+        {customer && <div style={{fontSize: 12}}>
+          {serviceCity ? `Service city: ${serviceCity.name}` : 'Choose an address in an active service city.'}
+          {catalogLoading && ' Loading catalog…'}
+          {catalogError && <div role="alert" style={{color: 'var(--c-danger)'}}>{catalogError}</div>}
+        </div>}
 
         {/* Services */}
         {customer && (
@@ -1694,7 +1797,7 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
                               onClick={() => setCart(prev => prev.map(item => (item.type === 'catalog' && String(item.svc.id ?? item.svc._id) === svcId) ? {...item, qty: Math.max(1, item.qty-1)} : item))}>–</button>
                             <span style={{ minWidth:20, textAlign:'center', fontSize:13, fontWeight:700 }}>{cartItem.qty}</span>
                             <button style={{ width:24, height:24, border:'1px solid var(--c-border)', borderRadius:4, background:'var(--c-bg-card)', cursor:'pointer', fontWeight:700 }}
-                              onClick={() => setCart(prev => prev.map(item => (item.type === 'catalog' && String(item.svc.id ?? item.svc._id) === svcId) ? {...item, qty: item.qty+1} : item))}>+</button>
+                              onClick={() => setCart(prev => prev.map(item => (item.type === 'catalog' && String(item.svc.id ?? item.svc._id) === svcId) ? {...item, qty: Math.min(5, item.qty+1)} : item))}>+</button>
                           </div>
                         )}
                       </div>
@@ -1713,7 +1816,7 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
                   <div style={{ display:'flex', alignItems:'center', gap:6, border:'1px solid var(--c-border)', borderRadius:'var(--r-sm)', padding:'0 8px' }}>
                     <button style={{ width:22, height:22, border:'1px solid var(--c-border)', borderRadius:4, background:'var(--c-bg-card)', cursor:'pointer', fontWeight:700 }} onClick={() => setAddonQty(q => Math.max(1, q-1))}>–</button>
                     <span style={{ minWidth:18, textAlign:'center', fontSize:13, fontWeight:700 }}>{addonQty}</span>
-                    <button style={{ width:22, height:22, border:'1px solid var(--c-border)', borderRadius:4, background:'var(--c-bg-card)', cursor:'pointer', fontWeight:700 }} onClick={() => setAddonQty(q => q+1)}>+</button>
+                    <button style={{ width:22, height:22, border:'1px solid var(--c-border)', borderRadius:4, background:'var(--c-bg-card)', cursor:'pointer', fontWeight:700 }} onClick={() => setAddonQty(q => Math.min(5, q+1))}>+</button>
                   </div>
                 </div>
                 <button className="btn btn-outline btn-sm" style={{ alignSelf:'flex-start', display:'flex', alignItems:'center', gap:6 }}
@@ -1743,7 +1846,7 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
                   </div>
                 ))}
                 <div style={{ display:'flex', justifyContent:'space-between', fontWeight:700, fontSize:13, marginTop:6, borderTop:'1px solid var(--c-border)', paddingTop:6 }}>
-                  <span>Total</span><span>₹{fmt(addonTotal)}</span>
+                  <span>Individual / custom services subtotal</span><span>₹{fmt(addonTotal)}</span>
                 </div>
               </div>
             )}
@@ -1751,6 +1854,30 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
         )}
 
         {/* Schedule / Payment / Notes */}
+        {customer && serviceCity && (
+          <InfoBlock label="Combos & Packages">
+            <OrderPackages catalog={packageCatalog} services={allServices} value={packageCart} onChange={setPackageCart} />
+          </InfoBlock>
+        )}
+        {customer && (
+          <InfoBlock label="Discounts & Order Review">
+            <input className="form-input" placeholder="Coupon code (optional)" value={couponCode} onChange={e => setCouponCode(e.target.value)} />
+            {review?.data.eligibleOffers?.length > 0 && <select className="form-input" value={offerId} onChange={e => setOfferId(e.target.value)}>
+              <option value="">No free-service offer</option>
+              {review.data.eligibleOffers.map(o => <option key={o.offerId} value={o.offerId}>{o.title} — Free {o.freeService.name}</option>)}
+            </select>}
+            {offerId && <button className="btn btn-ghost btn-sm" onClick={() => setOfferId('')}>Remove offer</button>}
+            <p style={{fontSize:12}}>Minimum booking subtotal: ₹500. Review Total calculates current prices, coupon discount and GST.</p>
+            {reviewError && <div role="alert" style={{color:'var(--c-danger)'}}>{reviewError}</div>}
+            {reviewed ? <>
+              <AmtRow label="Subtotal" value={formatRupee(review.data.baseAmount)} />
+              <AmtRow label="Coupon discount" value={formatRupee(review.data.couponDiscountAmount)} />
+              <AmtRow label="GST" value={formatRupee(review.data.taxAmount)} />
+              <AmtRow label="Final total" value={formatRupee(review.data.totalAmount)} />
+              {review.data.services.filter(s => s.addedByOffer).map(s => <div key={s.serviceId}>{s.name} — FREE</div>)}
+            </> : review && <p>Order changed. Review Total again before creating.</p>}
+          </InfoBlock>
+        )}
         {customer && (
           <InfoBlock label="Schedule & Payment">
             <div style={{ display:'flex', gap:8, marginBottom:8 }}>
@@ -1761,7 +1888,6 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
               <select value={paymentMode} onChange={e => setPaymentMode(e.target.value)}
                 style={{ border:'1px solid var(--c-border)', borderRadius:'var(--r-sm)', padding:'6px 10px', fontSize:13, background:'var(--c-bg-card)', color:'var(--c-text-primary)' }}>
                 <option value="cod">Cash on Delivery</option>
-                <option value="online">Online</option>
               </select>
             </div>
             <div style={{ fontSize:11, color:'var(--c-text-muted)', marginBottom:8 }}>Bookings must be 1 hour to 1 month out, between 8 AM–8 PM.</div>

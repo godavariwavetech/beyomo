@@ -70,7 +70,7 @@ const buildMultiPackageBooking = async (packagesInput, serviceMap, priceOf = (sv
 // from the same code that createBooking uses. Returns everything persistBooking needs
 // to actually create the Booking row.
 //   No side effects: coupon.increment happens in persistBooking, not here.
-const prepareBooking = async (userId, bookingData) => {
+const prepareBooking = async (userId, bookingData, options = {}) => {
   const { services: serviceItems = [], extraServices = [], packages: packagesInput = [], partnerId, address, scheduledAt, couponCode, offerId, packageId, packageQty = 1, paymentMode, notes, cityId: selectedCityId = null } = bookingData;
   const isMultiPackage = Array.isArray(packagesInput) && packagesInput.length > 0;
 
@@ -208,6 +208,12 @@ const prepareBooking = async (userId, bookingData) => {
     enrichedServices = [...enrichedServices, ...enrichedExtraServices];
   }
 
+  if (options.additionalServices?.length) {
+    enrichedServices = [...enrichedServices, ...options.additionalServices];
+    enrichedExtraServices.push(...options.additionalServices);
+    baseAmount += options.additionalServices.reduce((sum, s) => sum + s.price * s.qty, 0);
+  }
+
   if (baseAmount < MIN_BOOKING_AMOUNT) {
     throw new AppError(`Minimum booking amount is ₹${MIN_BOOKING_AMOUNT}. Please add more services to continue.`, 400);
   }
@@ -251,7 +257,7 @@ const prepareBooking = async (userId, bookingData) => {
   let appliedOfferId = null;
   if (offerId) {
     const cartServiceIds = enrichedServices.map(s => s.serviceId);
-    const { freeService } = await offersService.validateAndApply(offerId, { serviceIds: cartServiceIds, totalAmount: baseAmount });
+    const { freeService } = await offersService.validateAndApply(offerId, { serviceIds: cartServiceIds, totalAmount: baseAmount }, {consume: options.consumeOffer !== false});
     enrichedServices.push({
       serviceId: freeService.id,
       name: freeService.name,
@@ -284,7 +290,7 @@ const prepareBooking = async (userId, bookingData) => {
   const partnerEarning = parseFloat((taxableAmount * partnerPercent / 100).toFixed(2));
 
   // Use first service as the primary serviceId (backward compat)
-  const primaryServiceId = enrichedServices[0].serviceId;
+  const primaryServiceId = enrichedServices[0].serviceId ?? null;
   const primaryServiceName = isMultiPackage
     ? `${multiPackageInfo.packagesSummary.length} packages`
     : enrichedServices.length === 1

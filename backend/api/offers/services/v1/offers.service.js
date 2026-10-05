@@ -100,7 +100,7 @@ const checkEligibility = async ({ serviceIds, totalAmount, cityId }) => {
     .filter(o => o.freeService);
 };
 
-const validateAndApply = async (offerId, { serviceIds, totalAmount }) => {
+const validateAndApply = async (offerId, { serviceIds, totalAmount }, {consume = true} = {}) => {
   const numIds = (serviceIds ?? []).map(Number);
   const totalCount = numIds.length;
 
@@ -119,7 +119,7 @@ const validateAndApply = async (offerId, { serviceIds, totalAmount }) => {
   }
   if (!offer.freeService) throw new AppError("Free service not available", 400);
 
-  await offer.increment("usedCount");
+  if (consume) await offer.increment("usedCount");
   return { offer, freeService: offer.freeService };
 };
 
