@@ -3,6 +3,7 @@ import {Platform} from 'react-native';
 import {store} from '../src/redux/store';
 import LoginScreen from '../src/screens/Auth/LoginScreen';
 import {
+  finishAuthentication,
   browsingDestination,
   isIOSGuest,
   requireIOSAuthentication,
@@ -47,7 +48,7 @@ test('iOS guests enter browsing from startup and city selection', () => {
   expect(isIOSGuest(null)).toBe(true);
 });
 
-test('iOS cart actions prompt login before any cart mutation', () => {
+test('iOS protected account actions prompt login', () => {
   const navigation = {navigate: jest.fn()};
   const addToCart = jest.fn();
   if (requireIOSAuthentication(navigation)) addToCart();
@@ -90,38 +91,32 @@ test.each([null, 'signed-in'])('Android keeps original startup, screen identity 
   expect(navigation.navigate).not.toHaveBeenCalled();
 });
 
-test.each([
-  ['Home/HomeScreen', 'handleAddPopular'],
-  ['Home/HomeScreen', 'rebookServices'],
-  ['Services/ServiceListingScreen', 'increment'],
-  ['Services/SubcategoryServicesScreen', 'increment'],
-  ['Packages/PackageDetailScreen', 'handleBook'],
-  ['Packages/CustomPackagesScreen', 'handleAdd'],
-])('guest action %s.%s opens login without adding to cart', (file, handler) => {
+test('iOS checkout Continue opens login before making any booking request', async () => {
   const fs = require('fs');
-  const path = require('path');
-  const babel = require('@babel/core');
-  const source = fs.readFileSync(path.join(__dirname, `../src/screens/${file}.tsx`), 'utf8');
+  const source = fs.readFileSync(require('path').join(__dirname, '../src/screens/Order/AddressPaymentScreen.tsx'), 'utf8');
   const ast = require('@babel/parser').parse(source, {sourceType: 'module', plugins: ['typescript', 'jsx']});
   let callback: any;
-  require('@babel/traverse').default(ast, {
-    VariableDeclarator(nodePath: any) {
-      if (nodePath.node.id.name === handler) callback = nodePath.node.init;
-    },
-  });
-  expect(callback).toBeDefined();
-  const callbackSource = require('@babel/generator').default(callback).code;
-  const {code} = babel.transformSync(`const action = ${callbackSource};`, {filename: 'action.ts'});
+  require('@babel/traverse').default(ast, {VariableDeclarator(p: any) {
+    if (p.node.id.name === 'handleBooking') callback = p.node.init;
+  }});
+  const callbackCode = require('@babel/generator').default(callback).code;
+  const {code} = require('@babel/core').transformSync('const action = ' + callbackCode, {filename: 'checkout.ts'});
   const navigation = {navigate: jest.fn()};
-  const dispatch = jest.fn();
-  // Execute the real screen callback; a guest must return before accessing its
-  // catalog/cart closure or dispatching any action.
-  const action = require('vm').runInNewContext(`${code}; action;`, {
-    require, navigation, requireIOSAuthentication, dispatch,
-  });
-  action({});
-  expect(navigation.navigate).toHaveBeenCalledWith('Login');
-  expect(dispatch).not.toHaveBeenCalled();
+  const action = require('vm').runInNewContext(code + '; action;', {require, guest: true, navigation});
+  await action();
+  expect(navigation.navigate).toHaveBeenCalledWith('Login', {returnToCheckout: true});
+});
+
+test('iOS checkout login restores the existing cart route and removes auth history', () => {
+  const checkout = {name: 'AddressPayment', key: 'cart-key', params: {offerId: 4}};
+  const navigation = {getState: () => ({routes: [{name: 'Main'}, checkout, {name: 'Login'}, {name: 'OTP'}]}), reset: jest.fn()};
+  expect(finishAuthentication(navigation, true)).toBe(true);
+  expect(navigation.reset).toHaveBeenCalledWith({index: 1, routes: [{name: 'Main'}, checkout]});
+  expect(finishAuthentication(navigation, false)).toBe(false);
+  Platform.OS = 'android';
+  navigation.reset.mockClear();
+  expect(finishAuthentication(navigation, true)).toBe(false);
+  expect(navigation.reset).not.toHaveBeenCalled();
 });
 
 test.each(['ios', 'android'] as const)('%s navigation leaves catalog routes public and protects only iOS account routes', platform => {
@@ -155,12 +150,12 @@ test.each(['ios', 'android'] as const)('%s navigation leaves catalog routes publ
       Home: 'HomeScreen', AllCategories: 'AllCategoriesScreen', ServiceListing: 'ServiceListingScreen',
       SubcategoryServices: 'SubcategoryServicesScreen', Search: 'SearchScreen',
       PackageDetail: 'PackageDetailScreen', PackageListing: 'PackageListingScreen',
-      CustomPackages: 'CustomPackagesScreen', HelpSupport: 'HelpSupportScreen', AboutUs: 'AboutUsScreen',
+      CustomPackages: 'CustomPackagesScreen', AddressPayment: 'AddressPaymentScreen', HelpSupport: 'HelpSupportScreen', AboutUs: 'AboutUsScreen',
     })) {
       expect(find(name)).toBe(screens[screen]);
     }
     for (const [name, screen] of Object.entries({
-      Bookings: 'BookingsScreen', AddressPayment: 'AddressPaymentScreen',
+      Bookings: 'BookingsScreen',
       BookingDetail: 'BookingDetailScreen', OrderPlaced: 'OrderPlacedScreen',
       ServiceCompleted: 'ServiceCompletedScreen', Notifications: 'NotificationsScreen',
       EditProfile: 'EditProfileScreen', DeleteAccount: 'DeleteAccountScreen',
@@ -178,4 +173,34 @@ test.each(['ios', 'android'] as const)('%s navigation leaves catalog routes publ
       }
     }
   });
+});
+
+function screenAction(file: string, handler: string, context: any) {
+  const source = require('fs').readFileSync(require('path').join(__dirname, '../src/screens/' + file + '.tsx'), 'utf8');
+  const ast = require('@babel/parser').parse(source, {sourceType: 'module', plugins: ['typescript', 'jsx']});
+  let callback: any;
+  require('@babel/traverse').default(ast, {VariableDeclarator(p: any) {
+    if (p.node.id.name === handler) callback = p.node.init;
+  }});
+  const callbackCode = require('@babel/generator').default(callback).code;
+  const {code} = require('@babel/core').transformSync('const action = ' + callbackCode, {filename: 'action.ts'});
+  return require('vm').runInNewContext(code + '; action;', {require, ...context});
+}
+
+test.each(['ios', 'android'])('%s can add services, combos and custom packages without a login redirect', platform => {
+  Platform.OS = platform;
+  const navigation = {navigate: jest.fn()};
+  const dispatch = jest.fn();
+  const cart = {addServicesToCart: (payload: any) => ({type: 'Cart/addServicesToCart', payload}), addPackageToCart: (payload: any) => ({type: 'Cart/addPackageToCart', payload})};
+  screenAction('Home/HomeScreen', 'handleAddPopular', {navigation, dispatch, addServicesToCart: cart.addServicesToCart})({id: 1, name: 'Service', basePrice: 600});
+  expect(dispatch.mock.calls[0][0].payload[0]).toMatchObject({id: '1', qty: 1});
+  expect(navigation.navigate).not.toHaveBeenCalled();
+  const fullPkg = {id: 2, title: 'Combo', packageType: 'fixed', price: 900, services: [{serviceId: 1, name: 'Service', price: 600}]};
+  screenAction('Packages/PackageDetailScreen', 'handleBook', {navigation, dispatch, fullPkg, packageQty: 1, addPackageToCart: cart.addPackageToCart})();
+  expect(dispatch.mock.calls[1][0].payload).toMatchObject({packageId: 2, packageTitle: 'Combo'});
+  expect(navigation.navigate).toHaveBeenCalledWith('AddressPayment', expect.anything());
+  navigation.navigate.mockClear();
+  screenAction('Packages/CustomPackagesScreen', 'handleAdd', {navigation, dispatch, selections: {3: new Set([1])}, getPackageServices: () => [{id: 1, name: 'Service', basePrice: 600}], addPackageToCart: cart.addPackageToCart, setSelections: jest.fn()})({id: 3, title: 'Package', serviceCount: 1, price: 600});
+  expect(dispatch.mock.calls[2][0].payload).toMatchObject({packageId: 3, packageType: 'flexible'});
+  expect(navigation.navigate).not.toHaveBeenCalled();
 });

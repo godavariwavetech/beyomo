@@ -74,7 +74,11 @@ const SplashScreen = ({navigation}: any) => {
     const go = (dest: string, params?: any) => {
       if (done) return;
       done = true;
-      navigation.replace(dest, params);
+      if (Platform.OS === 'ios') {
+        navigation.reset({index: 0, routes: [{name: dest, params}]});
+      } else {
+        navigation.replace(dest, params);
+      }
     };
 
     const mainDest = browsingDestination(token);

@@ -45,7 +45,7 @@ const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
 const AccountBookingsScreen = withIOSAuthentication(BookingsScreen);
-const AccountAddressPaymentScreen = withIOSAuthentication(AddressPaymentScreen);
+const AccountAddressPaymentScreen = AddressPaymentScreen;
 const AccountOrderPlacedScreen = withIOSAuthentication(OrderPlacedScreen);
 const AccountServiceCompletedScreen = withIOSAuthentication(ServiceCompletedScreen);
 const AccountBookingDetailScreen = withIOSAuthentication(BookingDetailScreen);
@@ -92,7 +92,7 @@ const AppNavigation = () => {
 
   return (
     <NavigationContainer ref={navigationRef}>
-      <Stack.Navigator screenOptions={{headerShown: false}}>
+      <Stack.Navigator initialRouteName="Splash" screenOptions={{headerShown: false}}>
         <Stack.Screen name="Splash" component={SplashScreen} />
         <Stack.Screen name="ForceUpdate" component={ForceUpdateScreen} options={{gestureEnabled: false}} />
         <Stack.Screen name="CitySelector" component={CitySelectorScreen} />
