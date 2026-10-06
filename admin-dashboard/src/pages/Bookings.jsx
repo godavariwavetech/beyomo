@@ -24,6 +24,12 @@ const exportCSV = (data, filename) => {
 const ITEMS_PER_PAGE = 8;
 const STATUSES = ['all','pending','confirmed','in_progress','completed','cancelled'];
 
+const AdminCreatedLabel = () => (
+  <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:11, fontWeight:600, color:'#1d4ed8', background:'#eff6ff', padding:'3px 7px', borderRadius:4 }}>
+    <UserCheck size={12} /> Created by Admin
+  </span>
+);
+
 const fmt = (n) => formatAmount(n);
 
 const catalogPrice = (service) => {
@@ -87,6 +93,7 @@ export default function Bookings() {
   const [partners, setPartners]     = useState([]);
   const [reassignId, setReassignId] = useState('');
   const [reassigning, setReassigning] = useState(false);
+  const [reopeningId, setReopeningId] = useState(null);
   const [showNewBooking, setShowNewBooking] = useState(false);
 
   const [rescheduleDate, setRescheduleDate]     = useState('');
@@ -241,6 +248,33 @@ export default function Bookings() {
     setBookings(prev => prev.map(b => b.id === id ? { ...b, status:'cancelled', commission:0 } : b));
     showToast('Booking cancelled successfully.', 'danger');
     if (selected?.id === id) setSelected(prev => ({ ...prev, status:'cancelled', commission:0 }));
+  };
+
+  const updateBookingStatus = async (id, status) => {
+    if (reopeningId) return;
+    setReopeningId(id);
+    try {
+      const res = await action('patch', `/api/v1/admin/bookings/${id}/status`, { status });
+      if (!res.ok) {
+        showToast(res.error ?? 'Failed to update booking status.', 'danger');
+        return;
+      }
+      const updated = res.data.data;
+      const applyUpdate = b => ({
+        ...b,
+        ...updated,
+        id: b.id,
+        services: parseServices(updated.services ?? b.services),
+        packages: parseServices(updated.packages ?? b.packages),
+        status: updated.status,
+      });
+      setBookings(prev => prev.map(b => b.id === id ? applyUpdate(b) : b));
+      setSelected(prev => prev?.id === id ? applyUpdate(prev) : prev);
+      loadBookings();
+      showToast(`Booking moved to ${status.replace(/_/g, ' ')}.`, 'success');
+    } finally {
+      setReopeningId(null);
+    }
   };
 
   const acceptBooking = async (id) => {
@@ -639,6 +673,9 @@ export default function Bookings() {
                 <tr key={b.id}>
                   <td>
                     <div style={{ fontFamily:'monospace', fontSize:12, background:'var(--c-border-light)', padding:'2px 6px', borderRadius:'var(--r-sm)', fontWeight:600, display:'inline-block' }}>{b.bookingCode || b.id}</div>
+                    {b.createdByAdminId != null && (
+                      <div style={{ marginTop:5 }}><AdminCreatedLabel /></div>
+                    )}
                   </td>
                   <td>
                     <div className="table-cell-main">{b.userName}</div>
@@ -681,7 +718,9 @@ export default function Bookings() {
                     <div style={{ fontSize:13 }}>{b.date}</div>
                     <div style={{ fontSize:12, color:'var(--c-text-secondary)' }}>{b.slot}</div>
                   </td>
-                  <td><Badge status={b.status} /></td>
+                  <td>
+                    <Badge status={b.status} />
+                  </td>
                   <td>
                     <div style={{ display:'flex', gap:4 }}>
                       <button className="btn btn-ghost btn-icon" title="View Details" onClick={() => openDetail(b)}><Eye size={15}/></button>
@@ -728,6 +767,14 @@ export default function Bookings() {
         footer={
           <>
             <button className="btn btn-outline" onClick={() => { setSelected(null); setReassignId(''); }}>Close</button>
+            {selected && (
+              <label style={{ display:'flex', alignItems:'center', gap:6 }}>
+                Status
+                <select className="filter-select" aria-label="Change booking status" value={selected.status} disabled={reopeningId !== null || detailLoading} onChange={e => updateBookingStatus(selected.id, e.target.value)}>
+                  {STATUSES.filter(s => s !== 'all').map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1).replace(/_/g, ' ')}</option>)}
+                </select>
+              </label>
+            )}
             {selected && selected.status === 'pending' && (
               <button className="btn btn-primary" onClick={() => acceptBooking(selected.id)} style={{ display:'flex', alignItems:'center', gap:6, background:'#22C55E', borderColor:'#22C55E' }}>
                 <CheckCircle2 size={15}/> Accept Booking
@@ -743,6 +790,9 @@ export default function Bookings() {
       >
         {selected && (
           <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+            {selected.createdByAdminId != null && (
+              <div><AdminCreatedLabel /></div>
+            )}
             {detailLoading && (
               <div style={{ textAlign:'center', padding:'8px 0', fontSize:13, color:'var(--c-text-muted)' }}>
                 Refreshing details…

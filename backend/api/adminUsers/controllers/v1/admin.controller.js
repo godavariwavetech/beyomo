@@ -587,6 +587,20 @@ const cancelBooking = catchAsync(async (req, res, next) => {
   res.status(200).json({ status: true, message: "Booking cancelled", data: booking });
 });
 
+const reopenBooking = catchAsync(async (req, res, next) => {
+  const booking = await adminService.reopenBooking(req.params.id);
+  res.status(200).json({ status: true, message: "Booking moved to In Progress", data: booking });
+});
+
+const updateBookingStatus = catchAsync(async (req, res, next) => {
+  const { error, value } = Joi.object({
+    status: Joi.string().valid("pending", "confirmed", "in_progress", "completed", "cancelled").required(),
+  }).validate(req.body);
+  if (error) return next(new AppError(error.details[0].message, 400));
+  const booking = await adminService.updateBookingStatus(req.params.id, value.status);
+  res.status(200).json({ status: true, message: "Booking status updated", data: booking });
+});
+
 const acceptBooking = catchAsync(async (req, res, next) => {
   const booking = await adminService.acceptBooking(req.params.id);
   res.status(200).json({ status: true, message: "Booking accepted", data: booking });
@@ -1156,7 +1170,7 @@ module.exports = {
   listSubcategories, createSubcategory, updateSubcategory, deleteSubcategory,
   listServices, createService, updateService, deleteService, patchService, patchServiceCity, reorderServices,
   createBookingForCustomer,
-  listBookings, getBookingDetail, assignPartner, acceptBooking, cancelBooking, rescheduleBooking, editBookingServices, removeBookingPackage, addBookingPackage,
+  listBookings, getBookingDetail, assignPartner, acceptBooking, cancelBooking, reopenBooking, updateBookingStatus, rescheduleBooking, editBookingServices, removeBookingPackage, addBookingPackage,
   listPartnerBalances, getPartnerLedger, recordSettlement, voidLedgerEntry,
   listCoupons, createCoupon, updateCoupon, deleteCoupon, getReferral, updateReferral,
   listReviews, updateReviewStatus,

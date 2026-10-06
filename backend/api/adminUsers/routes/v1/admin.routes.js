@@ -52,7 +52,7 @@ const {
   listSubcategories, createSubcategory, updateSubcategory, deleteSubcategory,
   listServices, createService, updateService, deleteService, patchService, patchServiceCity, reorderServices,
   createBookingForCustomer, previewCustomerOrder, customerOrderCatalog,
-  listBookings, getBookingDetail, assignPartner, acceptBooking, cancelBooking, rescheduleBooking, editBookingServices, removeBookingPackage, addBookingPackage,
+  listBookings, getBookingDetail, assignPartner, acceptBooking, cancelBooking, reopenBooking, updateBookingStatus, rescheduleBooking, editBookingServices, removeBookingPackage, addBookingPackage,
   listPartnerBalances, getPartnerLedger, recordSettlement, voidLedgerEntry,
   listCoupons, createCoupon, updateCoupon, deleteCoupon, getReferral, updateReferral,
   listReviews, updateReviewStatus,
@@ -130,6 +130,8 @@ router.get("/bookings/:id", adminAuthenticate(), getBookingDetail);
 router.patch("/bookings/:id/assign", adminAuthenticate(["super_admin", "admin", "manager"]), assignPartner);
 router.patch("/bookings/:id/accept", adminAuthenticate(["super_admin", "admin", "manager"]), acceptBooking);
 router.patch("/bookings/:id/cancel", adminAuthenticate(["super_admin", "admin", "manager"]), cancelBooking);
+router.patch("/bookings/:id/reopen", adminAuthenticate(["super_admin", "admin", "manager"]), reopenBooking);
+router.patch("/bookings/:id/status", adminAuthenticate(["super_admin", "admin", "manager"]), updateBookingStatus);
 router.patch("/bookings/:id/reschedule", adminAuthenticate(["super_admin", "admin", "manager"]), rescheduleBooking);
 router.patch("/bookings/:id/services", adminAuthenticate(["super_admin", "admin", "manager"]), editBookingServices);
 router.patch("/bookings/:id/remove-package", adminAuthenticate(["super_admin", "admin", "manager"]), removeBookingPackage);
