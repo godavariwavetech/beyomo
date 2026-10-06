@@ -1040,6 +1040,57 @@ const addBookingPackage = async (bookingId, packageId, qty, serviceItems) => {
   return booking;
 };
 
+const reopenBooking = async (bookingId) => {
+  const booking = await Booking.findByPk(bookingId);
+  if (!booking) throw new AppError("Booking not found", 404);
+  if (booking.status !== "cancelled") {
+    throw new AppError("Only a cancelled booking can be moved to In Progress", 400);
+  }
+  const [updatedCount] = await Booking.update({
+    status: "in_progress",
+    cancelledBy: null,
+    cancellationReason: null,
+  }, { where: { id: bookingId, status: "cancelled" } });
+  if (!updatedCount) throw new AppError("Booking status changed. Refresh and try again.", 409);
+  await booking.reload();
+  return booking;
+};
+
+const updateBookingStatus = async (bookingId, status) => {
+  if (!["pending", "confirmed", "in_progress", "completed", "cancelled"].includes(status)) {
+    throw new AppError("Invalid booking status", 400);
+  }
+  const booking = await Booking.findByPk(bookingId);
+  if (!booking) throw new AppError("Booking not found", 404);
+  if (booking.status === status) return booking;
+  if (status === "cancelled" && booking.status !== "completed") return cancelBooking(bookingId);
+  const previousStatus = booking.status;
+  let services = booking.services;
+  if (typeof services === "string") services = JSON.parse(services);
+  const updates = {
+    status,
+    cancelledBy: status === "cancelled" ? "admin" : null,
+    cancellationReason: status === "cancelled" ? "Cancelled by admin" : null,
+    completedAt: status === "completed" ? new Date() : null,
+  };
+  if (Array.isArray(services)) {
+    updates.services = services.map(service => {
+      if (service.removed) return service;
+      if (status === "completed") return { ...service, serviceStatus: "completed" };
+      if (service.serviceStatus === "completed") {
+        return { ...service, serviceStatus: service.assignedPartnerId ? "claimed" : "unassigned" };
+      }
+      return service;
+    });
+  }
+  const [updatedCount] = await Booking.update(updates, {
+    where: { id: bookingId, status: previousStatus },
+  });
+  if (!updatedCount) throw new AppError("Booking status changed. Refresh and try again.", 409);
+  await booking.reload();
+  return booking;
+};
+
 const cancelBooking = async (bookingId) => {
   const booking = await Booking.findByPk(bookingId);
   if (!booking) throw new AppError("Booking not found", 404);
@@ -1419,7 +1470,7 @@ module.exports = {
   listSubcategories, createSubcategory, updateSubcategory, deleteSubcategory,
   listServices, createService, updateService, deleteService, toggleServiceCityStatus, reorderServices,
   createBookingForCustomer,
-  listBookings, getBookingDetail, assignPartner, acceptBooking, cancelBooking, rescheduleBooking, editBookingServices, removeBookingPackage, addBookingPackage,
+  listBookings, getBookingDetail, assignPartner, acceptBooking, cancelBooking, reopenBooking, updateBookingStatus, rescheduleBooking, editBookingServices, removeBookingPackage, addBookingPackage,
   listCoupons, createCoupon, updateCoupon, deleteCoupon, getReferralProgram, updateReferralProgram,
   listReviews, updateReviewStatus,
   listNotifications, broadcastNotification,
