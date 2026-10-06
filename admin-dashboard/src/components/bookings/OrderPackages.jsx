@@ -1,4 +1,5 @@
 import React, {useState} from 'react';
+import {Minus, Plus} from 'lucide-react';
 import {formatRupee} from '../../utils/format';
 import './OrderPackages.css';
 
@@ -15,6 +16,8 @@ export default function OrderPackages({catalog, services, value, onChange}) {
     return curated.length ? curated.includes(Number(s.id)) : !picking.categoryId || Number(s.categoryId) === Number(picking.categoryId);
   }) : [];
   const required = picking?.serviceCount || 1;
+  const updateQuantity = (index, qty) => onChange(value.map((entry, i) => i === index
+    ? {...entry, qty: Math.max(1, Math.min(5, Number(qty) || 1))} : entry));
   return <>
     {['fixed', 'flexible'].map(type => {
       const label = type === 'fixed' ? 'Combo' : 'Package';
@@ -68,10 +71,19 @@ export default function OrderPackages({catalog, services, value, onChange}) {
           {item.serviceIds.map(id => <li key={id}>{services.find(s => Number(s.id) === Number(id))?.name || item.pkg.services?.find(s => Number(s.serviceId) === Number(id))?.name || `Service ${id}`}</li>)}
         </ul>
         <div className="booking-package-footer">
-          <label className="booking-package-quantity">Quantity
-            <input className="form-input" type="number" min="1" max="5" value={item.qty}
-              onChange={e => onChange(value.map((entry, i) => i === index ? {...entry, qty: Math.max(1, Math.min(5, Number(e.target.value) || 1))} : entry))} />
-          </label>
+          <div className="booking-package-quantity">
+            <label htmlFor={`booking-package-qty-${item.pkg.id}`}>Quantity</label>
+            <div className="booking-package-stepper">
+              <button type="button" aria-label={`Decrease quantity for ${item.pkg.title}`} disabled={item.qty <= 1}
+                onClick={() => updateQuantity(index, item.qty - 1)}><Minus size={15} /></button>
+              <input id={`booking-package-qty-${item.pkg.id}`} aria-label={`Quantity for ${item.pkg.title}`}
+                type="number" inputMode="numeric" min="1" max="5" value={item.qty}
+                onChange={e => updateQuantity(index, e.target.value)} />
+              <button type="button" aria-label={`Increase quantity for ${item.pkg.title}`} disabled={item.qty >= 5}
+                onClick={() => updateQuantity(index, item.qty + 1)}><Plus size={15} /></button>
+            </div>
+            <span className="booking-package-quantity-limit">Max 5</span>
+          </div>
           <button className="btn btn-outline btn-sm" aria-label={`Remove ${item.pkg.title}`} onClick={() => onChange(value.filter((_, i) => i !== index))}>Remove</button>
         </div>
       </div>)}

@@ -255,7 +255,9 @@ const customerOrderSchema = adminCreateBookingSchema.keys({
   expectedTotal: Joi.number().min(0).optional(),
   address: adminCreateBookingSchema.extract('address').keys({
     city: Joi.string().trim().required(), state: Joi.string().trim().required(),
-    pincode: Joi.string().pattern(/^\d{6}$/).required(), line1: Joi.string().trim().required(),
+    // Customer-saved addresses can omit a pincode; validate it when provided.
+    pincode: Joi.string().trim().pattern(/^\d{6}$/).allow('', null).default(''),
+    line1: Joi.string().trim().required(),
   }),
   services: adminCreateBookingSchema.extract('services').min(0).default([]),
   packages: Joi.array().items(Joi.object({

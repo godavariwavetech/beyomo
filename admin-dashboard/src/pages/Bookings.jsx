@@ -6,9 +6,12 @@ import { useCityFilter } from '../context/CityContext';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { Badge } from '../components/common/Badge';
 import Modal from '../components/common/Modal';
+import AddressMapPicker from '../components/common/AddressMapPicker';
 import api from '../services/api';
 import { formatAmount, formatRupee } from '../utils/format';
 import OrderPackages from '../components/bookings/OrderPackages';
+import '../components/bookings/NewBookingCustomer.css';
+import { cityKey } from '../utils/locationSearch';
 
 const exportCSV = (data, filename) => {
   const headers = ['ID','Customer','User ID','Partner','Partner ID','Service','Amount','Commission','Status','Date','Slot','Payment'];
@@ -1458,6 +1461,7 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
 
   const [addressMode, setAddressMode]   = useState('saved'); // 'saved' | 'new'
   const [selectedAddressId, setSelectedAddressId] = useState('');
+  const [pickingAddress, setPickingAddress] = useState(false);
   const [newAddress, setNewAddress]     = useState({ label:'Home', line1:'', line2:'', city:'', state:'', pincode:'' });
 
   const [allServices, setAllServices]   = useState([]);
@@ -1476,7 +1480,7 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
   const resetAll = () => {
     setNewCustomer(null); setPackageCart([]); setCouponCode(''); setOfferId(''); setReview(null); setReviewError('');
     setUserSearch(''); setUserResults([]); setCompletedUserSearch(''); setUserSearchError(''); setCustomer(null);
-    setAddressMode('saved'); setSelectedAddressId('');
+    setAddressMode('saved'); setSelectedAddressId(''); setPickingAddress(false);
     setNewAddress({ label:'Home', line1:'', line2:'', city:'', state:'', pincode:'' });
     setCart([]); setSvcSearch(''); setAddMode('catalog');
     setAddonName(''); setAddonPrice(''); setAddonQty(1);
@@ -1495,7 +1499,7 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
   const serviceAddress = addressMode === 'saved'
     ? (customer?.addresses ?? []).find(a => String(a.id) === selectedAddressId)
     : newAddress;
-  const serviceCity = cities.find(c => c.name.trim().toLowerCase() === (serviceAddress?.city ?? '').trim().toLowerCase());
+  const serviceCity = cities.find(c => cityKey(c.name) === cityKey(serviceAddress?.city ?? ''));
 
   useEffect(() => {
     let active = true;
@@ -1519,12 +1523,13 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
       services: item.serviceIds.map(id => ({id: Number(id), qty: item.qty}))})),
     address: serviceAddress ? {
       label: serviceAddress.label, line1: serviceAddress.line1, line2: serviceAddress.line2,
-      city: serviceAddress.city, state: serviceAddress.state, pincode: serviceAddress.pincode,
+      city: serviceCity?.name ?? serviceAddress.city, state: serviceAddress.state, pincode: serviceAddress.pincode,
       lat: serviceAddress.lat ?? null, lng: serviceAddress.lng ?? null,
     } : undefined,
     scheduledAt: scheduleValue && !Number.isNaN(new Date(scheduleValue).getTime()) ? new Date(scheduleValue).toISOString() : undefined,
     paymentMode: 'cod', notes: notes || undefined,
-    couponCode: couponCode.trim() || undefined, offerId: offerId ? Number(offerId) : undefined,
+    // Discounts are disabled for admin-created bookings. Keep these fields for later use.
+    // couponCode: couponCode.trim() || undefined, offerId: offerId ? Number(offerId) : undefined,
   });
   const payloadKey = JSON.stringify(buildPayload());
   const reviewed = review?.key === payloadKey;
@@ -1533,6 +1538,7 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
     if (!customer || !serviceAddress || !serviceCity) {
       setReviewError('Select a customer and an address in an active service city.'); return;
     }
+    if (pickingAddress) { setReviewError('Confirm the service address before reviewing the booking.'); return; }
     const error = validateSchedule();
     if (error) {setReviewError(error); return;}
     setReviewing(true); setReviewError('');
@@ -1571,6 +1577,9 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
 
   const selectCustomer = async (u) => {
     setUserResults([]);
+    setPickingAddress(false);
+    setSelectedAddressId('');
+    setNewAddress({ label:'Home', line1:'', line2:'', city:'', state:'', pincode:'' });
     setUserSearch(u.name || u.phone);
     try {
       const res = await api.get(`/api/v1/admin/users/${u.id ?? u._id}`);
@@ -1579,10 +1588,11 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
       const addresses = full.addresses ?? [];
       const def = addresses.find(a => a.isDefault) ?? addresses[0];
       if (def) { setAddressMode('saved'); setSelectedAddressId(String(def.id)); }
-      else { setAddressMode('new'); }
+      else { setAddressMode('new'); setPickingAddress(true); }
     } catch {
       setCustomer(u);
       setAddressMode('new');
+      setPickingAddress(true);
     }
   };
 
@@ -1606,6 +1616,7 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
 
   const handleSubmit = async () => {
     if (!customer) { showToast('Please select a customer.', 'warning'); return; }
+    if (pickingAddress) { showToast('Confirm the service address first.', 'warning'); return; }
     if (!cart.length && !packageCart.length) { showToast('Add at least one service or package.', 'warning'); return; }
     if (!reviewed) {showToast('Review the updated total before creating this booking.', 'warning'); return;}
 
@@ -1613,8 +1624,11 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
       const saved = (customer.addresses ?? []).find(a => String(a.id) === selectedAddressId);
       if (!saved) { showToast('Please select a saved address.', 'warning'); return; }
     } else {
-      if (!newAddress.line1.trim() || !newAddress.city.trim() || !newAddress.state.trim() || !newAddress.pincode.trim()) {
-        showToast('Please fill in address line, city, state and pincode.', 'warning'); return;
+      if (!newAddress.line1.trim() || !newAddress.city.trim() || !newAddress.state.trim()) {
+        showToast('Please fill in address line, city and state.', 'warning'); return;
+      }
+      if (newAddress.pincode.trim() && !/^\d{6}$/.test(newAddress.pincode.trim())) {
+        showToast('Pincode must be six digits, or leave it empty.', 'warning'); return;
       }
     }
 
@@ -1648,15 +1662,58 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
       <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
         {/* Customer */}
         <InfoBlock label="Customer">
-          {!customer && (newCustomer || canAddNewCustomer) && ['super_admin', 'admin'].includes(user?.role) && <>
-            {!newCustomer && <p style={{fontSize:12}}>No customer found for {userSearch.trim()}.</p>}
-            <button className="btn btn-outline btn-sm" onClick={() => setNewCustomer(prev => prev ? null : {name:searchedCustomerName, phone:searchedCustomerPhone, email:''})}>
-              {newCustomer ? 'Choose Existing Customer' : 'Add New Customer'}
-            </button>
-            {newCustomer && <div style={{display:'flex', flexDirection:'column', gap:8, margin:'8px 0'}}>
-              {['name', 'phone', 'email'].map(field => <input key={field} className="form-input" placeholder={field === 'email' ? 'Email (optional)' : `Customer ${field}`}
-                value={newCustomer[field]} onChange={e => setNewCustomer(prev => ({...prev, [field]: e.target.value}))} />)}
-              <button className="btn btn-primary btn-sm" disabled={creatingCustomer || !newCustomer.name.trim() || !/^\d{10}$/.test(newCustomer.phone.trim())}
+          <div className="booking-customer">
+            {!customer && <div className="booking-customer-heading">
+              <div>
+                <h4>{newCustomer ? 'New customer details' : 'Find an existing customer'}</h4>
+                <p>{newCustomer ? 'Enter the customer details to create their profile.' : 'Search by name or phone number to select a customer.'}</p>
+              </div>
+              {newCustomer && <button type="button" className="btn btn-outline btn-sm" onClick={() => setNewCustomer(null)}>
+                Choose Existing Customer
+              </button>}
+              {!newCustomer && ['super_admin', 'admin'].includes(user?.role) && <button type="button" className="btn btn-outline btn-sm"
+                onClick={() => setNewCustomer({name:searchedCustomerName, phone:searchedCustomerPhone, email:''})}>
+                <PlusCircle size={14} /> Add New Customer
+              </button>}
+            </div>}
+            {!customer && !newCustomer && <>
+              <label className="form-label" htmlFor="booking-customer-search">Customer name or phone</label>
+              <div className="booking-customer-search">
+                <Search size={17} aria-hidden="true" />
+                <input id="booking-customer-search" type="text" className="form-input"
+                  placeholder="Search by name or phone..." value={userSearch}
+                  onChange={e => {setUserSearch(e.target.value); setCompletedUserSearch(''); setUserResults([]);}} />
+              </div>
+              {userSearchError && <div className="booking-customer-error" role="alert">{userSearchError}</div>}
+              {(userResults.length > 0 || searchingUser) && <div className="booking-customer-results">
+                {searchingUser && <div className="booking-customer-searching" role="status">Searching...</div>}
+                {userResults.map(u => <button type="button" className="booking-customer-result" key={u.id ?? u._id}
+                  onClick={() => selectCustomer(u)} onMouseDown={e => e.preventDefault()}>
+                  <span className="booking-customer-avatar">{(u.name || 'U').charAt(0).toUpperCase()}</span>
+                  <span className="booking-customer-details"><strong>{u.name || 'Unnamed'}</strong><span>{u.phone}</span></span>
+                  <span className="booking-customer-select">Select</span>
+                </button>)}
+              </div>}
+              {canAddNewCustomer && ['super_admin', 'admin'].includes(user?.role) && <div className="booking-customer-empty">
+                <div><strong>No customer found</strong><p>No customer found for {userSearch.trim()}.</p></div>
+                <button type="button" className="btn btn-outline btn-sm" onClick={() => setNewCustomer({name:searchedCustomerName, phone:searchedCustomerPhone, email:''})}>
+                  <PlusCircle size={14} /> Add New Customer
+                </button>
+              </div>}
+            </>}
+            {!customer && newCustomer && ['super_admin', 'admin'].includes(user?.role) && <div className="booking-customer-new">
+              <div className="booking-customer-fields">
+                {['name', 'phone', 'email'].map(field => <label key={field} className={`form-group booking-customer-field-${field}`}>
+                  <span className="form-label">{field === 'name' ? 'Customer name' : field === 'phone' ? 'Phone number' : 'Email (optional)'}</span>
+                  <input className="form-input" type={field === 'email' ? 'email' : field === 'phone' ? 'tel' : 'text'}
+                    inputMode={field === 'phone' ? 'numeric' : undefined} autoComplete={field === 'phone' ? 'tel' : field}
+                    placeholder={field === 'email' ? 'Email (optional)' : `Customer ${field}`}
+                    value={newCustomer[field]} onChange={e => setNewCustomer(prev => ({...prev, [field]: e.target.value}))} />
+                </label>)}
+              </div>
+              <div className="booking-customer-save">
+                <span>Enter a name and a 10-digit phone number to save.</span>
+                <button type="button" className="btn btn-primary btn-sm" disabled={creatingCustomer || !newCustomer.name.trim() || !/^\d{10}$/.test(newCustomer.phone.trim())}
                 onClick={async () => {
                   setCreatingCustomer(true);
                   try {
@@ -1664,52 +1721,27 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
                     await selectCustomer(res.data.data); setNewCustomer(null);
                   } catch (err) {showToast(err.response?.data?.message ?? 'Unable to create customer.', 'danger');}
                   finally {setCreatingCustomer(false);}
-                }}>{creatingCustomer ? 'Saving…' : 'Save Customer'}</button>
-            </div>}
-          </>}
-          {!customer ? (
-            <div style={{ position:'relative', display:newCustomer ? 'none' : undefined }}>
-              <input
-                type="text"
-                placeholder="Search by name or phone…"
-                value={userSearch}
-                onChange={e => {setUserSearch(e.target.value); setCompletedUserSearch(''); setUserResults([]);}}
-                style={{ width:'100%', border:'1px solid var(--c-border)', borderRadius:'var(--r-sm)', padding:'7px 10px', fontSize:13, background:'var(--c-bg-card)', color:'var(--c-text-primary)', boxSizing:'border-box' }}
-              />
-              {userSearchError && <div role="alert" style={{fontSize:12}}>{userSearchError}</div>}
-              {(userResults.length > 0 || searchingUser) && (
-                <div style={{ position:'absolute', zIndex:5, top:'calc(100% + 4px)', left:0, right:0, maxHeight:200, overflowY:'auto', border:'1px solid var(--c-border)', borderRadius:'var(--r-sm)', background:'var(--c-bg-card)', boxShadow:'0 4px 12px rgba(0,0,0,0.12)' }}>
-                  {searchingUser && <div style={{ padding:10, fontSize:12, color:'var(--c-text-muted)' }}>Searching…</div>}
-                  {userResults.map(u => (
-                    <div key={u.id ?? u._id} onClick={() => selectCustomer(u)}
-                      style={{ padding:'8px 10px', cursor:'pointer', borderBottom:'1px solid var(--c-border-light)', fontSize:13 }}
-                      onMouseDown={e => e.preventDefault()}>
-                      <div style={{ fontWeight:600 }}>{u.name || 'Unnamed'}</div>
-                      <div style={{ fontSize:11, color:'var(--c-text-muted)' }}>{u.phone}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          ) : (
-            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-              <div>
-                <div style={{ fontWeight:600, fontSize:13 }}>{customer.name || 'Unnamed'}</div>
-                <div style={{ fontSize:12, color:'var(--c-text-muted)' }}>{customer.phone}</div>
+                }}>{creatingCustomer ? 'Saving...' : 'Save Customer'}</button>
               </div>
-              <button className="btn btn-ghost btn-sm" onClick={() => { setCustomer(null); setUserSearch(''); }}>Change</button>
-            </div>
-          )}
+            </div>}
+            {customer && <div className="booking-customer-selected">
+              <span className="booking-customer-avatar"><UserCheck size={20} /></span>
+              <div className="booking-customer-details"><span className="booking-customer-selected-label">Selected customer</span>
+                <strong>{customer.name || 'Unnamed'}</strong><span>{customer.phone}</span>
+              </div>
+              <button type="button" className="btn btn-outline btn-sm" onClick={() => {setCustomer(null); setUserSearch('');}}>Change</button>
+            </div>}
+          </div>
         </InfoBlock>
 
         {/* Address */}
         {customer && (
           <InfoBlock label="Service Address">
             <div style={{ display:'flex', background:'var(--c-border-light)', borderRadius:'var(--r-sm)', padding:3, marginBottom:10 }}>
-              <button onClick={() => setAddressMode('saved')} style={{ flex:1, border:'none', borderRadius:4, padding:'6px 0', fontSize:12, fontWeight:600, cursor:'pointer', background: addressMode === 'saved' ? 'var(--c-brand-primary)' : 'transparent', color: addressMode === 'saved' ? '#fff' : 'var(--c-text-secondary)' }}>
+              <button onClick={() => { setAddressMode('saved'); setPickingAddress(false); }} style={{ flex:1, border:'none', borderRadius:4, padding:'6px 0', fontSize:12, fontWeight:600, cursor:'pointer', background: addressMode === 'saved' ? 'var(--c-brand-primary)' : 'transparent', color: addressMode === 'saved' ? '#fff' : 'var(--c-text-secondary)' }}>
                 Saved Address
               </button>
-              <button onClick={() => setAddressMode('new')} style={{ flex:1, border:'none', borderRadius:4, padding:'6px 0', fontSize:12, fontWeight:600, cursor:'pointer', background: addressMode === 'new' ? 'var(--c-brand-primary)' : 'transparent', color: addressMode === 'new' ? '#fff' : 'var(--c-text-secondary)' }}>
+              <button onClick={() => { setAddressMode('new'); setPickingAddress(true); }} style={{ flex:1, border:'none', borderRadius:4, padding:'6px 0', fontSize:12, fontWeight:600, cursor:'pointer', background: addressMode === 'new' ? 'var(--c-brand-primary)' : 'transparent', color: addressMode === 'new' ? '#fff' : 'var(--c-text-secondary)' }}>
                 New Address
               </button>
             </div>
@@ -1731,24 +1763,21 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
                 </div>
               )
             ) : (
-              <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-                {[
-                  { key:'label', placeholder:'Label (e.g. Home, Office)' },
-                  { key:'line1', placeholder:'Address line 1' },
-                  { key:'line2', placeholder:'Address line 2 (optional)' },
-                  { key:'city', placeholder:'City' },
-                  { key:'state', placeholder:'State' },
-                  { key:'pincode', placeholder:'Pincode' },
-                ].map(f => (
-                  f.key === 'city' ? <select key={f.key} className="form-input" value={newAddress.city}
-                    onChange={e => setNewAddress(prev => ({...prev, city:e.target.value}))}>
-                    <option value="">Select service city</option>
-                    {cities.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-                  </select> : <input key={f.key} type="text" placeholder={f.placeholder} value={newAddress[f.key]}
-                    onChange={e => setNewAddress(prev => ({ ...prev, [f.key]: e.target.value }))}
-                    style={{ width:'100%', border:'1px solid var(--c-border)', borderRadius:'var(--r-sm)', padding:'6px 10px', fontSize:13, background:'var(--c-bg-card)', color:'var(--c-text-primary)', boxSizing:'border-box' }} />
-                ))}
-              </div>
+              pickingAddress ? (
+                <AddressMapPicker initialAddress={newAddress} cities={cities}
+                  onClose={() => setPickingAddress(false)}
+                  onConfirm={address => { setNewAddress(address); setPickingAddress(false); }} />
+              ) : (
+                <div style={{display:'flex', flexDirection:'column', gap:8}}>
+                  {!newAddress.line1 ? <div style={{fontSize:12}}>No new service address selected for this customer.</div> : <div style={{fontSize:13}}>
+                    <strong>{newAddress.label}</strong>
+                    <div>{[newAddress.line1, newAddress.line2, newAddress.city, newAddress.state, newAddress.pincode].filter(Boolean).join(', ')}</div>
+                  </div>}
+                  <button type="button" className="btn btn-outline btn-sm" onClick={() => setPickingAddress(true)}>
+                    <MapPin size={14} /> {newAddress.line1 ? 'Edit Address / Location' : 'Add Service Address'}
+                  </button>
+                </div>
+              )
             )}
           </InfoBlock>
         )}
@@ -1860,21 +1889,23 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
           </InfoBlock>
         )}
         {customer && (
-          <InfoBlock label="Discounts & Order Review">
+          <InfoBlock label="Order Review">
+            {/* Discount controls are temporarily disabled; retained for later use.
             <input className="form-input" placeholder="Coupon code (optional)" value={couponCode} onChange={e => setCouponCode(e.target.value)} />
             {review?.data.eligibleOffers?.length > 0 && <select className="form-input" value={offerId} onChange={e => setOfferId(e.target.value)}>
               <option value="">No free-service offer</option>
               {review.data.eligibleOffers.map(o => <option key={o.offerId} value={o.offerId}>{o.title} — Free {o.freeService.name}</option>)}
             </select>}
             {offerId && <button className="btn btn-ghost btn-sm" onClick={() => setOfferId('')}>Remove offer</button>}
-            <p style={{fontSize:12}}>Minimum booking subtotal: ₹500. Review Total calculates current prices, coupon discount and GST.</p>
+            */}
+            <p style={{fontSize:12}}>Minimum booking subtotal: ₹500. Review Total calculates current prices and GST.</p>
             {reviewError && <div role="alert" style={{color:'var(--c-danger)'}}>{reviewError}</div>}
             {reviewed ? <>
               <AmtRow label="Subtotal" value={formatRupee(review.data.baseAmount)} />
-              <AmtRow label="Coupon discount" value={formatRupee(review.data.couponDiscountAmount)} />
+              {/* <AmtRow label="Coupon discount" value={formatRupee(review.data.couponDiscountAmount)} /> */}
               <AmtRow label="GST" value={formatRupee(review.data.taxAmount)} />
               <AmtRow label="Final total" value={formatRupee(review.data.totalAmount)} />
-              {review.data.services.filter(s => s.addedByOffer).map(s => <div key={s.serviceId}>{s.name} — FREE</div>)}
+              {/* {review.data.services.filter(s => s.addedByOffer).map(s => <div key={s.serviceId}>{s.name} — FREE</div>)} */}
             </> : review && <p>Order changed. Review Total again before creating.</p>}
           </InfoBlock>
         )}
