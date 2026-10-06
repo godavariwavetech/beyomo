@@ -51,7 +51,7 @@ const {
   listCategories, createCategory, updateCategory, deleteCategory, reorderCategories,
   listSubcategories, createSubcategory, updateSubcategory, deleteSubcategory,
   listServices, createService, updateService, deleteService, patchService, patchServiceCity, reorderServices,
-  createBookingForCustomer,
+  createBookingForCustomer, previewCustomerOrder, customerOrderCatalog,
   listBookings, getBookingDetail, assignPartner, acceptBooking, cancelBooking, rescheduleBooking, editBookingServices, removeBookingPackage, addBookingPackage,
   listPartnerBalances, getPartnerLedger, recordSettlement, voidLedgerEntry,
   listCoupons, createCoupon, updateCoupon, deleteCoupon, getReferral, updateReferral,
@@ -122,6 +122,8 @@ router.patch("/services/:id/cities/:cityId", adminAuthenticate(["super_admin", "
 router.delete("/services/:id", adminAuthenticate(["super_admin", "admin"]), deleteService);
 
 // Bookings
+router.get('/booking-catalog', adminAuthenticate(["super_admin", "admin", "manager", "support"]), customerOrderCatalog);
+router.post('/bookings/preview', adminAuthenticate(["super_admin", "admin", "manager", "support"]), previewCustomerOrder);
 router.post("/bookings", adminAuthenticate(["super_admin", "admin", "manager", "support"]), createBookingForCustomer);
 router.get("/bookings", adminAuthenticate(), listBookings);
 router.get("/bookings/:id", adminAuthenticate(), getBookingDetail);
