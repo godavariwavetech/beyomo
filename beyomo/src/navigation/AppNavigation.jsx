@@ -38,7 +38,7 @@ import PackageListingScreen from '../screens/Packages/PackageListingScreen';
 import CustomPackagesScreen from '../screens/Packages/CustomPackagesScreen';
 import SearchScreen from '../screens/Search/SearchScreen';
 import CustomTabBar from '../components/BottomTabBar/CustomTabBar';
-import {setupForegroundHandler, handleNotificationNavigation} from '../services/NotificationsService';
+import {setupForegroundHandler, setupNotificationPressHandler, queueNotificationPress, flushNotificationPress} from '../services/NotificationsService';
 import {withIOSAuthentication} from './iosAuthentication';
 
 const Stack = createNativeStackNavigator();
@@ -73,25 +73,27 @@ const AppNavigation = () => {
   useEffect(() => {
     // Foreground notification display
     const unsubForeground = setupForegroundHandler();
+    const unsubPress = setupNotificationPressHandler(navigationRef);
 
     // Tapped while app was in background
     const unsubOpened = messaging().onNotificationOpenedApp(remoteMessage => {
-      handleNotificationNavigation(remoteMessage.data, navigationRef);
+      queueNotificationPress(remoteMessage.data, remoteMessage.messageId);
     });
 
     // Tapped while app was quit
     messaging().getInitialNotification().then(remoteMessage => {
-      if (remoteMessage) handleNotificationNavigation(remoteMessage.data, navigationRef);
+      if (remoteMessage) queueNotificationPress(remoteMessage.data, remoteMessage.messageId);
     });
 
     return () => {
       unsubForeground();
       unsubOpened();
+      unsubPress();
     };
   }, []);
 
   return (
-    <NavigationContainer ref={navigationRef}>
+    <NavigationContainer ref={navigationRef} onReady={flushNotificationPress} onStateChange={flushNotificationPress}>
       <Stack.Navigator initialRouteName="Splash" screenOptions={{headerShown: false}}>
         <Stack.Screen name="Splash" component={SplashScreen} />
         <Stack.Screen name="ForceUpdate" component={ForceUpdateScreen} options={{gestureEnabled: false}} />

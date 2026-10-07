@@ -1,4 +1,4 @@
-import notifee, {AndroidImportance, AndroidStyle, AndroidVisibility} from '@notifee/react-native';
+import notifee, {AndroidImportance, AndroidStyle, AndroidVisibility, EventType} from '@notifee/react-native';
 import messaging from '@react-native-firebase/messaging';
 
 // Channel IDs — one per notification category
@@ -93,6 +93,7 @@ const displayNotification = async (notification, data = {}) => {
     await notifee.displayNotification({
       title: notification.title,
       body: notification.body,
+      data,
       android: {
         channelId,
         sound,
@@ -119,7 +120,43 @@ const displayNotification = async (notification, data = {}) => {
 export const handleNotificationNavigation = (data, navigationRef) => {
   if (!data || !navigationRef?.current) return;
   const {type, bookingId} = data;
-  if (type === 'booking_update' || type === 'test') {
+  if (type === 'booking' || type === 'booking_update' || type === 'test') {
     if (bookingId) navigationRef.current.navigate('BookingDetail', {bookingId});
   }
+};
+
+// Wait for the existing startup/authentication flow before opening a tapped notification.
+let pendingPress = null;
+let lastPressId = null;
+let pressNavigationRef = null;
+
+export const flushNotificationPress = () => {
+  const navigation = pressNavigationRef?.current;
+  if (!pendingPress || !navigation?.isReady() ||
+      !navigation.getRootState()?.routes.some(route => route.name === 'Main')) return;
+  const data = pendingPress;
+  pendingPress = null;
+  handleNotificationNavigation(data, pressNavigationRef);
+};
+
+export const queueNotificationPress = (data, notificationId) => {
+  if (!data || (notificationId && notificationId === lastPressId)) return;
+  lastPressId = notificationId ?? null;
+  pendingPress = data;
+  flushNotificationPress();
+};
+
+export const setupNotificationPressHandler = navigationRef => {
+  pressNavigationRef = navigationRef;
+  const unsubscribe = notifee.onForegroundEvent(({type, detail}) => {
+    if (type === EventType.PRESS) queueNotificationPress(detail.notification?.data, detail.notification?.id);
+  });
+  notifee.getInitialNotification().then(initial => {
+    if (initial) queueNotificationPress(initial.notification?.data, initial.notification?.id);
+  }).catch(error => console.error('Initial notification tap error:', error));
+  flushNotificationPress();
+  return () => {
+    unsubscribe();
+    pressNavigationRef = null;
+  };
 };
