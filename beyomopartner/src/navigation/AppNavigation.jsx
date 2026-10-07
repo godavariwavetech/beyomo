@@ -33,7 +33,7 @@ import AboutUsScreen from '../screens/Profile/AboutUsScreen';
 import CitySelectorScreen from '../screens/CitySelector/CitySelectorScreen';
 import CustomTabBar from '../components/BottomTabBar/CustomTabBar';
 import AccountSuspendedModal from '../components/AccountSuspendedModal/AccountSuspendedModal';
-import {setupForegroundHandler, handleNotificationNavigation} from '../services/NotificationsService';
+import {setupForegroundHandler, setupNotificationPressHandler, queueNotificationPress, flushNotificationPress} from '../services/NotificationsService';
 import {navigationRef} from './navigationRef';
 
 
@@ -55,23 +55,25 @@ const MainTabs = () => (
 const AppNavigation = () => {
   useEffect(() => {
     const unsubForeground = setupForegroundHandler();
+    const unsubPress = setupNotificationPressHandler(navigationRef);
 
     const unsubOpened = messaging().onNotificationOpenedApp(remoteMessage => {
-      handleNotificationNavigation(remoteMessage.data, navigationRef);
+      queueNotificationPress(remoteMessage.data, remoteMessage.messageId);
     });
 
     messaging().getInitialNotification().then(remoteMessage => {
-      if (remoteMessage) handleNotificationNavigation(remoteMessage.data, navigationRef);
+      if (remoteMessage) queueNotificationPress(remoteMessage.data, remoteMessage.messageId);
     });
 
     return () => {
       unsubForeground();
       unsubOpened();
+      unsubPress();
     };
   }, []);
 
   return (
-    <NavigationContainer ref={navigationRef}>
+    <NavigationContainer ref={navigationRef} onReady={flushNotificationPress} onStateChange={flushNotificationPress}>
       <Stack.Navigator screenOptions={{headerShown: false}}>
         <Stack.Screen name="Splash" component={SplashScreen} />
         <Stack.Screen name="ForceUpdate" component={ForceUpdateScreen} options={{gestureEnabled: false}} />

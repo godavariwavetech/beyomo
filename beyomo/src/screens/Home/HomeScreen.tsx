@@ -724,7 +724,7 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
                           activeOpacity={0.8}
                           onPress={() => handleAddPopular(svc)}>
                           <Text style={styles.popularAddText}>ADD</Text>
-                          <Ionicons name="add" size={sw(14)} color="#105641" />
+                          <Ionicons name="add" size={sw(14)} color="#FFFFFF" />
                         </TouchableOpacity>
                       ) : (
                         <View style={styles.popularStepper}>
@@ -732,14 +732,14 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
                             style={styles.popularStepBtn}
                             activeOpacity={0.7}
                             onPress={() => dispatch(decrementServiceQty(id))}>
-                            <Ionicons name="remove" size={sw(14)} color="#105641" />
+                            <Ionicons name="remove" size={sw(14)} color="#FFFFFF" />
                           </TouchableOpacity>
                           <Text style={styles.popularStepCount}>{qty}</Text>
                           <TouchableOpacity
                             style={styles.popularStepBtn}
                             activeOpacity={0.7}
                             onPress={() => dispatch(incrementServiceQty(id))}>
-                            <Ionicons name="add" size={sw(14)} color="#105641" />
+                            <Ionicons name="add" size={sw(14)} color="#FFFFFF" />
                           </TouchableOpacity>
                         </View>
                       )}
@@ -1575,7 +1575,7 @@ const styles = StyleSheet.create({
     gap: sw(4),
     borderWidth: 1,
     borderColor: '#105641',
-    backgroundColor: '#EBF5EF',
+    backgroundColor: '#105641',
     borderRadius: sw(8),
     paddingVertical: sw(6),
     paddingHorizontal: sw(10),
@@ -1587,7 +1587,7 @@ const styles = StyleSheet.create({
   popularAddText: {
     fontFamily: fonts.title,
     fontSize: sw(12),
-    color: '#105641',
+    color: '#FFFFFF',
   },
   popularAddTextDone: {
     color: '#8A6D1F',
@@ -1599,7 +1599,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     borderWidth: 1,
     borderColor: '#105641',
-    backgroundColor: '#EBF5EF',
+    backgroundColor: '#105641',
     borderRadius: sw(8),
     overflow: 'hidden',
   },
@@ -1612,7 +1612,7 @@ const styles = StyleSheet.create({
   popularStepCount: {
     fontFamily: fonts.title,
     fontSize: sw(13),
-    color: '#105641',
+    color: '#FFFFFF',
   },
   viewDetailsBtn: {
     paddingVertical: sw(2),

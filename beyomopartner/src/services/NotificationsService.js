@@ -1,5 +1,6 @@
-import notifee, {AndroidImportance, AndroidStyle, AndroidVisibility} from '@notifee/react-native';
+import notifee, {AndroidImportance, AndroidStyle, AndroidVisibility, EventType} from '@notifee/react-native';
 import messaging from '@react-native-firebase/messaging';
+import api from '../utils/api';
 
 // Channel IDs
 const CH_NEW_BOOKING = 'beyomo_partner_new_booking';
@@ -119,6 +120,7 @@ const displayNotification = async (notification, data = {}) => {
     await notifee.displayNotification({
       title: notification.title,
       body: notification.body,
+      data,
       android: {
         channelId,
         sound,
@@ -147,17 +149,62 @@ const displayNotification = async (notification, data = {}) => {
   }
 };
 
-export const handleNotificationNavigation = (data, navigationRef) => {
+export const handleNotificationNavigation = async (data, navigationRef) => {
   if (!data || !navigationRef?.current) return;
   const {type, bookingId} = data;
-  if (type === 'new_booking' || type === 'booking_update' || type === 'test') {
-    if (bookingId) {
-      navigationRef.current.navigate('Main');
-      setTimeout(() => {
-        navigationRef.current.navigate('IncomingRequest', {bookingId});
-      }, 500);
-    } else {
-      navigationRef.current.navigate('Main');
+  if (type === 'available_booking') {
+    navigationRef.current.navigate(bookingId ? 'IncomingRequest' : 'AvailableBookings', bookingId ? {bookingId} : undefined);
+  } else if (['new_booking', 'booking', 'booking_update', 'test'].includes(type)) {
+    if (!bookingId) {
+      navigationRef.current.navigate('Main', {screen: 'Jobs'});
+      return;
+    }
+    try {
+      // Use the full job parameter expected by the existing Jobs screens.
+      const response = await api.get(`/api/v1/partners/bookings/${encodeURIComponent(bookingId)}`);
+      const job = response.data?.data;
+      if (!job || !navigationRef.current?.getRootState()?.routes.some(route => route.name === 'Main')) return;
+      navigationRef.current.navigate(job.status === 'in_progress' ? 'ActiveJob' : 'JobDetails', {job});
+    } catch (error) {
+      if (navigationRef.current?.getRootState()?.routes.some(route => route.name === 'Main')) {
+        navigationRef.current.navigate('Main', {screen: 'Jobs'});
+      }
     }
   }
+};
+
+// Wait for the existing startup/authentication flow before opening a tapped notification.
+let pendingPress = null;
+let lastPressId = null;
+let pressNavigationRef = null;
+
+export const flushNotificationPress = () => {
+  const navigation = pressNavigationRef?.current;
+  if (!pendingPress || !navigation?.isReady() ||
+      !navigation.getRootState()?.routes.some(route => route.name === 'Main')) return;
+  const data = pendingPress;
+  pendingPress = null;
+  handleNotificationNavigation(data, pressNavigationRef);
+};
+
+export const queueNotificationPress = (data, notificationId) => {
+  if (!data || (notificationId && notificationId === lastPressId)) return;
+  lastPressId = notificationId ?? null;
+  pendingPress = data;
+  flushNotificationPress();
+};
+
+export const setupNotificationPressHandler = navigationRef => {
+  pressNavigationRef = navigationRef;
+  const unsubscribe = notifee.onForegroundEvent(({type, detail}) => {
+    if (type === EventType.PRESS) queueNotificationPress(detail.notification?.data, detail.notification?.id);
+  });
+  notifee.getInitialNotification().then(initial => {
+    if (initial) queueNotificationPress(initial.notification?.data, initial.notification?.id);
+  }).catch(error => console.error('Initial notification tap error:', error));
+  flushNotificationPress();
+  return () => {
+    unsubscribe();
+    pressNavigationRef = null;
+  };
 };

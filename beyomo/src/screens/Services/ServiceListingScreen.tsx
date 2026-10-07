@@ -1026,16 +1026,16 @@ const ServiceCard = ({
             {qty === 0 ? (
               <TouchableOpacity style={styles.addBtn} activeOpacity={0.7} onPress={onIncrement}>
                 <Text style={styles.addBtnText}>Add</Text>
-                <Ionicons name="add" size={sw(14)} color="#105641" />
+                <Ionicons name="add" size={sw(14)} color="#FFFFFF" />
               </TouchableOpacity>
             ) : (
               <View style={styles.stepper}>
                 <TouchableOpacity style={styles.stepBtn} activeOpacity={0.7} onPress={onDecrement}>
-                  <Ionicons name="remove" size={sw(14)} color="#105641" />
+                  <Ionicons name="remove" size={sw(14)} color="#FFFFFF" />
                 </TouchableOpacity>
                 <Text style={styles.stepCount}>{qty}</Text>
                 <TouchableOpacity style={styles.stepBtn} activeOpacity={0.7} onPress={onIncrement} disabled={qty >= MAX_SERVICE_QTY}>
-                  <Ionicons name="add" size={sw(14)} color={qty >= MAX_SERVICE_QTY ? '#B7CFC4' : '#105641'} />
+                  <Ionicons name="add" size={sw(14)} color={qty >= MAX_SERVICE_QTY ? '#B7CFC4' : '#FFFFFF'} />
                 </TouchableOpacity>
               </View>
             )}
@@ -1261,7 +1261,7 @@ const styles = StyleSheet.create({
     gap: sw(2),
     width: sw(90),
     height: sw(32),
-    backgroundColor: 'rgba(16, 86, 65, 0.06)',
+    backgroundColor: '#105641',
     borderWidth: 1,
     borderColor: '#105641',
     borderRadius: sw(20),
@@ -1270,12 +1270,13 @@ const styles = StyleSheet.create({
     fontFamily: fonts.textFont,
     fontSize: sw(14),
     fontWeight: '600',
-    color: '#105641',
+    color: '#FFFFFF',
   },
   stepper: {
     flexDirection: 'row',
     alignItems: 'center',
     height: sw(35),
+    backgroundColor: '#105641',
     borderWidth: 1,
     borderColor: '#105641',
     borderRadius: sw(20),
@@ -1291,7 +1292,7 @@ const styles = StyleSheet.create({
     fontFamily: fonts.title,
     fontSize: sw(14),
     fontWeight: '700',
-    color: '#105641',
+    color: '#FFFFFF',
     minWidth: sw(22),
     textAlign: 'center',
   },
