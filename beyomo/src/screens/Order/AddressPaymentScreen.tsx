@@ -637,7 +637,10 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
       return;
     }
     if (!selectedAddr) {
-      Alert.alert('Address Required', 'Please select a delivery address.');
+      setInfoModal({
+        title: 'Address Required',
+        message: 'Please add or select an address to continue.',
+      });
       return;
     }
     if (!isLocationAvailable(selectedAddr.city)) {
@@ -1860,9 +1863,9 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
           </View>
         </View>
         <TouchableOpacity
-          style={[styles.continueBtn, (booking || (!guest && (!selectedAddr || subtotal < MIN_BOOKING_AMOUNT))) && {opacity: 0.6}]}
+          style={[styles.continueBtn, (booking || (!guest && subtotal < MIN_BOOKING_AMOUNT)) && {opacity: 0.6}]}
           activeOpacity={0.85}
-          disabled={booking || (!guest && (!selectedAddr || subtotal < MIN_BOOKING_AMOUNT))}
+          disabled={booking || (!guest && subtotal < MIN_BOOKING_AMOUNT)}
           onPress={handleBooking}>
           {booking ? (
             <ActivityIndicator color="#FFFFFF" />

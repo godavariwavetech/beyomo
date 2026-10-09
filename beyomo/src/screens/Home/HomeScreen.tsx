@@ -1191,8 +1191,8 @@ const styles = StyleSheet.create({
     paddingBottom: sw(18),
     zIndex: 10,
     backgroundColor: '#012823',
-    borderBottomLeftRadius: sw(24),
-    borderBottomRightRadius: sw(24),
+    // borderBottomLeftRadius: sw(24),
+    // borderBottomRightRadius: sw(24),
   },
   ellipse: {
     position: 'absolute',
