@@ -9,6 +9,7 @@ import Modal from '../components/common/Modal';
 import AddressMapPicker from '../components/common/AddressMapPicker';
 import api from '../services/api';
 import { formatAmount, formatRupee } from '../utils/format';
+import { bookingBaseAmount } from '../utils/bookingAmounts';
 import OrderPackages from '../components/bookings/OrderPackages';
 import '../components/bookings/NewBookingCustomer.css';
 import { cityKey } from '../utils/locationSearch';
@@ -243,11 +244,68 @@ export default function Bookings() {
     setDetailLoading(false);
   };
 
+  // Mutation responses do not include all the computed fields supplied by the
+  // detail endpoint. Reload them without reopening the modal or clearing forms.
+  const applySavedBooking = (bookingId, updated) => {
+    if (!updated) return;
+    const merge = previous => ({
+      ...previous,
+      ...updated,
+      id: previous.id,
+      services: parseServices(updated.services ?? previous.services),
+      packages: parseServices(updated.packages ?? previous.packages),
+      baseAmount: bookingBaseAmount({ ...previous, ...updated }),
+      taxAmount: parseFloat(updated.taxAmount ?? previous.taxAmount ?? 0),
+      amount: parseFloat(updated.totalAmount ?? previous.amount ?? 0),
+      totalAmount: parseFloat(updated.totalAmount ?? previous.totalAmount ?? previous.amount ?? 0),
+      // The following GET restores the split computed from the saved amounts.
+      recomputedAdminCommission: null,
+      recomputedPartnerEarning: null,
+    });
+    setSelected(previous => previous?.id === String(bookingId) ? merge(previous) : previous);
+    setBookings(previous => previous.map(b => b.id === String(bookingId) ? merge(b) : b));
+  };
+
+  const refreshBooking = async (bookingId) => {
+    try {
+      const res = await api.get(`/api/v1/admin/bookings/${bookingId}`);
+      const fresh = res.data?.data;
+      if (!fresh) throw new Error('Booking details were not returned.');
+      const merge = previous => ({
+        ...previous,
+        ...fresh,
+        id: String(fresh._id ?? fresh.id ?? bookingId),
+        services: parseServices(fresh.services ?? previous.services),
+        packages: parseServices(fresh.packages ?? previous.packages),
+        userName: fresh.user?.name ?? previous.userName,
+        userPhone: fresh.user?.phone ?? previous.userPhone,
+        partnerName: fresh.partner?.name ?? '',
+        partnerPhone: fresh.partner?.phone ?? '',
+        baseAmount: bookingBaseAmount({ ...previous, ...fresh }),
+        amount: parseFloat(fresh.totalAmount ?? previous.amount ?? 0),
+        commission: parseFloat(fresh.commissionAmount ?? previous.commission ?? 0),
+        date: fresh.scheduledAt ? new Date(fresh.scheduledAt).toLocaleDateString('en-IN', {day:'2-digit', month:'short', year:'numeric'}) : previous.date,
+        slot: fresh.scheduledAt ? new Date(fresh.scheduledAt).toLocaleTimeString('en-IN', {hour:'2-digit', minute:'2-digit'}) : previous.slot,
+        fullAddress: [fresh.addressLine1, fresh.addressLine2, fresh.addressCity, fresh.addressState, fresh.addressPincode].filter(Boolean).join(', '),
+      });
+      // A save may finish after the admin closes this booking or opens another.
+      setSelected(previous => previous?.id === String(bookingId) ? merge(previous) : previous);
+      setBookings(previous => previous.map(b => b.id === String(bookingId) ? merge(b) : b));
+    } catch {
+      showToast('Change saved, but booking details could not refresh. Please reopen the booking.', 'warning');
+    }
+  };
+
   const cancelBooking = async (id) => {
-    await action('patch', `/api/v1/admin/bookings/${id}/cancel`);
+    const res = await action('patch', `/api/v1/admin/bookings/${id}/cancel`);
+    if (!res.ok) {
+      showToast(res.error ?? 'Failed to cancel booking.', 'danger');
+      return;
+    }
     setBookings(prev => prev.map(b => b.id === id ? { ...b, status:'cancelled', commission:0 } : b));
     showToast('Booking cancelled successfully.', 'danger');
     if (selected?.id === id) setSelected(prev => ({ ...prev, status:'cancelled', commission:0 }));
+    await refreshBooking(id);
   };
 
   const updateBookingStatus = async (id, status) => {
@@ -271,6 +329,7 @@ export default function Bookings() {
       setBookings(prev => prev.map(b => b.id === id ? applyUpdate(b) : b));
       setSelected(prev => prev?.id === id ? applyUpdate(prev) : prev);
       loadBookings();
+      await refreshBooking(id);
       showToast(`Booking moved to ${status.replace(/_/g, ' ')}.`, 'success');
     } finally {
       setReopeningId(null);
@@ -283,6 +342,7 @@ export default function Bookings() {
       setBookings(prev => prev.map(b => b.id === id ? { ...b, status:'confirmed' } : b));
       showToast('Booking accepted.', 'success');
       if (selected?.id === id) setSelected(prev => ({ ...prev, status:'confirmed' }));
+      await refreshBooking(id);
     } else {
       showToast(res.error ?? 'Failed to accept booking.', 'danger');
     }
@@ -296,15 +356,11 @@ export default function Bookings() {
         services: svcCart.map(item => ({ id: item.svc.id ?? item.svc._id, qty: item.qty })),
       });
       const updated = res.data?.data;
-      if (updated) {
-        const parsedSvcs = parseServices(updated.services ?? selected?.services);
-        const newTotal = parseFloat(updated.totalAmount ?? selected?.amount ?? 0);
-        setSelected(prev => ({ ...prev, services: parsedSvcs, amount: newTotal, totalAmount: newTotal }));
-        setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, amount: newTotal } : b));
-      }
+      applySavedBooking(bookingId, updated);
       const n = svcCart.length;
       setSvcCart([]);
       setSvcSearch('');
+      await refreshBooking(bookingId);
       showToast(`${n} service(s) added to booking.`, 'success');
     } catch (err) {
       const msg = err.response?.data?.message ?? 'Failed to add services.';
@@ -323,13 +379,9 @@ export default function Bookings() {
         services: [{ isAddOn: true, name: addonName.trim(), price, qty: addonQty }],
       });
       const updated = res.data?.data;
-      if (updated) {
-        const parsedSvcs = parseServices(updated.services ?? selected?.services);
-        const newTotal = parseFloat(updated.totalAmount ?? selected?.amount ?? 0);
-        setSelected(prev => ({ ...prev, services: parsedSvcs, amount: newTotal, totalAmount: newTotal }));
-        setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, amount: newTotal } : b));
-      }
+      applySavedBooking(bookingId, updated);
       setAddonName(''); setAddonPrice(''); setAddonQty(1);
+      await refreshBooking(bookingId);
       showToast('Add-on added to booking.', 'success');
     } catch (err) {
       const msg = err.response?.data?.message ?? 'Failed to add add-on.';
@@ -353,16 +405,11 @@ export default function Bookings() {
     try {
       const res = await api.patch(`/api/v1/admin/bookings/${bookingId}/add-package`, { packageId, services });
       const updated = res.data?.data;
-      if (updated) {
-        const parsedSvcs = parseServices(updated.services ?? selected?.services);
-        const parsedPkgs = parseServices(updated.packages ?? selected?.packages);
-        const newTotal = parseFloat(updated.totalAmount ?? selected?.amount ?? 0);
-        setSelected(prev => ({ ...prev, services: parsedSvcs, packages: parsedPkgs, amount: newTotal, totalAmount: newTotal }));
-        setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, amount: newTotal } : b));
-      }
+      applySavedBooking(bookingId, updated);
       setPickingPackage(null);
       setFlexiblePicks([]);
       setShowAddPackageModal(false);
+      await refreshBooking(bookingId);
       showToast('Package added to booking.', 'success');
     } catch (err) {
       const msg = err.response?.data?.message ?? 'Failed to add package.';
@@ -411,13 +458,9 @@ export default function Bookings() {
     try {
       const res = await api.patch(`/api/v1/admin/bookings/${bookingId}/services`, { updateQty: [{ index, qty }] });
       const updated = res.data?.data;
-      if (updated) {
-        const parsedSvcs = parseServices(updated.services ?? selected?.services);
-        const newTotal = parseFloat(updated.totalAmount ?? selected?.amount ?? 0);
-        setSelected(prev => ({ ...prev, services: parsedSvcs, amount: newTotal, totalAmount: newTotal }));
-        setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, amount: newTotal } : b));
-      }
+      applySavedBooking(bookingId, updated);
       setQtyDrafts(prev => { const next = { ...prev }; delete next[index]; return next; });
+      await refreshBooking(bookingId);
       showToast(`Quantity updated. New total: ₹${fmt(updated?.totalAmount ?? 0)}`, 'success');
     } catch (err) {
       const msg = err.response?.data?.message ?? 'Failed to update quantity.';
@@ -431,12 +474,8 @@ export default function Bookings() {
     try {
       const res = await api.patch(`/api/v1/admin/bookings/${bookingId}/services`, { removeIndices: [serviceIndex] });
       const updated = res.data?.data;
-      if (updated) {
-        const parsedSvcs = parseServices(updated.services ?? selected?.services);
-        const newTotal = parseFloat(updated.totalAmount ?? selected?.amount ?? 0);
-        setSelected(prev => ({ ...prev, services: parsedSvcs, amount: newTotal, totalAmount: newTotal }));
-        setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, amount: newTotal } : b));
-      }
+      applySavedBooking(bookingId, updated);
+      await refreshBooking(bookingId);
       showToast('Service removed from booking.', 'success');
     } catch (err) {
       const msg = err.response?.data?.message ?? 'Failed to remove service.';
@@ -451,13 +490,8 @@ export default function Bookings() {
     try {
       const res = await api.patch(`/api/v1/admin/bookings/${bookingId}/remove-package`, packageId != null ? { packageId } : {});
       const updated = res.data?.data;
-      if (updated) {
-        const parsedSvcs = parseServices(updated.services ?? selected?.services);
-        const parsedPkgs = parseServices(updated.packages ?? selected?.packages);
-        const newTotal = parseFloat(updated.totalAmount ?? selected?.amount ?? 0);
-        setSelected(prev => ({ ...prev, services: parsedSvcs, packages: parsedPkgs, packageId: updated.packageId ?? null, amount: newTotal, totalAmount: newTotal }));
-        setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, amount: newTotal } : b));
-      }
+      applySavedBooking(bookingId, updated);
+      await refreshBooking(bookingId);
       showToast('Package removed from booking.', 'success');
     } catch (err) {
       const msg = err.response?.data?.message ?? 'Failed to remove package.';
@@ -477,6 +511,7 @@ export default function Bookings() {
       setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, partnerName: pName, partnerId: reassignId, status: b.status === 'pending' ? 'confirmed' : b.status } : b));
       setSelected(prev => ({ ...prev, partnerName: pName, partnerId: reassignId }));
       setReassignId('');
+      await refreshBooking(bookingId);
       showToast('Partner assigned successfully.', 'success');
     } catch {
       showToast('Failed to assign partner.', 'danger');
@@ -503,6 +538,7 @@ export default function Bookings() {
       setRescheduleDate('');
       setRescheduleReason('');
       setRescheduleError('');
+      await refreshBooking(bookingId);
       showToast('Booking rescheduled successfully.', 'success');
     } catch (err) {
       const msg = err.response?.data?.message ?? 'Failed to reschedule booking.';
@@ -538,7 +574,7 @@ export default function Bookings() {
   ]);
   const addablePackages = availablePackages.filter(p => !existingPackageIds.has(p.id));
 
-  const baseAmount      = parseFloat(selected?.baseAmount ?? selected?.amount ?? 0);
+  const baseAmount      = bookingBaseAmount(selected ?? {});
   const couponDiscount  = parseFloat(selected?.couponDiscountAmount ?? 0);
   const tax             = parseFloat(selected?.taxAmount ?? 0);
   const totalAmt        = parseFloat(selected?.totalAmount ?? selected?.amount ?? 0);

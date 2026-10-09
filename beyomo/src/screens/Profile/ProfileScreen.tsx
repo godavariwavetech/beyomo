@@ -42,6 +42,7 @@ interface Props {
 const ProfileScreen = ({navigation}: Props) => {
   const insets = useSafeAreaInsets();
   const dispatch = useDispatch<any>();
+  const authToken = useSelector((s: any) => s.Auth?.token);
   const guest = useSelector((s: any) => isIOSGuest(s.Auth?.token));
   const profile = useSelector((s: any) => isIOSGuest(s.Auth?.token) ? null : s.User?.profile);
   const savedBookings: any[] = useSelector((s: any) => s.Bookings?.list ?? []);
@@ -50,10 +51,10 @@ const ProfileScreen = ({navigation}: Props) => {
   const [loggingOut, setLoggingOut] = useState(false);
 
   useEffect(() => {
-    if (guest) return;
+    if (!authToken || guest) return;
     if (!profile) dispatch(fetchProfile());
     if (bookings.length === 0) dispatch(fetchUserBookings());
-  }, []);
+  }, [dispatch, authToken, guest]);
 
   const upcomingCount = bookings.filter(
     (b: any) => b.status === 'confirmed' || b.status === 'pending' || b.status === 'in_progress',
