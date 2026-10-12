@@ -551,7 +551,7 @@ const HomeScreen = ({ navigation }: { navigation: any }) => {
 
               <View style={styles.ctaCardImgWrap}>
                 {comboBanner?.image ?
-                  (<Image source={{ uri: comboBanner.image }} style={styles.ctaCardImg} resizeMode="cover" />) :
+                  (<Image source={{ uri: comboBanner.image }} style={styles.ctaCardImg} resizeMode="stretch" />) :
                   (<View style={styles.noImageContainer}>
                     <Ionicons name="image-outline" size={sw(28)} color="#999999" style={styles.noImageIcon} />
                     <Text style={styles.noImageText}>No image found</Text>
