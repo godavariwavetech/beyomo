@@ -75,7 +75,7 @@ const validateRescheduleDate = (value) => {
 
 const parseServices = (s) => {
   if (Array.isArray(s)) return s;
-  if (typeof s === 'string') { try { return JSON.parse(s); } catch { return []; } }
+  if (typeof s === 'string') { try { const parsed = JSON.parse(s); return Array.isArray(parsed) ? parsed : []; } catch { return []; } }
   return [];
 };
 
@@ -252,6 +252,7 @@ export default function Bookings() {
       ...previous,
       ...updated,
       id: previous.id,
+      service: updated.service?.name ?? (typeof updated.service === 'string' ? updated.service : previous.service?.name ?? previous.service ?? ''),
       services: parseServices(updated.services ?? previous.services),
       packages: parseServices(updated.packages ?? previous.packages),
       baseAmount: bookingBaseAmount({ ...previous, ...updated }),
@@ -275,6 +276,7 @@ export default function Bookings() {
         ...previous,
         ...fresh,
         id: String(fresh._id ?? fresh.id ?? bookingId),
+        service: fresh.service?.name ?? (typeof fresh.service === 'string' ? fresh.service : previous.service?.name ?? previous.service ?? ''),
         services: parseServices(fresh.services ?? previous.services),
         packages: parseServices(fresh.packages ?? previous.packages),
         userName: fresh.user?.name ?? previous.userName,
