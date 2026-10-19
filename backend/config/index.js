@@ -22,6 +22,7 @@ module.exports = {
   SUNSTECH_SMS_ROUTE_ID: process.env.SUNSTECH_SMS_ROUTE_ID || "13",
   SUNSTECH_SMS_SENDER_ID: process.env.SUNSTECH_SMS_SENDER_ID || "GDWOTP",
   SUNSTECH_SMS_TEMPLATE_ID: process.env.SUNSTECH_SMS_TEMPLATE_ID || "",
+  SUNSTECH_BOOKING_SMS_TEMPLATE_ID: process.env.SUNSTECH_BOOKING_SMS_TEMPLATE_ID || "",
   MOCK_SMS: process.env.MOCK_SMS === "true",
 
   // WhatsApp Cloud API: enable only after business credentials/template are configured.

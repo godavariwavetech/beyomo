@@ -5,13 +5,13 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const source = fs.readFileSync(path.join(__dirname, '../utils/bookingOtpSms.js'), 'utf8');
-const booking = { id: 23, userId: 1, status: 'confirmed', serviceOtp: '0123', otpVerifiedAt: null };
+const booking = { id: 23, bookingCode: 'NLR2600023', userId: 1, status: 'confirmed', serviceOtp: '0123', otpVerifiedAt: null };
 
 function setup(phone = '9876543210', failure = false) {
   const sends = [];
   const logs = [];
   const context = { module: { exports: {} }, require(name) {
-    if (name === './smsUtils') return { sendOtp: async (...args) => {
+    if (name === './smsUtils') return { sendBookingOtp: async (...args) => {
       sends.push(args);
       if (failure) throw Error('private provider details');
     } };
@@ -46,7 +46,7 @@ test('sends the same in-app service OTP through the existing SMS sender, preserv
   assert.equal(api.sends.length, 1);
   assert.equal(api.sends[0][0], '9876543210');
   assert.equal(api.sends[0][1], '0123');
-  assert.equal(api.sends[0][2].timeout, 5000);
+  assert.equal(api.sends[0][2], 'NLR2600023');
   assert.deepEqual(booking, original);
 });
 
@@ -112,7 +112,7 @@ test('the existing login SMS text and provider template remain intact', async ()
   const context = { module: { exports: {} }, require(name) {
     if (name === 'axios') return { get: async (...args) => { calls.push(args); return { data: 'OK' }; } };
     if (name === './logger') return { info() {}, error() {} };
-    if (name === '../config') return { MOCK_SMS: false, SUNSTECH_SMS_KEY: 'test', SUNSTECH_SMS_ROUTE_ID: '13', SUNSTECH_SMS_SENDER_ID: 'GDWOTP', SUNSTECH_SMS_TEMPLATE_ID: 'template-id' };
+    if (name === '../config') return { MOCK_SMS: false, SUNSTECH_SMS_KEY: 'test', SUNSTECH_SMS_ROUTE_ID: '13', SUNSTECH_SMS_SENDER_ID: 'GDWOTP', SUNSTECH_SMS_TEMPLATE_ID: 'template-id', SUNSTECH_BOOKING_SMS_TEMPLATE_ID: 'booking-template-id' };
     throw Error(name);
   } };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../utils/smsUtils.js'), 'utf8'), context);
@@ -123,6 +123,10 @@ test('the existing login SMS text and provider template remain intact', async ()
   await context.module.exports.sendOtp('9876543210', '0123', { timeout: 5000 });
   assert.equal(calls[1][1].timeout, 5000);
   assert.match(calls[1][1].params.msg, /0123/);
+  await context.module.exports.sendBookingOtp('9876543210', '0123', 'NLR2600023');
+  assert.equal(calls[2][1].params.msg, 'Your Beyomo booking NLR2600023 is confirmed. Your service OTP is 0123. Share this code with your partner only when the service starts. - Godavari Wave Technologies');
+  assert.equal(calls[2][1].params.template_id, 'booking-template-id');
+  assert.equal(calls[2][1].timeout, 5000);
 });
 
 test('Admin status confirmation sends once; repeating the same status does not resend', async () => {
@@ -142,6 +146,22 @@ test('Admin status confirmation sends once; repeating the same status does not r
   await context.module.exports.updateBookingStatus(saved.id, 'confirmed');
   await context.module.exports.updateBookingStatus(saved.id, 'confirmed');
   assert.equal(sends, 1);
+});
+
+test('booking text does not use the login template if the booking template is missing', async () => {
+  let requests = 0;
+  const config = { MOCK_SMS: false, SUNSTECH_SMS_TEMPLATE_ID: 'login-only' };
+  const logs = [];
+  const context = { module: { exports: {} }, require(name) {
+    if (name === '../config') return config;
+    if (name === 'axios') return { get: async () => { requests++; return { data: 'OK' }; } };
+    if (name === './logger') return { warn: m => logs.push(m), info: m => logs.push(m), error() {} };
+    throw Error(name);
+  } };
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../utils/smsUtils.js'), 'utf8'), context);
+  const result = await context.module.exports.sendBookingOtp('9876543210', '0123', 'NLR2600023');
+  assert.equal(result.skipped, true);
+  assert.equal(requests, 0);
 });
 
 test('payment verification sends only when it changes a pending booking to confirmed', async () => {

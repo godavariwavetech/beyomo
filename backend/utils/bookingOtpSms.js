@@ -1,8 +1,8 @@
-const { sendOtp } = require("./smsUtils");
+const { sendBookingOtp } = require("./smsUtils");
 const logger = require("./logger");
 
-// Use the already-generated service OTP and the existing approved login SMS
-// template. This never creates a login OTP or changes the booking's code.
+// Use the already-generated service OTP with booking-specific confirmation text.
+// This never creates a login OTP or changes the booking's code.
 const sendBookingOtpSms = async (booking, options = {}) => {
   if (!booking || booking.status !== "confirmed" || booking.otpVerifiedAt
       || !/^\d{4}$/.test(String(booking.serviceOtp ?? ""))) return;
@@ -17,7 +17,7 @@ const sendBookingOtpSms = async (booking, options = {}) => {
         logger.warn(`Booking OTP SMS skipped for booking ${booking.id}: invalid customer phone`);
         return;
       }
-      await sendOtp(phone, String(booking.serviceOtp), { timeout: 5000 });
+      await sendBookingOtp(phone, String(booking.serviceOtp), booking.bookingCode || String(booking.id));
     } catch (_) {
       // An SMS outage must not undo a confirmed booking or remove its in-app OTP.
       logger.warn(`Booking OTP SMS failed for booking ${booking.id}`);
