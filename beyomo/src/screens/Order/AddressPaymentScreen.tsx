@@ -1367,7 +1367,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
             <View style={styles.billRows}>
               {isCartMode && cartItems.map(item => (
                 <View key={item.key} style={styles.billRow}>
-                  <Text style={styles.billLabel} numberOfLines={1}>
+                  <Text style={styles.billLabel}>
                     {item.packageTitle}{item.qty > 1 ? ` ×${item.qty}` : ''}
                   </Text>
                   <Text style={styles.billValue}>
@@ -1389,11 +1389,11 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
 
                 return (
                   <View key={String(isFree ? `free-${s.id}` : s.id)} style={styles.billRow}>
-                    <Text style={styles.billLabel} numberOfLines={1}>
+                    <Text style={styles.billLabel}>
                       {s.name}{s.qty > 1 ? ` ×${s.qty}` : ''}
                     </Text>
                     {hasOfferPrice ? (
-                      <View style={{flexDirection: 'row', alignItems: 'center', gap: sw(6)}}>
+                      <View style={styles.billPriceGroup}>
                         <Text style={[styles.billValue, {color: '#105641', fontWeight: '700'}]}>
                           ₹{formatAmount(offerPrice * s.qty)}
                         </Text>
@@ -2369,9 +2369,10 @@ const styles = StyleSheet.create({
   billTitle: {fontFamily: fonts.textFont, fontSize: sw(14), fontWeight: '700', color: '#303030'},
   divider: {height: 0.5, backgroundColor: '#CBCBCB'},
   billRows: {gap: sw(12)},
-  billRow: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: sw(10)},
-  billLabel: {fontFamily: fonts.textFont, fontSize: sw(12), color: '#171816'},
-  billValue: {fontFamily: fonts.textFont, fontSize: sw(14), fontWeight: '500', color: '#252525'},
+  billRow: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: sw(10)},
+  billLabel: {flex: 1, minWidth: 0, flexShrink: 1, fontFamily: fonts.textFont, fontSize: sw(12), lineHeight: sw(18), color: '#171816'},
+  billValue: {flexShrink: 0, textAlign: 'right', fontFamily: fonts.textFont, fontSize: sw(14), fontWeight: '500', color: '#252525'},
+  billPriceGroup: {flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap', flexShrink: 0, maxWidth: '45%', gap: sw(4)},
   toPayRow: {flexDirection: 'row', alignItems: 'center', gap: sw(8)},
   toPayTextBlock: {flex: 1},
   toPayLabel: {fontFamily: fonts.textFont, fontSize: sw(14), fontWeight: '700', color: '#303030'},
