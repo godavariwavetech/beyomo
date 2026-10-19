@@ -1,3 +1,5 @@
+import { lookupAddress } from './addressLookup';
+
 const CITY_ALIASES = ['rahamundry', 'rajamundry', 'rajahmundry', 'rajahmundri', 'rajamahendravaram'];
 
 export function cityKey(value = '') {
@@ -25,11 +27,9 @@ export async function searchLocations(query, biasLat, biasLng, cities, signal) {
     if (!namedCity && biasLat != null && biasLng != null) {
       params.set('lat', biasLat); params.set('lon', biasLng);
     }
-    const response = await fetch(`https://photon.komoot.io/api/?${params}`, {signal});
-    if (!response.ok) throw new Error('Location search failed');
-    return (await response.json()).features ?? [];
+    return lookupAddress('api/', params, signal);
   }));
-  if (signal.aborted) throw new DOMException('Search cancelled', 'AbortError');
+  if (signal?.aborted) throw new DOMException('Search cancelled', 'AbortError');
   const succeeded = responses.filter(r => r.status === 'fulfilled');
   if (!succeeded.length) throw new Error('Location search failed');
   const seen = new Set();

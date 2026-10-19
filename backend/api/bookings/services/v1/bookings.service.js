@@ -14,6 +14,7 @@ const City = require("../../../cities/models/city.model");
 const AppError = require("../../../../utils/errorHandlers/appError");
 const { sendPushNotification, pushTokensFor, PARTNER_NEW_BOOKING_CHANNEL } = require("../../../../utils/firebaseUtils");
 const { formatISTDateTime } = require("../../../../utils/formatIST");
+const { sendBookingWhatsAppConfirmation } = require("../../../../utils/whatsappUtils");
 const { isPartnerOnline } = require("../../../../utils/partnerPresence");
 const { haversineKm } = require("../../../../utils/geoUtils");
 const { resolveRatesForBooking, resolveRatesForMultiPackageBooking } = require("../../../../utils/revenueSplit");
@@ -354,6 +355,7 @@ const persistBooking = async (prepared, overrides = {}) => {
   const booking = await Booking.create({ ...bookingRow, ...overrides });
 
   const user = await User.findByPk(userId);
+  await sendBookingWhatsAppConfirmation(booking, user, primaryServiceName);
   const userTokens = pushTokensFor(user);
   if (userTokens.length > 0) {
     await sendPushNotification(

@@ -44,10 +44,56 @@ export function AuthProvider({children}) {
     setUser(null);
   }, []);
 
+  // Permissions may change in Super Admin's window while staff stay logged in.
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    let refreshing = false;
+    const refreshPermissions = async () => {
+      const token = localStorage.getItem('adminToken');
+      if (!token || refreshing) return;
+      refreshing = true;
+      try {
+        const response = await api.get('/api/v1/admin/auth/me');
+        if (cancelled || localStorage.getItem('adminToken') !== token) return;
+        const current = response.data?.data;
+        if (!current) return;
+        const stored = localStorage.getItem('adminUser');
+        const updated = { ...JSON.parse(stored || '{}'), ...current };
+        const serialized = JSON.stringify(updated);
+        if (serialized !== stored) {
+          localStorage.setItem('adminUser', serialized);
+          setUser(updated);
+        }
+      } catch (_) {
+        // Keep the session usable during a temporary connection failure.
+      } finally {
+        refreshing = false;
+      }
+    };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refreshPermissions();
+    };
+    refreshPermissions();
+    const timer = setInterval(onVisible, 30000);
+    window.addEventListener('focus', refreshPermissions);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      window.removeEventListener('focus', refreshPermissions);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [user?.id, user?._id]);
+
   const hasPermission = useCallback(
     page => {
       if (!user) return false;
       if (user.role === 'super_admin') return true;
+      if (page === 'bookings_create') {
+        return !!user.customPermissions?.includes('bookings')
+          && !!user.customPermissions?.includes('bookings_create');
+      }
       if (user.customPermissions?.length) return user.customPermissions.includes(page);
       return ROLE_PERMISSIONS[user.role]?.includes(page) ?? false;
     },

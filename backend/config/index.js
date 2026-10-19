@@ -24,6 +24,14 @@ module.exports = {
   SUNSTECH_SMS_TEMPLATE_ID: process.env.SUNSTECH_SMS_TEMPLATE_ID || "",
   MOCK_SMS: process.env.MOCK_SMS === "true",
 
+  // WhatsApp Cloud API: enable only after business credentials/template are configured.
+  WHATSAPP_ENABLED: process.env.WHATSAPP_ENABLED === "true",
+  WHATSAPP_ACCESS_TOKEN: process.env.WHATSAPP_ACCESS_TOKEN || "",
+  WHATSAPP_PHONE_NUMBER_ID: process.env.WHATSAPP_PHONE_NUMBER_ID || "",
+  WHATSAPP_API_VERSION: process.env.WHATSAPP_API_VERSION || "",
+  WHATSAPP_BOOKING_TEMPLATE: process.env.WHATSAPP_BOOKING_TEMPLATE || "beyomo_booking_confirmation",
+  WHATSAPP_TEMPLATE_LANGUAGE: process.env.WHATSAPP_TEMPLATE_LANGUAGE || "en",
+
   // Firebase
   FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID || "",
   FIREBASE_CLIENT_EMAIL: process.env.FIREBASE_CLIENT_EMAIL || "",

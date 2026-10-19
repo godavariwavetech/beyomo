@@ -811,6 +811,8 @@ const acceptBooking = async (partnerId, bookingId) => {
         { model: User, as: 'user', attributes: ['name', 'phone', 'fcmToken'] },
       ],
     });
+    const { sendBookingOtpSms } = require('../../../../utils/bookingOtpSms');
+    await sendBookingOtpSms(booking);
     const user = await User.findByPk(booking.userId);
     const acceptTokens = pushTokensFor(user);
     if (acceptTokens.length > 0) {
