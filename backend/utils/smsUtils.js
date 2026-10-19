@@ -49,8 +49,8 @@ const sendOtp = async (phone, otp, options = {}) => {
 
 const sendBookingOtp = async (phone, otp, bookingCode) => {
   if (!MOCK_SMS && !SUNSTECH_BOOKING_SMS_TEMPLATE_ID) {
-    logger.warn('Booking confirmation SMS skipped: SUNSTECH_BOOKING_SMS_TEMPLATE_ID is not configured');
-    return { success: false, skipped: true };
+    logger.warn('Booking confirmation SMS using the existing OTP template until SUNSTECH_BOOKING_SMS_TEMPLATE_ID is configured');
+    return sendOtp(phone, otp, { timeout: 5000 });
   }
   const message = `Your Beyomo booking ${bookingCode} is confirmed. Your service OTP is ${otp}. Share this code with your partner only when the service starts. - Godavari Wave Technologies`;
   return sendOtp(phone, otp, { message, templateId: SUNSTECH_BOOKING_SMS_TEMPLATE_ID, timeout: 5000 });
