@@ -148,20 +148,23 @@ test('Admin status confirmation sends once; repeating the same status does not r
   assert.equal(sends, 1);
 });
 
-test('booking text does not use the login template if the booking template is missing', async () => {
-  let requests = 0;
+test('missing booking template falls back to the working OTP text and template', async () => {
+  const requests = [];
   const config = { MOCK_SMS: false, SUNSTECH_SMS_TEMPLATE_ID: 'login-only' };
   const logs = [];
   const context = { module: { exports: {} }, require(name) {
     if (name === '../config') return config;
-    if (name === 'axios') return { get: async () => { requests++; return { data: 'OK' }; } };
+    if (name === 'axios') return { get: async (...args) => { requests.push(args); return { data: 'OK' }; } };
     if (name === './logger') return { warn: m => logs.push(m), info: m => logs.push(m), error() {} };
     throw Error(name);
   } };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../utils/smsUtils.js'), 'utf8'), context);
   const result = await context.module.exports.sendBookingOtp('9876543210', '0123', 'NLR2600023');
-  assert.equal(result.skipped, true);
-  assert.equal(requests, 0);
+  assert.equal(result.success, true);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0][1].params.template_id, 'login-only');
+  assert.equal(requests[0][1].params.msg, 'Your OTP for verification is 0123. Do not share this with anyone. - Godavari Wave Technologies');
+  assert.equal(requests[0][1].timeout, 5000);
 });
 
 test('payment verification sends only when it changes a pending booking to confirmed', async () => {
