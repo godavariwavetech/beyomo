@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Search, Download, Eye, XCircle, MapPin, CreditCard, Clock, UserCheck, Package, FileText, Tag, PlusCircle, CalendarClock, Check, Gift, CalendarCheck, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { Search, Download, Eye, XCircle, MapPin, CreditCard, Clock, UserCheck, Package, FileText, Tag, PlusCircle, CalendarClock, Check, Gift, CalendarCheck, RefreshCw, CheckCircle2, MessageCircle } from 'lucide-react';
 import { useBookings } from '../hooks/useBookings';
 import { useAuth } from '../context/AuthContext';
 import { useCityFilter } from '../context/CityContext';
@@ -14,6 +14,7 @@ import OrderPackages from '../components/bookings/OrderPackages';
 import '../components/bookings/NewBookingCustomer.css';
 import { cityKey } from '../utils/locationSearch';
 import { ROLE_LABELS } from '../data/mockData';
+import { bookingWhatsAppLink, bookingWhatsAppMessage } from '../utils/bookingWhatsApp';
 
 const exportCSV = (data, filename) => {
   const headers = ['ID','Customer','User ID','Partner','Partner ID','Service','Amount','Commission','Status','Date','Slot','Payment'];
@@ -98,6 +99,10 @@ export default function Bookings() {
   const [reassigning, setReassigning] = useState(false);
   const [reopeningId, setReopeningId] = useState(null);
   const [showNewBooking, setShowNewBooking] = useState(false);
+  const [createdBooking, setCreatedBooking] = useState(null);
+  const createdBookingWhatsApp = createdBooking
+    ? bookingWhatsAppLink(createdBooking.booking, createdBooking.customer)
+    : null;
 
   const [rescheduleDate, setRescheduleDate]     = useState('');
   const [rescheduleReason, setRescheduleReason] = useState('');
@@ -1532,8 +1537,36 @@ export default function Bookings() {
       <NewBookingModal
         isOpen={showNewBooking && canCreateBooking}
         onClose={() => setShowNewBooking(false)}
-        onCreated={() => { setShowNewBooking(false); loadBookings(); showToast('Booking created for customer.', 'success'); }}
+        onCreated={(booking, customer) => {
+          setShowNewBooking(false);
+          setCreatedBooking({ booking, customer });
+          loadBookings();
+          showToast('Booking created for customer.', 'success');
+        }}
       />
+      <Modal isOpen={!!createdBooking} onClose={() => setCreatedBooking(null)} title="Booking Created" size="lg" footer={<>
+        <button className="btn btn-outline btn-sm" onClick={() => setCreatedBooking(null)}>Done</button>
+        {createdBookingWhatsApp && <a className="btn btn-primary btn-sm" href={createdBookingWhatsApp} target="_blank" rel="noopener noreferrer"
+          style={{ display:'inline-flex', alignItems:'center', gap:6 }}>
+          <MessageCircle size={16} /> Open WhatsApp
+        </a>}
+      </>}>
+        {createdBooking && <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+          <div>
+            <div style={{ fontWeight:700, fontSize:16 }}>Booking {createdBooking.booking.bookingCode || createdBooking.booking.id} created successfully</div>
+            <p style={{ marginTop:8 }}>Send the booking details to {createdBooking.customer.name || 'the customer'} on WhatsApp. Review the message in WhatsApp and press Send.</p>
+          </div>
+          <InfoBlock label="Customer">
+            <strong>{createdBooking.customer.name || 'Customer'}</strong>
+            <div style={{ marginTop:4 }}>{createdBooking.customer.phone}</div>
+          </InfoBlock>
+          {createdBookingWhatsApp ? <InfoBlock label="WhatsApp Message">
+            <div style={{ whiteSpace:'pre-wrap', overflowWrap:'anywhere', fontSize:13, lineHeight:1.7 }}>
+              {bookingWhatsAppMessage(createdBooking.booking, createdBooking.customer)}
+            </div>
+          </InfoBlock> : <p role="alert">The customer phone number is missing or invalid. The booking was saved successfully.</p>}
+        </div>}
+      </Modal>
     </div>
   );
 }
@@ -1758,8 +1791,8 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
 
     setSubmitting(true);
     try {
-      await api.post('/api/v1/admin/bookings', {...buildPayload(), expectedTotal: review.data.totalAmount});
-      onCreated();
+      const response = await api.post('/api/v1/admin/bookings', {...buildPayload(), expectedTotal: review.data.totalAmount});
+      onCreated(response.data?.data ?? {}, customer);
     } catch (err) {
       if (err.response?.status === 409) setReview(null);
       const msg = err.response?.data?.message ?? 'Failed to create booking.';
