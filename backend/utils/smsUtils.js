@@ -16,7 +16,7 @@ const SUNSTECH_SMS_URL = "https://sms.sunstechit.com/app/smsapi/index.php";
  * @param {String} otp - OTP
  * @returns {Promise<Object>} SunsTechIT response
  */
-const sendOtp = async (phone, otp) => {
+const sendOtp = async (phone, otp, options = {}) => {
   if (MOCK_SMS) {
     logger.info(`[MOCK SMS] OTP ${otp} sent to ${phone}`);
     return { success: true, mock: true };
@@ -26,6 +26,7 @@ const sendOtp = async (phone, otp) => {
     const msg = `Your OTP for verification is ${otp}. Do not share this with anyone. - Godavari Wave Technologies`;
 
     const response = await axios.get(SUNSTECH_SMS_URL, {
+      ...(options.timeout ? { timeout: options.timeout } : {}),
       params: {
         key: SUNSTECH_SMS_KEY,
         campaign: 0,

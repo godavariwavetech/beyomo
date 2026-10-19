@@ -56,11 +56,16 @@ const verifyPayment = async (userId, verificationData) => {
     { paymentStatus: "paid", paymentId: payment.id },
     { where: { id: payment.bookingId } }
   );
-  await Booking.update(
+  const [confirmedCount] = await Booking.update(
     { status: "confirmed" },
     { where: { id: payment.bookingId, status: "pending" } }
   );
   const booking = await Booking.findByPk(payment.bookingId);
+
+  if (confirmedCount && booking) {
+    const { sendBookingOtpSms } = require("../../../../utils/bookingOtpSms");
+    await sendBookingOtpSms(booking);
+  }
 
   if (booking) {
     await Notification.create({
@@ -150,12 +155,16 @@ const handleWebhookEvent = async (event, payload) => {
     { paymentStatus: "paid", paymentId: payment.id },
     { where: { id: payment.bookingId } }
   );
-  await Booking.update(
+  const [confirmedCount] = await Booking.update(
     { status: "confirmed" },
     { where: { id: payment.bookingId, status: "pending" } }
   );
 
   const booking = await Booking.findByPk(payment.bookingId);
+  if (confirmedCount && booking) {
+    const { sendBookingOtpSms } = require("../../../../utils/bookingOtpSms");
+    await sendBookingOtpSms(booking);
+  }
   if (booking) {
     await Notification.create({
       userId: payment.userId,

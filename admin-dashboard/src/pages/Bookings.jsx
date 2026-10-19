@@ -13,6 +13,7 @@ import { bookingBaseAmount } from '../utils/bookingAmounts';
 import OrderPackages from '../components/bookings/OrderPackages';
 import '../components/bookings/NewBookingCustomer.css';
 import { cityKey } from '../utils/locationSearch';
+import { ROLE_LABELS } from '../data/mockData';
 
 const exportCSV = (data, filename) => {
   const headers = ['ID','Customer','User ID','Partner','Partner ID','Service','Amount','Commission','Status','Date','Slot','Payment'];
@@ -25,9 +26,9 @@ const exportCSV = (data, filename) => {
 const ITEMS_PER_PAGE = 8;
 const STATUSES = ['all','pending','confirmed','in_progress','completed','cancelled'];
 
-const AdminCreatedLabel = () => (
+const AdminCreatedLabel = ({ creator }) => (
   <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:11, fontWeight:600, color:'#1d4ed8', background:'#eff6ff', padding:'3px 7px', borderRadius:4 }}>
-    <UserCheck size={12} /> Created by Admin
+    <UserCheck size={12} /> Created by {ROLE_LABELS[creator?.role] || 'Admin'}
   </span>
 );
 
@@ -80,7 +81,8 @@ const parseServices = (s) => {
 };
 
 export default function Bookings() {
-  const { showToast } = useAuth();
+  const { showToast, hasPermission } = useAuth();
+  const canCreateBooking = hasPermission('bookings_create');
   const { fetchList, action } = useBookings();
   const { cityParam } = useCityFilter();
   const [search, setSearch]         = useState('');
@@ -682,9 +684,9 @@ export default function Bookings() {
           <button className="btn btn-outline btn-sm" style={{ display:'flex', alignItems:'center', gap:6 }} onClick={() => exportCSV(filtered, 'bookings.csv')}>
             <Download size={14} /> Export
           </button>
-          <button className="btn btn-primary btn-sm" style={{ display:'flex', alignItems:'center', gap:6 }} onClick={() => setShowNewBooking(true)}>
+          {canCreateBooking && <button className="btn btn-primary btn-sm" style={{ display:'flex', alignItems:'center', gap:6 }} onClick={() => setShowNewBooking(true)}>
             <PlusCircle size={14} /> New Booking
-          </button>
+          </button>}
         </div>
 
         <div className="table-container">
@@ -712,7 +714,7 @@ export default function Bookings() {
                   <td>
                     <div style={{ fontFamily:'monospace', fontSize:12, background:'var(--c-border-light)', padding:'2px 6px', borderRadius:'var(--r-sm)', fontWeight:600, display:'inline-block' }}>{b.bookingCode || b.id}</div>
                     {b.createdByAdminId != null && (
-                      <div style={{ marginTop:5 }}><AdminCreatedLabel /></div>
+                      <div style={{ marginTop:5 }}><AdminCreatedLabel creator={b.createdByAdmin} /></div>
                     )}
                   </td>
                   <td>
@@ -829,7 +831,20 @@ export default function Bookings() {
         {selected && (
           <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
             {selected.createdByAdminId != null && (
-              <div><AdminCreatedLabel /></div>
+              <InfoBlock label="Created By">
+                <div style={{ fontWeight:700, fontSize:15 }}>
+                  {selected.createdByAdmin?.name || 'Staff account unavailable'}
+                </div>
+                <div style={{ marginTop:6 }}><AdminCreatedLabel creator={selected.createdByAdmin} /></div>
+                <div style={{ fontSize:12, color:'var(--c-text-secondary)', marginTop:6 }}>
+                  Staff ID: {selected.createdByAdminId}
+                </div>
+                {selected.createdAt && (
+                  <div style={{ fontSize:12, color:'var(--c-text-secondary)', marginTop:4 }}>
+                    Created on: {new Date(selected.createdAt).toLocaleString('en-IN', { timeZone:'Asia/Kolkata', day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })} IST
+                  </div>
+                )}
+              </InfoBlock>
             )}
             {detailLoading && (
               <div style={{ textAlign:'center', padding:'8px 0', fontSize:13, color:'var(--c-text-muted)' }}>
@@ -1515,7 +1530,7 @@ export default function Bookings() {
       </Modal>
 
       <NewBookingModal
-        isOpen={showNewBooking}
+        isOpen={showNewBooking && canCreateBooking}
         onClose={() => setShowNewBooking(false)}
         onCreated={() => { setShowNewBooking(false); loadBookings(); showToast('Booking created for customer.', 'success'); }}
       />
@@ -1526,7 +1541,8 @@ export default function Bookings() {
 // ── New Booking (support/admin creates a booking on a customer's behalf, e.g. a
 // phone-support call requesting a one-time service) ──────────────────────────────
 function NewBookingModal({ isOpen, onClose, onCreated }) {
-  const { showToast, user } = useAuth();
+  const { showToast, hasPermission } = useAuth();
+  const canCreateCustomer = hasPermission('bookings_create');
 
   const [userSearch, setUserSearch]     = useState('');
   const [userResults, setUserResults]   = useState([]);
@@ -1541,6 +1557,10 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
   const [packageCart, setPackageCart] = useState([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogError, setCatalogError] = useState('');
+  const [bookingPartners, setBookingPartners] = useState([]);
+  const [partnerId, setPartnerId] = useState('');
+  const [partnersLoading, setPartnersLoading] = useState(false);
+  const [partnersError, setPartnersError] = useState('');
   const [couponCode, setCouponCode] = useState('');
   const [offerId, setOfferId] = useState('');
   const [review, setReview] = useState(null);
@@ -1591,6 +1611,18 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
 
   useEffect(() => {
     let active = true;
+    setPartnerId(''); setBookingPartners([]); setPartnersError(''); setPartnersLoading(false);
+    if (!isOpen || !serviceCity) return;
+    setPartnersLoading(true);
+    api.get('/api/v1/admin/partners', {params: {status: 'approved', cityIds: String(serviceCity.id), limit: 10000}})
+      .then(res => {if (active) setBookingPartners(res.data?.data?.data ?? res.data?.data ?? []);})
+      .catch(() => {if (active) setPartnersError('Unable to load partners. Close and reopen this form to retry.');})
+      .finally(() => {if (active) setPartnersLoading(false);});
+    return () => {active = false;};
+  }, [isOpen, serviceCity?.id]);
+
+  useEffect(() => {
+    let active = true;
     setAllServices([]); setPackageCatalog([]); setCart([]); setPackageCart([]);
     if (!isOpen || !serviceCity) return;
     setCatalogLoading(true); setCatalogError('');
@@ -1604,6 +1636,7 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
   const buildPayload = () => ({
     useCustomerFlow: true, userId: customer?.id ?? customer?._id,
     cityId: serviceCity?.id,
+    partnerId: partnerId ? Number(partnerId) : undefined,
     services: cart.map(item => item.type === 'catalog'
       ? {id: Number(item.svc.id ?? item.svc._id), qty: item.qty}
       : {isAddOn: true, name: item.name, price: item.price, qty: item.qty}),
@@ -1615,7 +1648,7 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
       lat: serviceAddress.lat ?? null, lng: serviceAddress.lng ?? null,
     } : undefined,
     scheduledAt: scheduleValue && !Number.isNaN(new Date(scheduleValue).getTime()) ? new Date(scheduleValue).toISOString() : undefined,
-    paymentMode: 'cod', notes: notes || undefined,
+    paymentMode, notes: notes || undefined,
     // Discounts are disabled for admin-created bookings. Keep these fields for later use.
     // couponCode: couponCode.trim() || undefined, offerId: offerId ? Number(offerId) : undefined,
   });
@@ -1759,7 +1792,7 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
               {newCustomer && <button type="button" className="btn btn-outline btn-sm" onClick={() => setNewCustomer(null)}>
                 Choose Existing Customer
               </button>}
-              {!newCustomer && ['super_admin', 'admin'].includes(user?.role) && <button type="button" className="btn btn-outline btn-sm"
+              {!newCustomer && canCreateCustomer && <button type="button" className="btn btn-outline btn-sm"
                 onClick={() => setNewCustomer({name:searchedCustomerName, phone:searchedCustomerPhone, email:''})}>
                 <PlusCircle size={14} /> Add New Customer
               </button>}
@@ -1782,14 +1815,14 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
                   <span className="booking-customer-select">Select</span>
                 </button>)}
               </div>}
-              {canAddNewCustomer && ['super_admin', 'admin'].includes(user?.role) && <div className="booking-customer-empty">
+              {canAddNewCustomer && canCreateCustomer && <div className="booking-customer-empty">
                 <div><strong>No customer found</strong><p>No customer found for {userSearch.trim()}.</p></div>
                 <button type="button" className="btn btn-outline btn-sm" onClick={() => setNewCustomer({name:searchedCustomerName, phone:searchedCustomerPhone, email:''})}>
                   <PlusCircle size={14} /> Add New Customer
                 </button>
               </div>}
             </>}
-            {!customer && newCustomer && ['super_admin', 'admin'].includes(user?.role) && <div className="booking-customer-new">
+            {!customer && newCustomer && canCreateCustomer && <div className="booking-customer-new">
               <div className="booking-customer-fields">
                 {['name', 'phone', 'email'].map(field => <label key={field} className={`form-group booking-customer-field-${field}`}>
                   <span className="form-label">{field === 'name' ? 'Customer name' : field === 'phone' ? 'Phone number' : 'Email (optional)'}</span>
@@ -1805,7 +1838,7 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
                 onClick={async () => {
                   setCreatingCustomer(true);
                   try {
-                    const res = await api.post('/api/v1/admin/users', {...newCustomer, name:newCustomer.name.trim(), phone:newCustomer.phone.trim()});
+                    const res = await api.post('/api/v1/admin/booking-customers', {...newCustomer, name:newCustomer.name.trim(), phone:newCustomer.phone.trim()});
                     await selectCustomer(res.data.data); setNewCustomer(null);
                   } catch (err) {showToast(err.response?.data?.message ?? 'Unable to create customer.', 'danger');}
                   finally {setCreatingCustomer(false);}
@@ -1875,6 +1908,22 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
           {catalogLoading && ' Loading catalog…'}
           {catalogError && <div role="alert" style={{color: 'var(--c-danger)'}}>{catalogError}</div>}
         </div>}
+
+        {customer && serviceCity && (
+          <InfoBlock label="Partner">
+            <label className="form-label" htmlFor="new-booking-partner">Select Partner (optional)</label>
+            <select id="new-booking-partner" className="form-input" value={partnerId}
+              onChange={e => setPartnerId(e.target.value)} disabled={partnersLoading || submitting}>
+              <option value="">{partnersLoading ? 'Loading partners...' : 'Leave unassigned — assign later'}</option>
+              {bookingPartners.map(p => <option key={p.id ?? p._id} value={p.id ?? p._id}>
+                {p.name}{p.phone ? ` — ${p.phone}` : ''}
+              </option>)}
+            </select>
+            {partnersError && <div role="alert" style={{fontSize:12, color:'var(--c-danger)', marginTop:6}}>{partnersError}</div>}
+            {!partnersLoading && !partnersError && bookingPartners.length === 0 &&
+              <div style={{fontSize:12, marginTop:6}}>No approved partners in this service city. You can still create an unassigned booking.</div>}
+          </InfoBlock>
+        )}
 
         {/* Services */}
         {customer && (
@@ -2007,8 +2056,12 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
               <select value={paymentMode} onChange={e => setPaymentMode(e.target.value)}
                 style={{ border:'1px solid var(--c-border)', borderRadius:'var(--r-sm)', padding:'6px 10px', fontSize:13, background:'var(--c-bg-card)', color:'var(--c-text-primary)' }}>
                 <option value="cod">Cash on Delivery</option>
+                <option value="paid">Paid</option>
               </select>
             </div>
+            {paymentMode === 'paid' && <div style={{fontSize:12, color:'var(--c-text-secondary)', marginBottom:8}}>
+              Payment already received by admin. This booking will be marked as paid.
+            </div>}
             <div style={{ fontSize:11, color:'var(--c-text-muted)', marginBottom:8 }}>Bookings must be 1 hour to 1 month out, between 8 AM–8 PM.</div>
             <textarea placeholder="Notes (e.g. requested via phone support call)" value={notes} onChange={e => setNotes(e.target.value)} rows={2}
               style={{ width:'100%', border:'1px solid var(--c-border)', borderRadius:'var(--r-sm)', padding:'6px 10px', fontSize:13, background:'var(--c-bg-card)', color:'var(--c-text-primary)', boxSizing:'border-box', resize:'vertical' }} />

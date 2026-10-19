@@ -4,21 +4,10 @@ import { MapContainer, TileLayer, ZoomControl, useMapEvents } from 'react-leafle
 import 'leaflet/dist/leaflet.css';
 import './AddressMapPicker.css';
 import { cityKey, searchLocations } from '../../utils/locationSearch';
+import { addressFields as photonToFields, lookupAddress } from '../../utils/addressLookup';
 
 const DEFAULT_CENTER = [14.4426, 79.9865]; // Nellore, Andhra Pradesh
 const DEFAULT_ZOOM = 14;
-
-const PHOTON_BASE = 'https://photon.komoot.io';
-
-function photonToFields(props = {}) {
-  return {
-    line1: (props.osm_key === 'amenity' ? props.name : '') || [props.housenumber, props.street].filter(Boolean).join(' ') || props.name || '',
-    line2: props.district || props.suburb || props.locality || '',
-    city: props.city || props.town || props.village || props.county || '',
-    state: props.state || '',
-    pincode: props.postcode || '',
-  };
-}
 
 function photonLabel(props = {}) {
   return [props.name, props.street, props.city || props.town || props.village, props.state]
@@ -27,10 +16,9 @@ function photonLabel(props = {}) {
 }
 
 async function reverseGeocode(lat, lng, signal) {
-  const res = await fetch(`${PHOTON_BASE}/reverse?lat=${lat}&lon=${lng}&lang=en`, { signal });
-  if (!res.ok) throw new Error('Reverse geocoding failed');
-  const data = await res.json();
-  return data.features?.[0]?.properties || {};
+  const features = await lookupAddress('reverse', new URLSearchParams({lat, lon: lng, lang: 'en'}), signal);
+  if (!features.length) throw new Error('No address found');
+  return features[0].properties || {};
 }
 
 function MapEvents({ onMoveEnd }) {
@@ -110,7 +98,7 @@ const AddressMapPicker = ({ initialAddress, cities = [], onConfirm, onClose }) =
   };
 
   useEffect(() => {
-    if (initialAddress?.lat == null || initialAddress?.lng == null) {
+    if (!initialAddress?.line1 && (initialAddress?.lat == null || initialAddress?.lng == null)) {
       runReverseGeocode(center[0], center[1]);
     }
     return () => {
@@ -266,7 +254,7 @@ const AddressMapPicker = ({ initialAddress, cities = [], onConfirm, onClose }) =
             ref={mapRef}
           >
             <TileLayer
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors · Address search: Photon / Nominatim'
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
             <MapEvents onMoveEnd={handleMoveEnd} />
@@ -285,7 +273,7 @@ const AddressMapPicker = ({ initialAddress, cities = [], onConfirm, onClose }) =
         {geoError && <p className="address-map-error">{geoError}</p>}
 
         <div className="address-map-fields">
-          <p style={{ margin: 0, fontSize: 12 }}>Search for the customer location or move the map pin. Address details fill automatically; review them and add any missing house / flat details.</p>
+          <p style={{ margin: 0, fontSize: 12 }}>Search for the customer location or move the map pin. Review the address below. You can also enter the address manually if lookup is unavailable.</p>
           <div className="address-map-tag-selector">
             {['Home', 'Work', 'Other'].map((t) => (
               <button

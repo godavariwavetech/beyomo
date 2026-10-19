@@ -9,7 +9,7 @@ import { useZones } from '../hooks/useZones';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
 
 const MODULE_LABELS = {
-  dashboard:'Dashboard', users:'Users', partners:'Partners', bookings:'Bookings',
+  dashboard:'Dashboard', users:'Users', partners:'Partners', bookings:'Bookings (View)', bookings_create:'Create New Bookings',
   services:'Services', earnings:'Earnings', settlements:'Settlements', coupons:'Coupons', reviews:'Reviews',
   notifications:'Notifications', reports:'Reports', settings:'Settings',
   permissions:'Permissions', feedback:'App Feedback', zones:'Zones', cities:'Cities',
@@ -17,6 +17,7 @@ const MODULE_LABELS = {
 };
 
 const MODULE_ICONS = {
+  bookings_create: '+',
   dashboard:'📊', users:'👥', partners:'🤝', bookings:'📅', services:'✨',
   earnings:'💰', settlements:'💳', coupons:'🏷️', reviews:'⭐', notifications:'🔔', reports:'📈',
   settings:'⚙️', permissions:'🛡️', feedback:'💬', zones:'🗺️', cities:'🏙️',
@@ -83,9 +84,12 @@ export default function Permissions() {
   };
 
   const togglePerm = (mod) => {
-    setCustomPerms(prev =>
-      prev.includes(mod) ? prev.filter(p => p !== mod) : [...prev, mod]
-    );
+    setCustomPerms(prev => {
+      if (prev.includes(mod)) {
+        return prev.filter(p => p !== mod && !(mod === 'bookings' && p === 'bookings_create'));
+      }
+      return [...new Set([...prev, ...(mod === 'bookings_create' ? ['bookings'] : []), mod])];
+    });
   };
 
   const saveAdmin = async () => {

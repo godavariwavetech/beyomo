@@ -42,7 +42,7 @@ const agreementUpload = multer({
   },
 });
 const {
-  login, logout, devAdminHints,
+  login, logout, currentAdmin, devAdminHints,
   listBanners, createBanner, updateBanner, deleteBanner,
   listZones, createZone, updateZone, deleteZone,
   listCities, createCity, updateCity, deleteCity,
@@ -84,6 +84,7 @@ router.get("/settings/agreement/status", adminAuthenticate(), (req, res) => {
 // Auth (no middleware on login)
 router.post("/auth/login", login);
 router.post("/auth/logout", adminAuthenticate(), logout);
+router.get("/auth/me", adminAuthenticate(), currentAdmin);
 router.get("/auth/dev-hints", devAdminHints);
 
 // Users
@@ -122,9 +123,10 @@ router.patch("/services/:id/cities/:cityId", adminAuthenticate(["super_admin", "
 router.delete("/services/:id", adminAuthenticate(["super_admin", "admin"]), deleteService);
 
 // Bookings
-router.get('/booking-catalog', adminAuthenticate(["super_admin", "admin", "manager", "support"]), customerOrderCatalog);
-router.post('/bookings/preview', adminAuthenticate(["super_admin", "admin", "manager", "support"]), previewCustomerOrder);
-router.post("/bookings", adminAuthenticate(["super_admin", "admin", "manager", "support"]), createBookingForCustomer);
+router.post('/booking-customers', adminAuthenticate(["super_admin"], "bookings_create"), createUser);
+router.get('/booking-catalog', adminAuthenticate(["super_admin"], "bookings_create"), customerOrderCatalog);
+router.post('/bookings/preview', adminAuthenticate(["super_admin"], "bookings_create"), previewCustomerOrder);
+router.post("/bookings", adminAuthenticate(["super_admin"], "bookings_create"), createBookingForCustomer);
 router.get("/bookings", adminAuthenticate(), listBookings);
 router.get("/bookings/:id", adminAuthenticate(), getBookingDetail);
 router.patch("/bookings/:id/assign", adminAuthenticate(["super_admin", "admin", "manager"]), assignPartner);

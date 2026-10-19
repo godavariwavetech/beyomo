@@ -5,13 +5,14 @@ const logger = require("./logger");
 /**
  * Admin authentication middleware factory
  * @param {Array} allowedRoles - optional array of roles e.g. ['super_admin', 'admin']
+ * @param {string|null} requiredPermission - module grant; custom permissions override default roles
  * @returns Express middleware
  *
  * Usage:
  *   router.get('/route', adminAuthenticate(), handler)
  *   router.get('/route', adminAuthenticate(['super_admin']), handler)
  */
-const adminAuthenticate = (allowedRoles = []) => {
+const adminAuthenticate = (allowedRoles = [], requiredPermission = null) => {
   return async (req, res, next) => {
     try {
       const authHeader = req.get("Authorization");
@@ -30,13 +31,37 @@ const adminAuthenticate = (allowedRoles = []) => {
         return next(new AppError("Access denied. Admin token required.", 403));
       }
 
-      if (allowedRoles.length > 0 && !allowedRoles.includes(decoded.role)) {
+      if (!requiredPermission && allowedRoles.length > 0 && !allowedRoles.includes(decoded.role)) {
         return next(
           new AppError(
             `Access denied. Required role: ${allowedRoles.join(" or ")}`,
             403
           )
         );
+      }
+
+      // Booking creation is an explicit grant, separate from viewing bookings.
+      // Read the saved permissions on every request so changes apply immediately.
+      if (requiredPermission) {
+        const AdminUser = require("../api/adminUsers/models/adminUser.model");
+        const adminRecord = await AdminUser.findByPk(decoded.userId, {
+          attributes: ["role", "status", "customPermissions", "allowedZones"],
+        });
+        if (!adminRecord || adminRecord.status !== "active") {
+          return next(new AppError("Access denied. Active admin account required.", 403));
+        }
+        const permissions = adminRecord.customPermissions;
+        const permitted = adminRecord.role === "super_admin"
+          || (requiredPermission === "bookings_create"
+            ? permissions?.includes("bookings") && permissions?.includes("bookings_create")
+            : permissions?.length
+            ? permissions.includes(requiredPermission)
+            : allowedRoles.includes(adminRecord.role));
+        if (!permitted) {
+          return next(new AppError(`Access denied. ${requiredPermission} permission required.`, 403));
+        }
+        req.admin = { ...decoded, role: adminRecord.role, allowedZones: adminRecord.allowedZones ?? null };
+        return next();
       }
 
       // Always fetch fresh allowedZones from DB so zone changes take effect without re-login

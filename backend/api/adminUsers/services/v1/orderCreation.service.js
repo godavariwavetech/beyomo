@@ -1,5 +1,8 @@
 const User = require('../../../users/models/user.model');
 const City = require('../../../cities/models/city.model');
+const Partner = require('../../../partners/models/partner.model');
+const Notification = require('../../../notifications/models/notification.model');
+const {sendPushNotification, pushTokensFor, PARTNER_NEW_BOOKING_CHANNEL} = require('../../../../utils/firebaseUtils');
 const bookings = require('../../../bookings/services/v1/bookings.service');
 const catalog = require('../../../services/services/v1/services.service');
 const packages = require('../../../packages/services/v1/packages.service');
@@ -25,6 +28,11 @@ const prepare = async data => {
     throw new AppError('Select the service city matching the customer address', 400);
   }
   const available = await getCatalog(city.id);
+  let partner = null;
+  if (data.partnerId) {
+    partner = await Partner.findOne({where: {id: data.partnerId, status: 'approved', cityId: city.id}});
+    if (!partner) throw new AppError('Select an approved partner in the service city', 400);
+  }
   if (data.couponCode) {
     const Coupon = require('../../../coupons/models/coupon.model');
     const coupon = await Coupon.findOne({where: {code: data.couponCode.toUpperCase()}});
@@ -64,9 +72,18 @@ const prepare = async data => {
   const services = (data.services || []).filter(s => !s.isAddOn);
   const prepared = await bookings.prepareBooking(data.userId, {
     ...data, services: entries.length ? [] : services,
-    extraServices: entries.length ? services : [], paymentMode: 'cod',
+    extraServices: entries.length ? services : [], paymentMode: data.paymentMode === 'paid' ? 'online' : 'cod',
   }, {additionalServices: addons, consumeOffer: false});
+  // "Paid" records money already received by admin, so partners must not collect it again.
+  prepared.bookingRow.paymentStatus = data.paymentMode === 'paid' ? 'paid' : 'pending';
   prepared.bookingRow.services.forEach(s => {s.addedByAdmin = true;});
+  if (partner) {
+    prepared.bookingRow.status = 'confirmed';
+    prepared.bookingRow.services = prepared.bookingRow.services.map(s => ({
+      ...s, serviceStatus: 'claimed', assignedPartnerId: partner.id, assignedPartnerName: partner.name,
+    }));
+    prepared.assignedPartner = partner;
+  }
   if (data.offerId) {
     const eligible = await offers.checkEligibility({
       serviceIds: allItems.map(s => Number(s.id)), totalAmount: prepared.bookingRow.baseAmount, cityId: city.id,
@@ -92,6 +109,15 @@ const create = async (adminId, data) => {
     throw new AppError('Prices have changed. Review Total again before creating the booking.', 409);
   }
   const booking = await bookings.persistBooking(prepared, {createdByAdminId: adminId});
+  if (prepared.assignedPartner) {
+    const partner = prepared.assignedPartner;
+    const body = `You have been assigned to booking ${booking.bookingCode}. Open the app to view the schedule and services.`;
+    await Notification.create({partnerId: partner.id, title: 'New Booking Assigned', body,
+      data: {bookingId: String(booking.id)}, type: 'booking'});
+    const tokens = pushTokensFor(partner);
+    if (tokens.length) await sendPushNotification(tokens, 'New Booking Assigned', body,
+      {bookingId: String(booking.id), type: 'new_booking'}, PARTNER_NEW_BOOKING_CHANNEL).catch(() => {});
+  }
   if (data.offerId) {
     const Offer = require('../../../offers/models/offer.model');
     await Offer.increment('usedCount', {where: {id: data.offerId}});

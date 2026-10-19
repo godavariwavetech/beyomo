@@ -270,7 +270,7 @@ const customerOrderSchema = adminCreateBookingSchema.keys({
   })).default([]),
   couponCode: Joi.string().trim().uppercase().allow('', null),
   offerId: Joi.number().integer().positive().allow(null),
-  paymentMode: Joi.string().valid('cod').default('cod'),
+  paymentMode: Joi.string().valid('cod', 'paid').default('cod'),
 });
 
 const customerOrderCatalog = catchAsync(async (req, res, next) => {
@@ -305,6 +305,16 @@ const login = catchAsync(async (req, res, next) => {
 
 const logout = catchAsync(async (req, res, next) => {
   res.status(200).json({ status: true, message: "Logged out successfully" });
+});
+
+const currentAdmin = catchAsync(async (req, res, next) => {
+  const admin = await AdminUser.findByPk(req.admin.userId, {
+    attributes: ["id", "name", "email", "role", "customPermissions", "allowedZones", "allowedCities", "status"],
+  });
+  if (!admin || admin.status !== "active") {
+    return next(new AppError("Your admin account is no longer active.", 401));
+  }
+  res.status(200).json({ status: true, data: admin });
 });
 
 // Dev-only: return admin list for login-page credential hints (no passwords)
@@ -1163,7 +1173,7 @@ const deletePackageHandler = catchAsync(async (req, res) => {
 
 module.exports = {
   previewCustomerOrder, customerOrderCatalog,
-  login, logout, devAdminHints,
+  login, logout, currentAdmin, devAdminHints,
   listUsers, getUserById, updateUserStatus, deleteUser, createUser,
   listPartners, getPartnerById, updatePartnerStatus, createPartner, updatePartner,
   listCategories, createCategory, updateCategory, deleteCategory, reorderCategories,

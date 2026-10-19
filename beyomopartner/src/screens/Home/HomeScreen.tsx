@@ -1,4 +1,5 @@
 import React, {useState, useEffect} from 'react';
+import axios from 'axios';
 import {
   View,
   Text,
@@ -163,9 +164,14 @@ const HomeScreen = ({navigation}: {navigation: any}) => {
     } catch (error) {
       setIsOnline(!next); // revert - the server never recorded it
       stopHeartbeat();
+      // The API interceptor already sends expired sessions to Login.
+      if (axios.isAxiosError(error) && error.response?.status === 401) return;
+      const message = axios.isAxiosError(error) ? error.response?.data?.message : null;
       Alert.alert(
         'Could not update availability',
-        'We could not reach the server, so your status was not changed. Check your connection and try again.',
+        typeof message === 'string' && message.trim()
+          ? message
+          : 'We could not reach the server, so your status was not changed. Check your connection and try again.',
       );
     } finally {
       setOnlineSaving(false);
