@@ -6,6 +6,7 @@ const {
   SUNSTECH_SMS_ROUTE_ID,
   SUNSTECH_SMS_SENDER_ID,
   SUNSTECH_SMS_TEMPLATE_ID,
+  SUNSTECH_BOOKING_SMS_TEMPLATE_ID,
 } = require("../config");
 
 const SUNSTECH_SMS_URL = "https://sms.sunstechit.com/app/smsapi/index.php";
@@ -17,14 +18,13 @@ const SUNSTECH_SMS_URL = "https://sms.sunstechit.com/app/smsapi/index.php";
  * @returns {Promise<Object>} SunsTechIT response
  */
 const sendOtp = async (phone, otp, options = {}) => {
+  const msg = options.message || `Your OTP for verification is ${otp}. Do not share this with anyone. - Godavari Wave Technologies`;
   if (MOCK_SMS) {
-    logger.info(`[MOCK SMS] OTP ${otp} sent to ${phone}`);
+    logger.info(options.message ? `[MOCK SMS] ${msg} sent to ${phone}` : `[MOCK SMS] OTP ${otp} sent to ${phone}`);
     return { success: true, mock: true };
   }
 
   try {
-    const msg = `Your OTP for verification is ${otp}. Do not share this with anyone. - Godavari Wave Technologies`;
-
     const response = await axios.get(SUNSTECH_SMS_URL, {
       ...(options.timeout ? { timeout: options.timeout } : {}),
       params: {
@@ -35,7 +35,7 @@ const sendOtp = async (phone, otp, options = {}) => {
         contacts: phone,
         senderid: SUNSTECH_SMS_SENDER_ID,
         msg,
-        template_id: SUNSTECH_SMS_TEMPLATE_ID,
+        template_id: options.templateId || SUNSTECH_SMS_TEMPLATE_ID,
       },
     });
 
@@ -47,4 +47,13 @@ const sendOtp = async (phone, otp, options = {}) => {
   }
 };
 
-module.exports = { sendOtp };
+const sendBookingOtp = async (phone, otp, bookingCode) => {
+  if (!MOCK_SMS && !SUNSTECH_BOOKING_SMS_TEMPLATE_ID) {
+    logger.warn('Booking confirmation SMS skipped: SUNSTECH_BOOKING_SMS_TEMPLATE_ID is not configured');
+    return { success: false, skipped: true };
+  }
+  const message = `Your Beyomo booking ${bookingCode} is confirmed. Your service OTP is ${otp}. Share this code with your partner only when the service starts. - Godavari Wave Technologies`;
+  return sendOtp(phone, otp, { message, templateId: SUNSTECH_BOOKING_SMS_TEMPLATE_ID, timeout: 5000 });
+};
+
+module.exports = { sendOtp, sendBookingOtp };
