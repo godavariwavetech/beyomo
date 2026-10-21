@@ -10,3 +10,22 @@ export function bookingBaseAmount(booking = {}) {
   }
   return Number(booking.baseAmount ?? booking.amount ?? 0) || 0;
 }
+
+// Removed lines remain in the booking for history, but must not dilute the
+// assigned partners' share of the current booking earning.
+export function bookingServicePayouts(services, earning) {
+  const active = (Array.isArray(services) ? services : []).filter(s => !s.removed);
+  const lineAmount = s => (Number(s.price) || 0) * (Number(s.qty) || 1);
+  const rawTotal = active.reduce((sum, s) => sum + lineAmount(s), 0);
+  const byPartner = {};
+  active.forEach(s => {
+    if (!s.assignedPartnerId) return;
+    const key = String(s.assignedPartnerId);
+    if (!byPartner[key]) byPartner[key] = { name: s.assignedPartnerName || 'Partner', amount: 0 };
+    byPartner[key].amount += lineAmount(s);
+  });
+  return Object.values(byPartner).map(p => ({
+    ...p,
+    amount: rawTotal > 0 ? p.amount * (Number(earning) / rawTotal) : 0,
+  }));
+}
