@@ -27,7 +27,7 @@ import {useFocusEffect} from '@react-navigation/native';
 import {fetchBookingById, cancelBooking, rescheduleBooking, addUserServices, removePackage, addPackage} from '../../redux/reducers/bookings';
 import networkCall from '../../utils/networkCall';
 import {payWithRazorpay} from '../../utils/payments';
-import {resolveImageUrl, formatAmount} from '../../utils/utils';
+import {resolveImageUrl, formatAmount, formatBookingCreatedAt} from '../../utils/utils';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
@@ -476,6 +476,7 @@ const BookingDetailScreen = ({navigation, route}: any) => {
   const paymentStatusLabel = booking.paymentStatus === 'paid' ? 'Paid' : booking.paymentMode === 'cod' ? 'Due on completion' : 'Unpaid';
 
   const dt = booking.scheduledAt ? formatDateTime(booking.scheduledAt) : null;
+  const createdAt = formatBookingCreatedAt(booking.createdAt);
 
   // Backend only allows cancel/reschedule while the booking is pending or confirmed —
   // once a partner has started the job (in_progress) it can no longer be cancelled/rescheduled.
@@ -527,6 +528,9 @@ const BookingDetailScreen = ({navigation, route}: any) => {
               )}
             </View>
             <Text style={styles.confirmedCode}>Booking ID: {bookingId}</Text>
+            {!!createdAt && (
+              <Text style={styles.confirmedCode}>Created on: {createdAt}</Text>
+            )}
             {isRescheduled && !!previousDt && (
               <Text style={styles.rescheduledNote}>
                 Moved from {previousDt.date}, {previousDt.time}
