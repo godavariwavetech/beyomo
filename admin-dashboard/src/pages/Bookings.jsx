@@ -9,7 +9,7 @@ import Modal from '../components/common/Modal';
 import AddressMapPicker from '../components/common/AddressMapPicker';
 import api from '../services/api';
 import { formatAmount, formatRupee } from '../utils/format';
-import { bookingBaseAmount } from '../utils/bookingAmounts';
+import { bookingBaseAmount, bookingServicePayouts } from '../utils/bookingAmounts';
 import OrderPackages from '../components/bookings/OrderPackages';
 import '../components/bookings/NewBookingCustomer.css';
 import { cityKey } from '../utils/locationSearch';
@@ -624,27 +624,15 @@ export default function Bookings() {
     // packages/combos earn less than the sum of those prices, so scale each partner's
     // raw-price share by the booking's real (already-discounted) partnerEarning instead
     // of summing raw prices directly (that overstated payouts for combo bookings).
-    const rawTotal = svcs.reduce((sum, s) => sum + (s.price ?? 0) * (s.qty || 1), 0);
     const bookingEarning = !Number.isNaN(recomputedPartnerEarning) && selected?.recomputedPartnerEarning != null
       ? recomputedPartnerEarning
-      : parseFloat(selected?.partnerEarning ?? (totalAmt - commission));
-    const byPartner = {};
-    svcs.forEach(s => {
-      if (!s.assignedPartnerId) return;
-      const key = String(s.assignedPartnerId);
-      if (!byPartner[key]) byPartner[key] = { name: s.assignedPartnerName || 'Partner', amount: 0 };
-      byPartner[key].amount += s.price * (s.qty || 1);
-    });
-    if (Object.keys(byPartner).length > 0) {
-      if (rawTotal > 0 && bookingEarning) {
-        Object.values(byPartner).forEach(p => { p.amount = p.amount * (bookingEarning / rawTotal); });
-      }
-      return Object.values(byPartner);
-    }
+      : parseFloat(selected?.partnerEarning ?? (taxableAmount - commission));
+    const servicePayouts = bookingServicePayouts(svcs, bookingEarning);
+    if (servicePayouts.length > 0) return servicePayouts;
     // Fallback: partner assigned at booking level (e.g. via "Assign / Change Partner")
     // but no service has been individually claimed/stamped with assignedPartnerId yet.
     if (selected?.partnerId) {
-      return [{ name: selected?.partnerName || 'Partner', amount: !Number.isNaN(recomputedPartnerEarning) && selected?.recomputedPartnerEarning != null ? recomputedPartnerEarning : parseFloat(selected?.partnerEarning ?? (totalAmt - commission)) }];
+      return [{ name: selected?.partnerName || 'Partner', amount: bookingEarning }];
     }
     return [];
   })();
