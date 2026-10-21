@@ -114,8 +114,14 @@ android {
         // versionCode 17
         // versionName "1.1.7"
 
-        versionCode 18
-        versionName "1.1.8"
+        // versionCode 18
+        // versionName "1.1.8"
+
+        // versionCode 19
+        // versionName "1.1.9"
+
+         versionCode 20
+        versionName "1.2.0"
 
     }
     signingConfigs {

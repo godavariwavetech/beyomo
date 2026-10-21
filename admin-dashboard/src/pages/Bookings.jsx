@@ -835,14 +835,21 @@ export default function Bookings() {
       >
         {selected && (
           <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
-            {selected.createdByAdminId != null && (
               <InfoBlock label="Created By">
                 <div style={{ fontWeight:700, fontSize:15 }}>
-                  {selected.createdByAdmin?.name || 'Staff account unavailable'}
+                  {selected.createdByAdminId != null
+                    ? selected.createdByAdmin?.name || 'Staff account unavailable'
+                    : selected.userName || selected.user?.name || 'Customer account unavailable'}
                 </div>
-                <div style={{ marginTop:6 }}><AdminCreatedLabel creator={selected.createdByAdmin} /></div>
+                <div style={{ marginTop:6 }}>
+                  {selected.createdByAdminId != null
+                    ? <AdminCreatedLabel creator={selected.createdByAdmin} />
+                    : 'Created by Customer'}
+                </div>
                 <div style={{ fontSize:12, color:'var(--c-text-secondary)', marginTop:6 }}>
-                  Staff ID: {selected.createdByAdminId}
+                  {selected.createdByAdminId != null
+                    ? <>Staff ID: {selected.createdByAdminId}</>
+                    : <>Customer ID: {selected.userId ?? selected.user?.id ?? 'Unavailable'}</>}
                 </div>
                 {selected.createdAt && (
                   <div style={{ fontSize:12, color:'var(--c-text-secondary)', marginTop:4 }}>
@@ -850,7 +857,6 @@ export default function Bookings() {
                   </div>
                 )}
               </InfoBlock>
-            )}
             {detailLoading && (
               <div style={{ textAlign:'center', padding:'8px 0', fontSize:13, color:'var(--c-text-muted)' }}>
                 Refreshing details…

@@ -109,7 +109,9 @@ test('model hooks cover confirmed creation and status transitions, skipping unre
 
 test('the existing login SMS text and provider template remain intact', async () => {
   const calls = [];
+  const usage = [];
   const context = { module: { exports: {} }, require(name) {
+    if (name === './smsUsage') return { recordSmsUsage: async status => usage.push(status) };
     if (name === 'axios') return { get: async (...args) => { calls.push(args); return { data: 'OK' }; } };
     if (name === './logger') return { info() {}, error() {} };
     if (name === '../config') return { MOCK_SMS: false, SUNSTECH_SMS_KEY: 'test', SUNSTECH_SMS_ROUTE_ID: '13', SUNSTECH_SMS_SENDER_ID: 'GDWOTP', SUNSTECH_SMS_TEMPLATE_ID: 'template-id', SUNSTECH_BOOKING_SMS_TEMPLATE_ID: 'booking-template-id' };
@@ -127,6 +129,7 @@ test('the existing login SMS text and provider template remain intact', async ()
   assert.equal(calls[2][1].params.msg, 'Your Beyomo booking NLR2600023 is confirmed. Your service OTP is 0123. Share this code with your partner only when the service starts. - Godavari Wave Technologies');
   assert.equal(calls[2][1].params.template_id, 'booking-template-id');
   assert.equal(calls[2][1].timeout, 5000);
+  assert.deepEqual(usage, ['submitted', 'submitted', 'submitted']);
 });
 
 test('Admin status confirmation sends once; repeating the same status does not resend', async () => {
@@ -153,6 +156,7 @@ test('missing booking template falls back to the working OTP text and template',
   const config = { MOCK_SMS: false, SUNSTECH_SMS_TEMPLATE_ID: 'login-only' };
   const logs = [];
   const context = { module: { exports: {} }, require(name) {
+    if (name === './smsUsage') return { recordSmsUsage: async () => {} };
     if (name === '../config') return config;
     if (name === 'axios') return { get: async (...args) => { requests.push(args); return { data: 'OK' }; } };
     if (name === './logger') return { warn: m => logs.push(m), info: m => logs.push(m), error() {} };

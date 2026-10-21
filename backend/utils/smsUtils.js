@@ -1,5 +1,10 @@
 const axios = require("axios");
 const logger = require("./logger");
+const { recordSmsUsage } = require('./smsUsage');
+const trackUsage = async status => {
+  try { await recordSmsUsage(status); }
+  catch (error) { logger.error(`SMS usage tracking failed: ${error.message}`); }
+};
 const {
   MOCK_SMS,
   SUNSTECH_SMS_KEY,
@@ -20,6 +25,7 @@ const SUNSTECH_SMS_URL = "https://sms.sunstechit.com/app/smsapi/index.php";
 const sendOtp = async (phone, otp, options = {}) => {
   const msg = options.message || `Your OTP for verification is ${otp}. Do not share this with anyone. - Godavari Wave Technologies`;
   if (MOCK_SMS) {
+    await trackUsage('mock');
     logger.info(options.message ? `[MOCK SMS] ${msg} sent to ${phone}` : `[MOCK SMS] OTP ${otp} sent to ${phone}`);
     return { success: true, mock: true };
   }
@@ -39,9 +45,11 @@ const sendOtp = async (phone, otp, options = {}) => {
       },
     });
 
+    await trackUsage('submitted');
     logger.info(`OTP sent to ${phone} via SunsTechIT`);
     return { success: true, data: response.data };
   } catch (error) {
+    await trackUsage('failed');
     logger.error(`SMS send error for ${phone}: ${error.message}`);
     throw error;
   }
