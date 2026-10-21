@@ -950,16 +950,9 @@ const editBookingServices = async (bookingId, serviceItems = [], removeIndices =
     updatedServices = [...updatedServices, ...newAddOnEntries];
   }
 
-  // Recalculate total from active (non-removed) services only
-  const activeServices = updatedServices.filter(s => !s.removed);
-  const newBase = activeServices.reduce((sum, s) => sum + (parseFloat(s.price ?? s.basePrice ?? 0)) * (s.qty || 1), 0);
-  const couponDiscount = parseFloat(booking.couponDiscountAmount || 0);
-  const taxable = newBase - couponDiscount;
-  const pkg = booking.packageId ? await ServicePackage.findByPk(booking.packageId) : null;
-  const { partnerPercent, gstPercent } = await resolveRatesForBooking({ serviceItems: activeServices, package: pkg });
-  const tax = parseFloat((taxable * gstPercent / 100).toFixed(2));
-  const total = parseFloat((taxable + tax).toFixed(2));
-  const partnerEarning = parseFloat((taxable * partnerPercent / 100).toFixed(2));
+  // Preserve package prices and use the same rate calculation as customer edits.
+  const { recomputeBookingAmounts } = require("../../../bookings/services/v1/bookings.service");
+  const { newBase, tax, total, partnerEarning } = await recomputeBookingAmounts(booking, updatedServices);
 
   await booking.update({ services: updatedServices, baseAmount: newBase, taxAmount: tax, totalAmount: total, partnerEarning });
 

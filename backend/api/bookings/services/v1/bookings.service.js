@@ -878,4 +878,4 @@ const addPackage = async (userId, bookingId, packageId, qty, serviceItems) => {
   return booking;
 };
 
-module.exports = { createBooking, prepareBooking, persistBooking, getBookingById, cancelBooking, rescheduleBooking, submitReview, addUserServices, updateServiceQty, removeService, removePackage, buildPackageRemoval, addPackage, buildPackageAddition };
+module.exports = { createBooking, prepareBooking, persistBooking, getBookingById, cancelBooking, rescheduleBooking, submitReview, addUserServices, updateServiceQty, removeService, removePackage, buildPackageRemoval, addPackage, buildPackageAddition, recomputeBookingAmounts };
