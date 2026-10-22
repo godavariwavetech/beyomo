@@ -1996,7 +1996,11 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
                       </div>
                     );
                   })}
-                  {allServices.length === 0 && <div style={{ padding:12, fontSize:13, color:'var(--c-text-muted)', textAlign:'center' }}>Loading services…</div>}
+                  {allServices.length === 0 && <div role="status" style={{ padding:12, fontSize:13, color:'var(--c-text-muted)', textAlign:'center' }}>
+                    {!serviceCity
+                      ? 'Please select an address in an active service city to see available services.'
+                      : catalogLoading ? 'Loading services…' : 'No services available for this address.'}
+                  </div>}
                 </div>
               </>
             ) : (
