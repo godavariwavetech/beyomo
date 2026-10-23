@@ -35,7 +35,7 @@ export const bookingWhatsAppMessage = (booking, customer) => {
   const address = [booking.addressLine1, booking.addressLine2, booking.addressCity, booking.addressState, booking.addressPincode].filter(Boolean).join(', ');
   if (address) lines.push(`Address: ${address}`);
   if (/^\d{4}$/.test(String(booking.serviceOtp ?? '')) && !booking.otpVerifiedAt) {
-    lines.push(`Service OTP: ${booking.serviceOtp}`, 'Share this OTP with your partner only when the service starts.');
+    lines.push(`Service OTP: ${booking.serviceOtp}`, 'Share this OTP with your partner only when they arrive at your location.');
   }
   lines.push('Thank you for choosing Beyomo!');
   return lines.join('\n');

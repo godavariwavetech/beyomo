@@ -25,7 +25,7 @@ test('confirmation includes saved booking details and the exact service OTP', ()
   assert.match(message, /₹1,050/);
   assert.match(message, /Address: 10 Test Road, Nellore/);
   assert.match(message, /Service OTP: 0123/);
-  assert.match(message, /only when the service starts/);
+  assert.match(message, /only when they arrive at your location/);
 });
 
 test('a pending booking is described as created, not confirmed', () => {
