@@ -61,6 +61,19 @@ const {signToken} = require('../utils/jwtUtils');
     assert.equal(row.totalAmount,2075.00); // weighted rate rounds to 6.41%
     row = await orders.preview({...payload, services:[], packages:[{packageId:flexible.id,qty:1,services:[{id:service.id,qty:1}]}]});
     assert.equal(row.totalAmount,660);
+    // Customer carts can hold the same catalog package with different selections.
+    // Preserve a distinct identity for each entry even when their service IDs overlap.
+    const repeated = await require('../api/bookings/services/v1/bookings.service').prepareBooking(customer.id, {
+      ...payload, services: [], packages: [0, 1].map(() => ({
+        packageId: flexible.id, qty: 1, services: [{id: service.id, qty: 1}],
+      })),
+    });
+    const selections = repeated.bookingRow.packages;
+    assert.equal(selections.length, 2);
+    assert.notEqual(selections[0].packageSelectionId, selections[1].packageSelectionId);
+    assert.equal(repeated.bookingRow.baseAmount, 1200);
+    assert.ok(selections.every(p => p.serviceCount === 1));
+    assert.deepEqual(repeated.bookingRow.services.map(s => s.packageSelectionId), selections.map(p => p.packageSelectionId));
     row = await orders.preview({...payload, services:[{isAddOn:true,name:'Custom service',price:500,qty:1}]});
     assert.equal(row.totalAmount,525);
     await assert.rejects(orders.preview({...payload, services:[{isAddOn:true,name:'Small',price:100,qty:1}]}), /Minimum booking/);

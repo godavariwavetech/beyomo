@@ -31,8 +31,9 @@ const buildMultiPackageBooking = async (packagesInput, serviceMap, priceOf = (sv
   const packagesSummary = [];
   const ratePools = [];
 
-  for (const entry of packagesInput) {
+  for (const [selectionIndex, entry] of packagesInput.entries()) {
     const appliedPackage = await packagesService.validateForBooking(entry.packageId);
+    const packageSelectionId = `selection-${selectionIndex}`;
     const qty = entry.qty || 1;
     const items = (entry.services || []).map(item => {
       const svc = serviceMap[parseInt(item.id)];
@@ -49,12 +50,15 @@ const buildMultiPackageBooking = async (packagesInput, serviceMap, priceOf = (sv
         assignedPartnerName: null,
         addedByPackage: true,
         packageId: appliedPackage.id,
+        packageSelectionId,
       };
     });
     enrichedServices = [...enrichedServices, ...items];
     packageBaseAmount += parseFloat(appliedPackage.price) * qty;
     packagesSummary.push({
       packageId: appliedPackage.id,
+      packageSelectionId,
+      serviceCount: items.length,
       title: appliedPackage.title,
       qty,
       price: parseFloat(appliedPackage.price),
