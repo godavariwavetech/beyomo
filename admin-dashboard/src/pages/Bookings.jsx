@@ -1,3 +1,4 @@
+import { groupBookingPackages } from '../utils/bookingPackages';
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Search, Download, Eye, XCircle, MapPin, CreditCard, Clock, UserCheck, Package, FileText, Tag, PlusCircle, CalendarClock, Check, Gift, CalendarCheck, RefreshCw, CheckCircle2, MessageCircle } from 'lucide-react';
 import { useBookings } from '../hooks/useBookings';
@@ -57,6 +58,7 @@ const CatalogPrice = ({service}) => (
 
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
+const MIN_BOOKING_NOTICE_MS = 30 * 60 * 1000;
 const ONE_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
 
 // Format a Date as a local "YYYY-MM-DDTHH:mm" string for <input type="datetime-local"> min/max/value
@@ -70,7 +72,7 @@ const validateRescheduleDate = (value) => {
   const time = new Date(value).getTime();
   if (Number.isNaN(time)) return 'Please select a valid date & time.';
   const now = Date.now();
-  if (time < now + ONE_HOUR_MS) return 'New time must be at least 1 hour from now.';
+  if (time < now + MIN_BOOKING_NOTICE_MS) return 'New time must be at least 30 minutes from now.';
   if (time > now + ONE_MONTH_MS) return 'New time cannot be more than 1 month in advance.';
   return '';
 };
@@ -963,16 +965,14 @@ export default function Bookings() {
                       .reduce((sum, s) => sum + (parseFloat(s.price) || 0) * (s.qty || 1), 0);
                     const multiPackages = parseServices(selected.packages);
                     const packageGroups = multiPackages.length > 0
-                      ? multiPackages.map(pkg => ({
-                          key: pkg.packageId,
-                          title: pkg.title,
-                          price: (parseFloat(pkg.price) || 0) * (pkg.qty || 1),
-                          items: packageItems.filter(s => s.packageId === pkg.packageId),
-                        }))
+                      ? groupBookingPackages(multiPackages, servicesList)
                       : packageItems.length > 0
                         ? [{
                             key: selected.packageId,
+                            packageId: selected.packageId,
                             title: selected.package?.title ?? 'Package Deal',
+                            qty: Number(selected.packageQty) || 1,
+                            unitPrice: Math.max(0, parseFloat(selected.baseAmount ?? selected.amount ?? 0) - nonPackageTotal) / (Number(selected.packageQty) || 1),
                             price: Math.max(0, parseFloat(selected.baseAmount ?? selected.amount ?? 0) - nonPackageTotal),
                             items: packageItems,
                           }]
@@ -987,6 +987,9 @@ export default function Bookings() {
                           </span>
                           <span style={{ fontSize:13, fontWeight:700, color:'#1d4ed8' }}>₹{fmt(group.price)}</span>
                         </div>
+                        <div style={{ marginTop:4, fontSize:12, color:'#1e40af' }}>
+                          Qty: {group.qty}{group.qty > 1 && group.unitPrice > 0 ? ` × ₹${fmt(group.unitPrice)}` : ''}
+                        </div>
                         <div style={{ marginTop:6, fontSize:12, color:'#1e40af', lineHeight:1.6 }}>
                           {group.items.map((s, i) => (
                             <div key={i}>{i + 1}. {s.name}</div>
@@ -994,10 +997,10 @@ export default function Bookings() {
                         </div>
                         {!['completed','cancelled'].includes(selected.status) && (
                           <button
-                            disabled={removingPackageId === (group.key ?? 'legacy')}
-                            onClick={() => handleRemovePackage(selected.id, group.key, group.title)}
-                            style={{ marginTop:8, fontSize:11, fontWeight:700, letterSpacing:'0.03em', textTransform:'uppercase', color:'#b91c1c', background:'#fff', border:'1px solid #fca5a5', borderRadius:20, padding:'5px 12px', cursor: removingPackageId === (group.key ?? 'legacy') ? 'not-allowed' : 'pointer' }}>
-                            {removingPackageId === (group.key ?? 'legacy') ? 'Removing…' : 'Remove Package'}
+                            disabled={removingPackageId === (group.packageId ?? group.key ?? 'legacy')}
+                            onClick={() => handleRemovePackage(selected.id, group.packageId ?? group.key, group.title)}
+                            style={{ marginTop:8, fontSize:11, fontWeight:700, letterSpacing:'0.03em', textTransform:'uppercase', color:'#b91c1c', background:'#fff', border:'1px solid #fca5a5', borderRadius:20, padding:'5px 12px', cursor: removingPackageId === (group.packageId ?? group.key ?? 'legacy') ? 'not-allowed' : 'pointer' }}>
+                            {removingPackageId === (group.packageId ?? group.key ?? 'legacy') ? 'Removing…' : 'Remove Package'}
                           </button>
                         )}
                       </div>
@@ -1360,7 +1363,7 @@ export default function Bookings() {
                   <input
                     type="datetime-local"
                     value={rescheduleDate}
-                    min={toLocalInputValue(new Date(Date.now() + ONE_HOUR_MS))}
+                    min={toLocalInputValue(new Date(Date.now() + MIN_BOOKING_NOTICE_MS))}
                     max={toLocalInputValue(new Date(Date.now() + ONE_MONTH_MS))}
                     onChange={e => { setRescheduleDate(e.target.value); setRescheduleError(validateRescheduleDate(e.target.value)); }}
                     style={{ flex:1, border:`1px solid ${rescheduleError ? 'var(--c-danger)' : 'var(--c-border)'}`, borderRadius:'var(--r-sm)', padding:'6px 10px', fontSize:13, background:'var(--c-bg-card)', color:'var(--c-text-primary)' }}
@@ -1377,7 +1380,7 @@ export default function Bookings() {
                   <div style={{ fontSize:11, color:'var(--c-danger)', marginBottom:8 }}>{rescheduleError}</div>
                 )}
                 <div style={{ fontSize:11, color:'var(--c-text-muted)', marginBottom:8 }}>
-                  Must be at least 1 hour from now and no more than 1 month in advance.
+                  Must be at least 30 minutes from now and no more than 1 month in advance.
                 </div>
                 <input
                   type="text"
@@ -1754,7 +1757,7 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
     const time = new Date(scheduleValue).getTime();
     if (Number.isNaN(time)) return 'Please select a valid date & time.';
     const now = Date.now();
-    if (time < now + ONE_HOUR_MS) return 'Must be scheduled at least 1 hour from now.';
+    if (time < now + MIN_BOOKING_NOTICE_MS) return 'Must be scheduled at least 30 minutes from now.';
     if (time > now + ONE_MONTH_MS) return 'Cannot be scheduled more than 1 month in advance.';
     const indiaTime = new Date(time + 5.5 * ONE_HOUR_MS);
     const minutes = indiaTime.getUTCHours() * 60 + indiaTime.getUTCMinutes();
@@ -2081,7 +2084,7 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
           <InfoBlock label="Schedule & Payment">
             <div style={{ display:'flex', gap:8, marginBottom:8 }}>
               <input type="datetime-local" value={scheduleValue} onChange={e => setScheduleValue(e.target.value)}
-                min={toLocalInputValue(new Date(Date.now() + ONE_HOUR_MS))}
+                min={toLocalInputValue(new Date(Date.now() + MIN_BOOKING_NOTICE_MS))}
                 max={toLocalInputValue(new Date(Date.now() + ONE_MONTH_MS))}
                 style={{ flex:1, border:'1px solid var(--c-border)', borderRadius:'var(--r-sm)', padding:'6px 10px', fontSize:13, background:'var(--c-bg-card)', color:'var(--c-text-primary)' }} />
               <select value={paymentMode} onChange={e => setPaymentMode(e.target.value)}
@@ -2093,7 +2096,7 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
             {paymentMode === 'paid' && <div style={{fontSize:12, color:'var(--c-text-secondary)', marginBottom:8}}>
               Payment already received by admin. This booking will be marked as paid.
             </div>}
-            <div style={{ fontSize:11, color:'var(--c-text-muted)', marginBottom:8 }}>Bookings must be 1 hour to 1 month out, between 8 AM–8 PM.</div>
+            <div style={{ fontSize:11, color:'var(--c-text-muted)', marginBottom:8 }}>Bookings must be 30 minutes to 1 month out, between 8 AM–8 PM.</div>
             <textarea placeholder="Notes (e.g. requested via phone support call)" value={notes} onChange={e => setNotes(e.target.value)} rows={2}
               style={{ width:'100%', border:'1px solid var(--c-border)', borderRadius:'var(--r-sm)', padding:'6px 10px', fontSize:13, background:'var(--c-bg-card)', color:'var(--c-text-primary)', boxSizing:'border-box', resize:'vertical' }} />
           </InfoBlock>

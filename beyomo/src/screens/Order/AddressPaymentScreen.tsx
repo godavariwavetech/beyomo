@@ -81,18 +81,21 @@ const BOOKING_WINDOW_START_HOUR = 8;
 const BOOKING_WINDOW_END_HOUR = 20;
 
 const getDefaultDate = () => {
-  const d = new Date(Date.now() + 2 * 60 * 60 * 1000);
-  d.setSeconds(0, 0);
+  // Round up so clearing seconds never selects less than 30 minutes ahead.
+  const d = new Date(Math.ceil((Date.now() + MIN_BOOKING_NOTICE_MS) / 60000) * 60000);
   // If the advance-time buffer pushes past closing, the earliest real slot is
   // next day's opening instead of a same-day time outside business hours.
   if (d.getHours() >= BOOKING_WINDOW_END_HOUR) {
     d.setDate(d.getDate() + 1);
     d.setHours(BOOKING_WINDOW_START_HOUR, 0, 0, 0);
   }
+  if (d.getHours() < BOOKING_WINDOW_START_HOUR) {
+    d.setHours(BOOKING_WINDOW_START_HOUR, 0, 0, 0);
+  }
   return d;
 };
 
-const ONE_HOUR_MS = 60 * 60 * 1000;
+const MIN_BOOKING_NOTICE_MS = 30 * 60 * 1000;
 const ONE_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
 // Lowered from 500 → 1 for pay-first flow testing. Bump back before release.
 const MIN_BOOKING_AMOUNT = 500;
@@ -494,7 +497,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
 
   const validateDate = (date: Date): string => {
     const now = Date.now();
-    if (date.getTime() < now + ONE_HOUR_MS) return 'Booking must be at least 1 hour from now.';
+    if (date.getTime() < now + MIN_BOOKING_NOTICE_MS) return 'Booking must be at least 30 minutes from now.';
     if (date.getTime() > now + ONE_MONTH_MS) return 'Booking cannot be more than 1 month in advance.';
     const hour = date.getHours();
     if (hour >= BOOKING_WINDOW_END_HOUR) return 'The service is not available after 8 PM. Please choose a slot before 8 PM.';
