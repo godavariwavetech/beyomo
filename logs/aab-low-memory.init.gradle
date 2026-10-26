@@ -1,0 +1,12 @@
+// Build-only limits: do not change the application's checked-in configuration.
+allprojects { project ->
+    project.afterEvaluate {
+        if (project.plugins.hasPlugin('com.android.application') || project.plugins.hasPlugin('com.android.library')) {
+            project.android.defaultConfig.externalNativeBuild.cmake.arguments.addAll([
+                '-DCMAKE_JOB_POOLS=beyomo_compile=1',
+                '-DCMAKE_JOB_POOL_COMPILE=beyomo_compile',
+                '-DCMAKE_JOB_POOL_LINK=beyomo_compile'
+            ])
+        }
+    }
+}

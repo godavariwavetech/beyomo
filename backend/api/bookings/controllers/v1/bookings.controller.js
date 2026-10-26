@@ -74,8 +74,8 @@ const createBooking = catchAsync(async (req, res, next) => {
 
   const now = Date.now();
   const scheduledMs = new Date(value.scheduledAt).getTime();
-  if (scheduledMs < now + 60 * 60 * 1000) {
-    return next(new AppError("Booking must be scheduled at least 1 hour from now", 400));
+  if (scheduledMs < now + 30 * 60 * 1000) {
+    return next(new AppError("Booking must be scheduled at least 30 minutes from now", 400));
   }
   if (scheduledMs > now + 30 * 24 * 60 * 60 * 1000) {
     return next(new AppError("Booking cannot be scheduled more than 1 month in advance", 400));
@@ -140,8 +140,8 @@ const rescheduleBooking = catchAsync(async (req, res, next) => {
 
   const now = Date.now();
   const scheduledMs = new Date(value.scheduledAt).getTime();
-  if (scheduledMs < now + 60 * 60 * 1000) {
-    return next(new AppError("Booking must be scheduled at least 1 hour from now", 400));
+  if (scheduledMs < now + 30 * 60 * 1000) {
+    return next(new AppError("Booking must be scheduled at least 30 minutes from now", 400));
   }
   if (scheduledMs > now + 30 * 24 * 60 * 60 * 1000) {
     return next(new AppError("Booking cannot be scheduled more than 1 month in advance", 400));

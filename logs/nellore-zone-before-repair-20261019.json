@@ -1,0 +1,13 @@
+{
+  "cityIds": [
+    2300
+  ],
+  "cities": [],
+  "pincodes": [],
+  "id": 2,
+  "name": "Nellore Zone",
+  "description": "Nellore City",
+  "isActive": true,
+  "createdAt": "2026-07-25T12:01:21.000Z",
+  "updatedAt": "2026-07-25T12:01:21.000Z"
+}

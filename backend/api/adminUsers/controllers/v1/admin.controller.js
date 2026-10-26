@@ -1,6 +1,7 @@
 const catchAsync = require("../../../../utils/errorHandlers/catchAsync");
 const AppError = require("../../../../utils/errorHandlers/appError");
 const adminService = require("../../services/v1/admin.service");
+const orderCreation = require('../../services/v1/orderCreation.service');
 const settlementsService = require("../../../settlements/services/v1/settlements.service");
 const Joi = require("joi");
 const AdminUser = require("../../models/adminUser.model");
@@ -248,6 +249,42 @@ const adminCreateBookingSchema = Joi.object({
   notes: Joi.string().trim().max(500).allow("", null),
 });
 
+const customerOrderSchema = adminCreateBookingSchema.keys({
+  useCustomerFlow: Joi.boolean().valid(true).required(),
+  cityId: Joi.number().integer().positive().required(),
+  expectedTotal: Joi.number().min(0).optional(),
+  address: adminCreateBookingSchema.extract('address').keys({
+    city: Joi.string().trim().required(), state: Joi.string().trim().required(),
+    // Customer-saved addresses can omit a pincode; validate it when provided.
+    pincode: Joi.string().trim().pattern(/^\d{6}$/).allow('', null).default(''),
+    line1: Joi.string().trim().required(),
+  }),
+  services: adminCreateBookingSchema.extract('services').min(0).default([]),
+  packages: Joi.array().items(Joi.object({
+    packageId: Joi.number().integer().positive().required(),
+    qty: Joi.number().integer().min(1).max(5).required(),
+    services: Joi.array().items(Joi.object({
+      id: Joi.number().integer().positive().required(),
+      qty: Joi.number().integer().min(1).max(5).required(),
+    })).min(1).required(),
+  })).default([]),
+  couponCode: Joi.string().trim().uppercase().allow('', null),
+  offerId: Joi.number().integer().positive().allow(null),
+  paymentMode: Joi.string().valid('cod', 'paid').default('cod'),
+});
+
+const customerOrderCatalog = catchAsync(async (req, res, next) => {
+  const cityId = Number(req.query.cityId);
+  if (!Number.isInteger(cityId) || cityId <= 0) return next(new AppError('Select a service city', 400));
+  res.json({status: true, data: await orderCreation.getCatalog(cityId)});
+});
+
+const previewCustomerOrder = catchAsync(async (req, res, next) => {
+  const {error, value} = customerOrderSchema.validate(req.body);
+  if (error) return next(new AppError(error.details[0].message, 400));
+  res.json({status: true, data: await orderCreation.preview(value)});
+});
+
 const broadcastSchema = Joi.object({
   title: Joi.string().required(),
   body: Joi.string().required(),
@@ -268,6 +305,16 @@ const login = catchAsync(async (req, res, next) => {
 
 const logout = catchAsync(async (req, res, next) => {
   res.status(200).json({ status: true, message: "Logged out successfully" });
+});
+
+const currentAdmin = catchAsync(async (req, res, next) => {
+  const admin = await AdminUser.findByPk(req.admin.userId, {
+    attributes: ["id", "name", "email", "role", "customPermissions", "allowedZones", "allowedCities", "status"],
+  });
+  if (!admin || admin.status !== "active") {
+    return next(new AppError("Your admin account is no longer active.", 401));
+  }
+  res.status(200).json({ status: true, data: admin });
 });
 
 // Dev-only: return admin list for login-page credential hints (no passwords)
@@ -492,13 +539,13 @@ const patchServiceCity = catchAsync(async (req, res, next) => {
 // ==================== BOOKINGS ====================
 
 const createBookingForCustomer = catchAsync(async (req, res, next) => {
-  const { error, value } = adminCreateBookingSchema.validate(req.body);
+  const { error, value } = (req.body.useCustomerFlow ? customerOrderSchema : adminCreateBookingSchema).validate(req.body);
   if (error) return next(new AppError(error.details[0].message, 400));
 
   const now = Date.now();
   const scheduledMs = new Date(value.scheduledAt).getTime();
-  if (scheduledMs < now + 60 * 60 * 1000) {
-    return next(new AppError("Booking must be scheduled at least 1 hour from now", 400));
+  if (scheduledMs < now + 30 * 60 * 1000) {
+    return next(new AppError("Booking must be scheduled at least 30 minutes from now", 400));
   }
   if (scheduledMs > now + 30 * 24 * 60 * 60 * 1000) {
     return next(new AppError("Booking cannot be scheduled more than 1 month in advance", 400));
@@ -510,7 +557,9 @@ const createBookingForCustomer = catchAsync(async (req, res, next) => {
     return next(new AppError("Bookings are only available between 8 AM and 8 PM. Please choose a slot in that window.", 400));
   }
 
-  const booking = await adminService.createBookingForCustomer(req.admin.userId, value);
+  const booking = value.useCustomerFlow
+    ? await orderCreation.create(req.admin.userId, value)
+    : await adminService.createBookingForCustomer(req.admin.userId, value);
   res.status(201).json({ status: true, message: "Booking created successfully", data: booking });
 });
 
@@ -548,6 +597,20 @@ const cancelBooking = catchAsync(async (req, res, next) => {
   res.status(200).json({ status: true, message: "Booking cancelled", data: booking });
 });
 
+const reopenBooking = catchAsync(async (req, res, next) => {
+  const booking = await adminService.reopenBooking(req.params.id);
+  res.status(200).json({ status: true, message: "Booking moved to In Progress", data: booking });
+});
+
+const updateBookingStatus = catchAsync(async (req, res, next) => {
+  const { error, value } = Joi.object({
+    status: Joi.string().valid("pending", "confirmed", "in_progress", "completed", "cancelled").required(),
+  }).validate(req.body);
+  if (error) return next(new AppError(error.details[0].message, 400));
+  const booking = await adminService.updateBookingStatus(req.params.id, value.status);
+  res.status(200).json({ status: true, message: "Booking status updated", data: booking });
+});
+
 const acceptBooking = catchAsync(async (req, res, next) => {
   const booking = await adminService.acceptBooking(req.params.id);
   res.status(200).json({ status: true, message: "Booking accepted", data: booking });
@@ -564,8 +627,8 @@ const rescheduleBooking = catchAsync(async (req, res, next) => {
 
   const now = Date.now();
   const scheduledMs = new Date(value.scheduledAt).getTime();
-  if (scheduledMs < now + 60 * 60 * 1000) {
-    return next(new AppError("Booking must be rescheduled at least 1 hour from now", 400));
+  if (scheduledMs < now + 30 * 60 * 1000) {
+    return next(new AppError("Booking must be rescheduled at least 30 minutes from now", 400));
   }
   if (scheduledMs > now + 30 * 24 * 60 * 60 * 1000) {
     return next(new AppError("Booking cannot be rescheduled more than 1 month in advance", 400));
@@ -1109,14 +1172,15 @@ const deletePackageHandler = catchAsync(async (req, res) => {
 });
 
 module.exports = {
-  login, logout, devAdminHints,
+  previewCustomerOrder, customerOrderCatalog,
+  login, logout, currentAdmin, devAdminHints,
   listUsers, getUserById, updateUserStatus, deleteUser, createUser,
   listPartners, getPartnerById, updatePartnerStatus, createPartner, updatePartner,
   listCategories, createCategory, updateCategory, deleteCategory, reorderCategories,
   listSubcategories, createSubcategory, updateSubcategory, deleteSubcategory,
   listServices, createService, updateService, deleteService, patchService, patchServiceCity, reorderServices,
   createBookingForCustomer,
-  listBookings, getBookingDetail, assignPartner, acceptBooking, cancelBooking, rescheduleBooking, editBookingServices, removeBookingPackage, addBookingPackage,
+  listBookings, getBookingDetail, assignPartner, acceptBooking, cancelBooking, reopenBooking, updateBookingStatus, rescheduleBooking, editBookingServices, removeBookingPackage, addBookingPackage,
   listPartnerBalances, getPartnerLedger, recordSettlement, voidLedgerEntry,
   listCoupons, createCoupon, updateCoupon, deleteCoupon, getReferral, updateReferral,
   listReviews, updateReviewStatus,

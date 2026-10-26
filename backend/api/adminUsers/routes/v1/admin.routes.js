@@ -42,7 +42,7 @@ const agreementUpload = multer({
   },
 });
 const {
-  login, logout, devAdminHints,
+  login, logout, currentAdmin, devAdminHints,
   listBanners, createBanner, updateBanner, deleteBanner,
   listZones, createZone, updateZone, deleteZone,
   listCities, createCity, updateCity, deleteCity,
@@ -51,8 +51,8 @@ const {
   listCategories, createCategory, updateCategory, deleteCategory, reorderCategories,
   listSubcategories, createSubcategory, updateSubcategory, deleteSubcategory,
   listServices, createService, updateService, deleteService, patchService, patchServiceCity, reorderServices,
-  createBookingForCustomer,
-  listBookings, getBookingDetail, assignPartner, acceptBooking, cancelBooking, rescheduleBooking, editBookingServices, removeBookingPackage, addBookingPackage,
+  createBookingForCustomer, previewCustomerOrder, customerOrderCatalog,
+  listBookings, getBookingDetail, assignPartner, acceptBooking, cancelBooking, reopenBooking, updateBookingStatus, rescheduleBooking, editBookingServices, removeBookingPackage, addBookingPackage,
   listPartnerBalances, getPartnerLedger, recordSettlement, voidLedgerEntry,
   listCoupons, createCoupon, updateCoupon, deleteCoupon, getReferral, updateReferral,
   listReviews, updateReviewStatus,
@@ -84,6 +84,7 @@ router.get("/settings/agreement/status", adminAuthenticate(), (req, res) => {
 // Auth (no middleware on login)
 router.post("/auth/login", login);
 router.post("/auth/logout", adminAuthenticate(), logout);
+router.get("/auth/me", adminAuthenticate(), currentAdmin);
 router.get("/auth/dev-hints", devAdminHints);
 
 // Users
@@ -122,12 +123,17 @@ router.patch("/services/:id/cities/:cityId", adminAuthenticate(["super_admin", "
 router.delete("/services/:id", adminAuthenticate(["super_admin", "admin"]), deleteService);
 
 // Bookings
-router.post("/bookings", adminAuthenticate(["super_admin", "admin", "manager", "support"]), createBookingForCustomer);
+router.post('/booking-customers', adminAuthenticate(["super_admin"], "bookings_create"), createUser);
+router.get('/booking-catalog', adminAuthenticate(["super_admin"], "bookings_create"), customerOrderCatalog);
+router.post('/bookings/preview', adminAuthenticate(["super_admin"], "bookings_create"), previewCustomerOrder);
+router.post("/bookings", adminAuthenticate(["super_admin"], "bookings_create"), createBookingForCustomer);
 router.get("/bookings", adminAuthenticate(), listBookings);
 router.get("/bookings/:id", adminAuthenticate(), getBookingDetail);
 router.patch("/bookings/:id/assign", adminAuthenticate(["super_admin", "admin", "manager"]), assignPartner);
 router.patch("/bookings/:id/accept", adminAuthenticate(["super_admin", "admin", "manager"]), acceptBooking);
 router.patch("/bookings/:id/cancel", adminAuthenticate(["super_admin", "admin", "manager"]), cancelBooking);
+router.patch("/bookings/:id/reopen", adminAuthenticate(["super_admin", "admin", "manager"]), reopenBooking);
+router.patch("/bookings/:id/status", adminAuthenticate(["super_admin", "admin", "manager"]), updateBookingStatus);
 router.patch("/bookings/:id/reschedule", adminAuthenticate(["super_admin", "admin", "manager"]), rescheduleBooking);
 router.patch("/bookings/:id/services", adminAuthenticate(["super_admin", "admin", "manager"]), editBookingServices);
 router.patch("/bookings/:id/remove-package", adminAuthenticate(["super_admin", "admin", "manager"]), removeBookingPackage);

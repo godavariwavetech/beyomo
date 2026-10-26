@@ -81,18 +81,21 @@ const BOOKING_WINDOW_START_HOUR = 8;
 const BOOKING_WINDOW_END_HOUR = 20;
 
 const getDefaultDate = () => {
-  const d = new Date(Date.now() + 2 * 60 * 60 * 1000);
-  d.setSeconds(0, 0);
+  // Round up so clearing seconds never selects less than 30 minutes ahead.
+  const d = new Date(Math.ceil((Date.now() + MIN_BOOKING_NOTICE_MS) / 60000) * 60000);
   // If the advance-time buffer pushes past closing, the earliest real slot is
   // next day's opening instead of a same-day time outside business hours.
   if (d.getHours() >= BOOKING_WINDOW_END_HOUR) {
     d.setDate(d.getDate() + 1);
     d.setHours(BOOKING_WINDOW_START_HOUR, 0, 0, 0);
   }
+  if (d.getHours() < BOOKING_WINDOW_START_HOUR) {
+    d.setHours(BOOKING_WINDOW_START_HOUR, 0, 0, 0);
+  }
   return d;
 };
 
-const ONE_HOUR_MS = 60 * 60 * 1000;
+const MIN_BOOKING_NOTICE_MS = 30 * 60 * 1000;
 const ONE_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
 // Lowered from 500 → 1 for pay-first flow testing. Bump back before release.
 const MIN_BOOKING_AMOUNT = 500;
@@ -494,7 +497,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
 
   const validateDate = (date: Date): string => {
     const now = Date.now();
-    if (date.getTime() < now + ONE_HOUR_MS) return 'Booking must be at least 1 hour from now.';
+    if (date.getTime() < now + MIN_BOOKING_NOTICE_MS) return 'Booking must be at least 30 minutes from now.';
     if (date.getTime() > now + ONE_MONTH_MS) return 'Booking cannot be more than 1 month in advance.';
     const hour = date.getHours();
     if (hour >= BOOKING_WINDOW_END_HOUR) return 'The service is not available after 8 PM. Please choose a slot before 8 PM.';
@@ -637,7 +640,10 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
       return;
     }
     if (!selectedAddr) {
-      Alert.alert('Address Required', 'Please select a delivery address.');
+      setInfoModal({
+        title: 'Address Required',
+        message: 'Please add or select an address to continue.',
+      });
       return;
     }
     if (!isLocationAvailable(selectedAddr.city)) {
@@ -1364,7 +1370,7 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
             <View style={styles.billRows}>
               {isCartMode && cartItems.map(item => (
                 <View key={item.key} style={styles.billRow}>
-                  <Text style={styles.billLabel} numberOfLines={1}>
+                  <Text style={styles.billLabel}>
                     {item.packageTitle}{item.qty > 1 ? ` ×${item.qty}` : ''}
                   </Text>
                   <Text style={styles.billValue}>
@@ -1386,11 +1392,11 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
 
                 return (
                   <View key={String(isFree ? `free-${s.id}` : s.id)} style={styles.billRow}>
-                    <Text style={styles.billLabel} numberOfLines={1}>
+                    <Text style={styles.billLabel}>
                       {s.name}{s.qty > 1 ? ` ×${s.qty}` : ''}
                     </Text>
                     {hasOfferPrice ? (
-                      <View style={{flexDirection: 'row', alignItems: 'center', gap: sw(6)}}>
+                      <View style={styles.billPriceGroup}>
                         <Text style={[styles.billValue, {color: '#105641', fontWeight: '700'}]}>
                           ₹{formatAmount(offerPrice * s.qty)}
                         </Text>
@@ -1860,9 +1866,9 @@ const AddressPaymentScreen = ({navigation, route}: Props) => {
           </View>
         </View>
         <TouchableOpacity
-          style={[styles.continueBtn, (booking || (!guest && (!selectedAddr || subtotal < MIN_BOOKING_AMOUNT))) && {opacity: 0.6}]}
+          style={[styles.continueBtn, (booking || (!guest && subtotal < MIN_BOOKING_AMOUNT)) && {opacity: 0.6}]}
           activeOpacity={0.85}
-          disabled={booking || (!guest && (!selectedAddr || subtotal < MIN_BOOKING_AMOUNT))}
+          disabled={booking || (!guest && subtotal < MIN_BOOKING_AMOUNT)}
           onPress={handleBooking}>
           {booking ? (
             <ActivityIndicator color="#FFFFFF" />
@@ -2366,9 +2372,10 @@ const styles = StyleSheet.create({
   billTitle: {fontFamily: fonts.textFont, fontSize: sw(14), fontWeight: '700', color: '#303030'},
   divider: {height: 0.5, backgroundColor: '#CBCBCB'},
   billRows: {gap: sw(12)},
-  billRow: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: sw(10)},
-  billLabel: {fontFamily: fonts.textFont, fontSize: sw(12), color: '#171816'},
-  billValue: {fontFamily: fonts.textFont, fontSize: sw(14), fontWeight: '500', color: '#252525'},
+  billRow: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: sw(10)},
+  billLabel: {flex: 1, minWidth: 0, flexShrink: 1, fontFamily: fonts.textFont, fontSize: sw(12), lineHeight: sw(18), color: '#171816'},
+  billValue: {flexShrink: 0, textAlign: 'right', fontFamily: fonts.textFont, fontSize: sw(14), fontWeight: '500', color: '#252525'},
+  billPriceGroup: {flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap', flexShrink: 0, maxWidth: '45%', gap: sw(4)},
   toPayRow: {flexDirection: 'row', alignItems: 'center', gap: sw(8)},
   toPayTextBlock: {flex: 1},
   toPayLabel: {fontFamily: fonts.textFont, fontSize: sw(14), fontWeight: '700', color: '#303030'},

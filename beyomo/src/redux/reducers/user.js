@@ -96,6 +96,7 @@ const userSlice = createSlice({
     loading: false,
     actionLoading: false,
     error: null,
+    profileRequestId: null,
   },
   reducers: {
     clearUserError: state => {
@@ -104,15 +105,20 @@ const userSlice = createSlice({
   },
   extraReducers: builder => {
     builder
-      .addCase(fetchProfile.pending, state => {
+      .addCase(fetchProfile.pending, (state, action) => {
         state.loading = true;
         state.error = null;
+        state.profileRequestId = action.meta.requestId;
       })
       .addCase(fetchProfile.fulfilled, (state, action) => {
+        if (state.profileRequestId !== action.meta.requestId) return;
+        state.profileRequestId = null;
         state.loading = false;
         state.profile = action.payload ?? state.profile;
       })
       .addCase(fetchProfile.rejected, (state, action) => {
+        if (state.profileRequestId !== action.meta.requestId) return;
+        state.profileRequestId = null;
         state.loading = false;
         state.error = action.payload ?? null;
       })
@@ -172,7 +178,19 @@ const userSlice = createSlice({
       .addCase(fetchWallet.rejected, state => { state.loading = false; })
 
       // Device token is fire-and-forget — no state change needed on success or failure
-      .addCase(updateDeviceToken.rejected, () => {});
+      .addCase(updateDeviceToken.rejected, () => {})
+      // Auth and User are separate slices; discard the cached account on every
+      // session change, including automatic logout after an expired token.
+      .addMatcher(
+        action => [
+          'auth/actionLogout',
+          'auth/logoutUser/fulfilled',
+          'auth/deleteAccount/fulfilled',
+          'auth/actionLogin',
+          'auth/verifyLoginOtp/fulfilled',
+        ].includes(action.type),
+        () => userSlice.getInitialState(),
+      );
   },
 });
 

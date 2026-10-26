@@ -1,3 +1,5 @@
+import { groupBookingPackages } from '../../utils/bookingPackages';
+import type { BookingPackageGroup } from '../../utils/bookingPackages';
 import React, {useState, useMemo} from 'react';
 import {
   View,
@@ -72,17 +74,18 @@ const IncomingRequestScreen = ({navigation, route}: any) => {
   const otherServices = services.filter((s: any) => !s.addedByPackage);
   const otherServicesTotal = otherServices.reduce((sum: number, s: any) => sum + (s.price ?? 0) * (s.qty || 1), 0);
   const multiPackages: any[] = parseServices(booking?.packages);
-  const packageGroups = multiPackages.length > 0
-    ? multiPackages.map((pkg: any) => ({
-        key: pkg.packageId,
-        title: pkg.title,
-        price: Number(pkg.price || 0) * (pkg.qty || 1),
-        items: packageItems.filter((s: any) => s.packageId === pkg.packageId),
+  // Split the complete saved list before applying partner/checklist visibility.
+  const packageGroups: BookingPackageGroup[] = multiPackages.length > 0
+    ? groupBookingPackages(multiPackages, services).map(group => ({
+        ...group,
+        items: group.items.filter(item => packageItems.includes(item)),
       }))
     : packageItems.length > 0
       ? [{
           key: booking?.packageId,
           title: booking?.package?.title ?? 'Package Deal',
+          qty: Number(booking?.packageQty) || 1,
+          unitPrice: (Math.max(0, (booking?.baseAmount ?? booking?.totalAmount ?? 0) - otherServicesTotal)) / (Number(booking?.packageQty) || 1),
           price: Math.max(0, (booking?.baseAmount ?? booking?.totalAmount ?? 0) - otherServicesTotal),
           items: packageItems,
         }]
@@ -275,6 +278,12 @@ const IncomingRequestScreen = ({navigation, route}: any) => {
                     <Text style={styles.packageBadgeText}>Package</Text>
                   </View>
                 </View>
+                <Text style={[styles.metaChipText, {marginTop: sw(4)}]}>
+                  Qty: {group.qty ?? 1}
+                  {(group.qty ?? 1) > 1 && (group.unitPrice ?? 0) > 0
+                    ? ` \u00d7 \u20b9${formatAmount(group.unitPrice ?? 0)}`
+                    : ''}
+                </Text>
                 <View style={{marginTop: sw(4)}}>
                   {group.items.map((s: any, i: number) => (
                     <Text key={s._id ?? s.id ?? i} style={styles.metaChipText}>{i + 1}. {s.name}</Text>

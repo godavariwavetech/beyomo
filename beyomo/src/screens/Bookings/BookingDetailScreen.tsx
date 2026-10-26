@@ -1,3 +1,4 @@
+import { groupBookingPackages } from '../../utils/bookingPackages';
 import React, {useCallback, useState} from 'react';
 import {
   View,
@@ -27,12 +28,12 @@ import {useFocusEffect} from '@react-navigation/native';
 import {fetchBookingById, cancelBooking, rescheduleBooking, addUserServices, removePackage, addPackage} from '../../redux/reducers/bookings';
 import networkCall from '../../utils/networkCall';
 import {payWithRazorpay} from '../../utils/payments';
-import {resolveImageUrl, formatAmount} from '../../utils/utils';
+import {resolveImageUrl, formatAmount, formatBookingCreatedAt} from '../../utils/utils';
 
 const {width} = Dimensions.get('window');
 const sw = (px: number) => (px / 393) * width;
 
-const ONE_HOUR_MS = 60 * 60 * 1000;
+const MIN_BOOKING_NOTICE_MS = 30 * 60 * 1000;
 const ONE_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
 const MAX_SERVICE_QTY = 5;
 const FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=200&q=80&fit=crop';
@@ -47,7 +48,7 @@ const formatDateTime = (dateStr: string) => {
 
 const validateRescheduleDate = (date: Date): string => {
   const now = Date.now();
-  if (date.getTime() < now + ONE_HOUR_MS) return 'New time must be at least 1 hour from now.';
+  if (date.getTime() < now + MIN_BOOKING_NOTICE_MS) return 'New time must be at least 30 minutes from now.';
   if (date.getTime() > now + ONE_MONTH_MS) return 'New time cannot be more than 1 month in advance.';
   return '';
 };
@@ -103,7 +104,7 @@ const BookingDetailScreen = ({navigation, route}: any) => {
   const [addPkgError, setAddPkgError] = useState('');
 
   const [showRescheduleModal, setShowRescheduleModal] = useState(false);
-  const [rescheduleDate, setRescheduleDate] = useState<Date>(new Date(Date.now() + ONE_HOUR_MS * 2));
+  const [rescheduleDate, setRescheduleDate] = useState<Date>(new Date(Math.ceil((Date.now() + MIN_BOOKING_NOTICE_MS) / 60000) * 60000));
   const [rescheduleError, setRescheduleError] = useState('');
   const [showReschedDatePicker, setShowReschedDatePicker] = useState(false);
   const [showReschedTimePicker, setShowReschedTimePicker] = useState(false);
@@ -293,8 +294,8 @@ const BookingDetailScreen = ({navigation, route}: any) => {
 
   const openRescheduleModal = () => {
     const base = booking?.scheduledAt ? new Date(booking.scheduledAt) : new Date();
-    const minAllowed = Date.now() + ONE_HOUR_MS;
-    const initial = base.getTime() > minAllowed ? base : new Date(minAllowed + 60 * 60 * 1000);
+    const minAllowed = Date.now() + MIN_BOOKING_NOTICE_MS;
+    const initial = base.getTime() > minAllowed ? base : new Date(Math.ceil(minAllowed / 60000) * 60000);
     setRescheduleDate(initial);
     setRescheduleError(validateRescheduleDate(initial));
     setShowRescheduleModal(true);
@@ -387,17 +388,11 @@ const BookingDetailScreen = ({navigation, route}: any) => {
   // own title and price, so they must be grouped separately rather than merged into one.
   const multiPackages: any[] = Array.isArray(booking.packages) ? booking.packages : [];
   const packageGroups = multiPackages.length > 0
-    ? multiPackages.map((pkg: any) => ({
-        key: pkg.packageId,
-        title: pkg.title,
-        qty: Number(pkg.qty) || 1,
-        unitPrice: Number(pkg.price) || 0,
-        price: Number(pkg.price || 0) * (pkg.qty || 1),
-        items: packageItems.filter((s: any) => s.packageId === pkg.packageId),
-      }))
+    ? groupBookingPackages(multiPackages, packageItems)
     : packageItems.length > 0
       ? [{
           key: booking.packageId,
+          packageId: booking.packageId,
           title: booking.package?.title ?? 'Package Deal',
           qty: Number(booking.packageQty) || 1,
           // Back-derived, so there's no reliable per-unit figure to show alongside it.
@@ -476,6 +471,7 @@ const BookingDetailScreen = ({navigation, route}: any) => {
   const paymentStatusLabel = booking.paymentStatus === 'paid' ? 'Paid' : booking.paymentMode === 'cod' ? 'Due on completion' : 'Unpaid';
 
   const dt = booking.scheduledAt ? formatDateTime(booking.scheduledAt) : null;
+  const createdAt = formatBookingCreatedAt(booking.createdAt);
 
   // Backend only allows cancel/reschedule while the booking is pending or confirmed —
   // once a partner has started the job (in_progress) it can no longer be cancelled/rescheduled.
@@ -527,6 +523,9 @@ const BookingDetailScreen = ({navigation, route}: any) => {
               )}
             </View>
             <Text style={styles.confirmedCode}>Booking ID: {bookingId}</Text>
+            {!!createdAt && (
+              <Text style={styles.confirmedCode}>Created on: {createdAt}</Text>
+            )}
             {isRescheduled && !!previousDt && (
               <Text style={styles.rescheduledNote}>
                 Moved from {previousDt.date}, {previousDt.time}
@@ -680,7 +679,7 @@ const BookingDetailScreen = ({navigation, route}: any) => {
                     style={styles.removePkgBtn}
                     activeOpacity={0.8}
                     disabled={actionLoading}
-                    onPress={() => handleRemovePackage(group.key, group.title)}>
+                    onPress={() => handleRemovePackage(group.packageId ?? group.key, group.title)}>
                     <Text style={styles.removePkgBtnText}>Remove Package</Text>
                   </TouchableOpacity>
                 )}

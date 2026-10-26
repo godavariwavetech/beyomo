@@ -1,3 +1,5 @@
+import { groupBookingPackages } from '../../utils/bookingPackages';
+import type { BookingPackageGroup } from '../../utils/bookingPackages';
 import React, {useState, useCallback, useEffect, useRef} from 'react';
 import {
   View, Text, Image, ScrollView, TouchableOpacity, StyleSheet,
@@ -245,17 +247,19 @@ const JobChecklistScreen = ({navigation, route}: any) => {
   const otherVisibleServices = visibleServices.filter(s => !s.addedByPackage);
   const otherVisibleTotal = otherVisibleServices.reduce((sum, s) => sum + (s.price ?? 0) * (s.qty || 1), 0);
   const multiPackages: any[] = parseServices(job?.packages);
-  const packageGroups = multiPackages.length > 0
-    ? multiPackages.map((pkg: any) => ({
-        key: pkg.packageId,
-        title: pkg.title,
-        price: Number(pkg.price || 0) * (pkg.qty || 1),
-        items: packageItems.filter((s: any) => s.packageId === pkg.packageId),
+  // Split the complete saved list before applying partner/checklist visibility.
+  const packageGroups: BookingPackageGroup[] = multiPackages.length > 0
+    ? groupBookingPackages(multiPackages, services).map(group => ({
+        ...group,
+        items: group.items.filter(item => packageItems.includes(item)),
       }))
     : packageItems.length > 0
       ? [{
           key: job?.packageId,
+          packageId: job?.packageId,
           title: job?.package?.title ?? 'Package Deal',
+          qty: Number(job?.packageQty) || 1,
+          unitPrice: (Math.max(0, (job?.baseAmount ?? totalAmount) - otherVisibleTotal)) / (Number(job?.packageQty) || 1),
           price: Math.max(0, (job?.baseAmount ?? totalAmount) - otherVisibleTotal),
           items: packageItems,
         }]
@@ -732,17 +736,23 @@ const JobChecklistScreen = ({navigation, route}: any) => {
                     <Text style={styles.packageBadgeText}>Package</Text>
                   </View>
                 </View>
+                <Text style={[styles.metaChipText, {marginTop: sw(4)}]}>
+                  Qty: {group.qty ?? 1}
+                  {(group.qty ?? 1) > 1 && (group.unitPrice ?? 0) > 0
+                    ? ` \u00d7 \u20b9${formatAmount(group.unitPrice ?? 0)}`
+                    : ''}
+                </Text>
                 <View style={{marginTop: sw(4)}}>
                   {group.items.map((s: any, i: number) => (
                     <Text key={s._id ?? s.id ?? i} style={styles.metaChipText}>{i + 1}. {s.name}</Text>
                   ))}
                 </View>
                 <TouchableOpacity
-                  onPress={() => handleRemovePackage(group.key, group.title)}
+                  onPress={() => handleRemovePackage(group.packageId ?? null, group.title)}
                   disabled={removingPkgId != null}
                   style={styles.removePkgBtn}>
                   <Text style={styles.removePkgBtnText}>
-                    {removingPkgId === (group.key ?? -1) ? 'Removing…' : 'Remove Package'}
+                    {removingPkgId === (group.packageId ?? -1) ? 'Removing…' : 'Remove Package'}
                   </Text>
                 </TouchableOpacity>
               </View>

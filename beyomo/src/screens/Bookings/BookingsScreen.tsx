@@ -23,7 +23,7 @@ import {useDispatch, useSelector} from 'react-redux';
 import {fonts} from '../../config/theme';
 import {fetchUserBookings, cancelBooking} from '../../redux/reducers/bookings';
 import type {AppDispatch, RootState} from '../../redux/store';
-import {formatAmount} from '../../utils/utils';
+import {formatAmount, formatBookingCreatedAt} from '../../utils/utils';
 import {downloadBookingInvoice, openInvoiceFile} from '../../utils/invoicePdf';
 
 const {width} = Dimensions.get('window');
@@ -240,9 +240,7 @@ const BookingCard = ({
   // Backend only allows cancel/reschedule while pending or confirmed — not once a partner
   // has started the job (in_progress).
   const isReschedulable = ['pending', 'confirmed'].includes((booking.status ?? '').toLowerCase());
-  const createdAt = booking.createdAt
-    ? new Date(booking.createdAt).toLocaleDateString('en-IN', {day: 'numeric', month: 'short', year: 'numeric'})
-    : '';
+  const createdAt = formatBookingCreatedAt(booking.createdAt);
 
   const handleTrack = () =>
     Alert.alert('Track Expert', 'Your expert Riya Sharma is on the way! ETA: ~15 minutes.', [{text: 'OK'}]);
@@ -296,7 +294,7 @@ const BookingCard = ({
       <View style={styles.cardMain}>
         {/* Row 1: created-at + dots menu */}
         <View style={styles.cardRow1}>
-          <Text style={styles.createdAt}>{createdAt}</Text>
+          {!!createdAt && <Text style={styles.createdAt}>Created on: {createdAt}</Text>}
           {/* Dots menu — hidden per request, keep for potential future re-enable.
           <TouchableOpacity
             activeOpacity={0.7}
@@ -584,11 +582,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   createdAt: {
+    flexShrink: 1,
     fontFamily: fonts.textFont,
     fontSize: sw(12),
     fontWeight: '500',
     color: '#5C5C5C',
-    lineHeight: sw(12),
+    lineHeight: sw(17),
   },
   dotsBtn: {
     flexDirection: 'column',

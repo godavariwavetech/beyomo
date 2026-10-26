@@ -1,13 +1,21 @@
+import { groupBookingPackages } from '../utils/bookingPackages';
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Search, Download, Eye, XCircle, MapPin, CreditCard, Clock, UserCheck, Package, FileText, Tag, PlusCircle, CalendarClock, Check, Gift, CalendarCheck, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { Search, Download, Eye, XCircle, MapPin, CreditCard, Clock, UserCheck, Package, FileText, Tag, PlusCircle, CalendarClock, Check, Gift, CalendarCheck, RefreshCw, CheckCircle2, MessageCircle } from 'lucide-react';
 import { useBookings } from '../hooks/useBookings';
 import { useAuth } from '../context/AuthContext';
 import { useCityFilter } from '../context/CityContext';
 import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { Badge } from '../components/common/Badge';
 import Modal from '../components/common/Modal';
+import AddressMapPicker from '../components/common/AddressMapPicker';
 import api from '../services/api';
 import { formatAmount, formatRupee } from '../utils/format';
+import { bookingBaseAmount, bookingServicePayouts } from '../utils/bookingAmounts';
+import OrderPackages from '../components/bookings/OrderPackages';
+import '../components/bookings/NewBookingCustomer.css';
+import { cityKey } from '../utils/locationSearch';
+import { ROLE_LABELS } from '../data/mockData';
+import { bookingWhatsAppLink, bookingWhatsAppMessage } from '../utils/bookingWhatsApp';
 
 const exportCSV = (data, filename) => {
   const headers = ['ID','Customer','User ID','Partner','Partner ID','Service','Amount','Commission','Status','Date','Slot','Payment'];
@@ -19,6 +27,12 @@ const exportCSV = (data, filename) => {
 
 const ITEMS_PER_PAGE = 8;
 const STATUSES = ['all','pending','confirmed','in_progress','completed','cancelled'];
+
+const AdminCreatedLabel = ({ creator }) => (
+  <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:11, fontWeight:600, color:'#1d4ed8', background:'#eff6ff', padding:'3px 7px', borderRadius:4 }}>
+    <UserCheck size={12} /> Created by {ROLE_LABELS[creator?.role] || 'Admin'}
+  </span>
+);
 
 const fmt = (n) => formatAmount(n);
 
@@ -44,6 +58,7 @@ const CatalogPrice = ({service}) => (
 
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
+const MIN_BOOKING_NOTICE_MS = 30 * 60 * 1000;
 const ONE_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
 
 // Format a Date as a local "YYYY-MM-DDTHH:mm" string for <input type="datetime-local"> min/max/value
@@ -57,19 +72,20 @@ const validateRescheduleDate = (value) => {
   const time = new Date(value).getTime();
   if (Number.isNaN(time)) return 'Please select a valid date & time.';
   const now = Date.now();
-  if (time < now + ONE_HOUR_MS) return 'New time must be at least 1 hour from now.';
+  if (time < now + MIN_BOOKING_NOTICE_MS) return 'New time must be at least 30 minutes from now.';
   if (time > now + ONE_MONTH_MS) return 'New time cannot be more than 1 month in advance.';
   return '';
 };
 
 const parseServices = (s) => {
   if (Array.isArray(s)) return s;
-  if (typeof s === 'string') { try { return JSON.parse(s); } catch { return []; } }
+  if (typeof s === 'string') { try { const parsed = JSON.parse(s); return Array.isArray(parsed) ? parsed : []; } catch { return []; } }
   return [];
 };
 
 export default function Bookings() {
-  const { showToast } = useAuth();
+  const { showToast, hasPermission } = useAuth();
+  const canCreateBooking = hasPermission('bookings_create');
   const { fetchList, action } = useBookings();
   const { cityParam } = useCityFilter();
   const [search, setSearch]         = useState('');
@@ -83,7 +99,12 @@ export default function Bookings() {
   const [partners, setPartners]     = useState([]);
   const [reassignId, setReassignId] = useState('');
   const [reassigning, setReassigning] = useState(false);
+  const [reopeningId, setReopeningId] = useState(null);
   const [showNewBooking, setShowNewBooking] = useState(false);
+  const [createdBooking, setCreatedBooking] = useState(null);
+  const createdBookingWhatsApp = createdBooking
+    ? bookingWhatsAppLink(createdBooking.booking, createdBooking.customer)
+    : null;
 
   const [rescheduleDate, setRescheduleDate]     = useState('');
   const [rescheduleReason, setRescheduleReason] = useState('');
@@ -232,11 +253,98 @@ export default function Bookings() {
     setDetailLoading(false);
   };
 
+  // Mutation responses do not include all the computed fields supplied by the
+  // detail endpoint. Reload them without reopening the modal or clearing forms.
+  const applySavedBooking = (bookingId, updated) => {
+    if (!updated) return;
+    const merge = previous => ({
+      ...previous,
+      ...updated,
+      id: previous.id,
+      service: updated.service?.name ?? (typeof updated.service === 'string' ? updated.service : previous.service?.name ?? previous.service ?? ''),
+      services: parseServices(updated.services ?? previous.services),
+      packages: parseServices(updated.packages ?? previous.packages),
+      baseAmount: bookingBaseAmount({ ...previous, ...updated }),
+      taxAmount: parseFloat(updated.taxAmount ?? previous.taxAmount ?? 0),
+      amount: parseFloat(updated.totalAmount ?? previous.amount ?? 0),
+      totalAmount: parseFloat(updated.totalAmount ?? previous.totalAmount ?? previous.amount ?? 0),
+      // The following GET restores the split computed from the saved amounts.
+      recomputedAdminCommission: null,
+      recomputedPartnerEarning: null,
+    });
+    setSelected(previous => previous?.id === String(bookingId) ? merge(previous) : previous);
+    setBookings(previous => previous.map(b => b.id === String(bookingId) ? merge(b) : b));
+  };
+
+  const refreshBooking = async (bookingId) => {
+    try {
+      const res = await api.get(`/api/v1/admin/bookings/${bookingId}`);
+      const fresh = res.data?.data;
+      if (!fresh) throw new Error('Booking details were not returned.');
+      const merge = previous => ({
+        ...previous,
+        ...fresh,
+        id: String(fresh._id ?? fresh.id ?? bookingId),
+        service: fresh.service?.name ?? (typeof fresh.service === 'string' ? fresh.service : previous.service?.name ?? previous.service ?? ''),
+        services: parseServices(fresh.services ?? previous.services),
+        packages: parseServices(fresh.packages ?? previous.packages),
+        userName: fresh.user?.name ?? previous.userName,
+        userPhone: fresh.user?.phone ?? previous.userPhone,
+        partnerName: fresh.partner?.name ?? '',
+        partnerPhone: fresh.partner?.phone ?? '',
+        baseAmount: bookingBaseAmount({ ...previous, ...fresh }),
+        amount: parseFloat(fresh.totalAmount ?? previous.amount ?? 0),
+        commission: parseFloat(fresh.commissionAmount ?? previous.commission ?? 0),
+        date: fresh.scheduledAt ? new Date(fresh.scheduledAt).toLocaleDateString('en-IN', {day:'2-digit', month:'short', year:'numeric'}) : previous.date,
+        slot: fresh.scheduledAt ? new Date(fresh.scheduledAt).toLocaleTimeString('en-IN', {hour:'2-digit', minute:'2-digit'}) : previous.slot,
+        fullAddress: [fresh.addressLine1, fresh.addressLine2, fresh.addressCity, fresh.addressState, fresh.addressPincode].filter(Boolean).join(', '),
+      });
+      // A save may finish after the admin closes this booking or opens another.
+      setSelected(previous => previous?.id === String(bookingId) ? merge(previous) : previous);
+      setBookings(previous => previous.map(b => b.id === String(bookingId) ? merge(b) : b));
+    } catch {
+      showToast('Change saved, but booking details could not refresh. Please reopen the booking.', 'warning');
+    }
+  };
+
   const cancelBooking = async (id) => {
-    await action('patch', `/api/v1/admin/bookings/${id}/cancel`);
+    const res = await action('patch', `/api/v1/admin/bookings/${id}/cancel`);
+    if (!res.ok) {
+      showToast(res.error ?? 'Failed to cancel booking.', 'danger');
+      return;
+    }
     setBookings(prev => prev.map(b => b.id === id ? { ...b, status:'cancelled', commission:0 } : b));
     showToast('Booking cancelled successfully.', 'danger');
     if (selected?.id === id) setSelected(prev => ({ ...prev, status:'cancelled', commission:0 }));
+    await refreshBooking(id);
+  };
+
+  const updateBookingStatus = async (id, status) => {
+    if (reopeningId) return;
+    setReopeningId(id);
+    try {
+      const res = await action('patch', `/api/v1/admin/bookings/${id}/status`, { status });
+      if (!res.ok) {
+        showToast(res.error ?? 'Failed to update booking status.', 'danger');
+        return;
+      }
+      const updated = res.data.data;
+      const applyUpdate = b => ({
+        ...b,
+        ...updated,
+        id: b.id,
+        services: parseServices(updated.services ?? b.services),
+        packages: parseServices(updated.packages ?? b.packages),
+        status: updated.status,
+      });
+      setBookings(prev => prev.map(b => b.id === id ? applyUpdate(b) : b));
+      setSelected(prev => prev?.id === id ? applyUpdate(prev) : prev);
+      loadBookings();
+      await refreshBooking(id);
+      showToast(`Booking moved to ${status.replace(/_/g, ' ')}.`, 'success');
+    } finally {
+      setReopeningId(null);
+    }
   };
 
   const acceptBooking = async (id) => {
@@ -245,6 +353,7 @@ export default function Bookings() {
       setBookings(prev => prev.map(b => b.id === id ? { ...b, status:'confirmed' } : b));
       showToast('Booking accepted.', 'success');
       if (selected?.id === id) setSelected(prev => ({ ...prev, status:'confirmed' }));
+      await refreshBooking(id);
     } else {
       showToast(res.error ?? 'Failed to accept booking.', 'danger');
     }
@@ -258,15 +367,11 @@ export default function Bookings() {
         services: svcCart.map(item => ({ id: item.svc.id ?? item.svc._id, qty: item.qty })),
       });
       const updated = res.data?.data;
-      if (updated) {
-        const parsedSvcs = parseServices(updated.services ?? selected?.services);
-        const newTotal = parseFloat(updated.totalAmount ?? selected?.amount ?? 0);
-        setSelected(prev => ({ ...prev, services: parsedSvcs, amount: newTotal, totalAmount: newTotal }));
-        setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, amount: newTotal } : b));
-      }
+      applySavedBooking(bookingId, updated);
       const n = svcCart.length;
       setSvcCart([]);
       setSvcSearch('');
+      await refreshBooking(bookingId);
       showToast(`${n} service(s) added to booking.`, 'success');
     } catch (err) {
       const msg = err.response?.data?.message ?? 'Failed to add services.';
@@ -285,13 +390,9 @@ export default function Bookings() {
         services: [{ isAddOn: true, name: addonName.trim(), price, qty: addonQty }],
       });
       const updated = res.data?.data;
-      if (updated) {
-        const parsedSvcs = parseServices(updated.services ?? selected?.services);
-        const newTotal = parseFloat(updated.totalAmount ?? selected?.amount ?? 0);
-        setSelected(prev => ({ ...prev, services: parsedSvcs, amount: newTotal, totalAmount: newTotal }));
-        setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, amount: newTotal } : b));
-      }
+      applySavedBooking(bookingId, updated);
       setAddonName(''); setAddonPrice(''); setAddonQty(1);
+      await refreshBooking(bookingId);
       showToast('Add-on added to booking.', 'success');
     } catch (err) {
       const msg = err.response?.data?.message ?? 'Failed to add add-on.';
@@ -315,16 +416,11 @@ export default function Bookings() {
     try {
       const res = await api.patch(`/api/v1/admin/bookings/${bookingId}/add-package`, { packageId, services });
       const updated = res.data?.data;
-      if (updated) {
-        const parsedSvcs = parseServices(updated.services ?? selected?.services);
-        const parsedPkgs = parseServices(updated.packages ?? selected?.packages);
-        const newTotal = parseFloat(updated.totalAmount ?? selected?.amount ?? 0);
-        setSelected(prev => ({ ...prev, services: parsedSvcs, packages: parsedPkgs, amount: newTotal, totalAmount: newTotal }));
-        setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, amount: newTotal } : b));
-      }
+      applySavedBooking(bookingId, updated);
       setPickingPackage(null);
       setFlexiblePicks([]);
       setShowAddPackageModal(false);
+      await refreshBooking(bookingId);
       showToast('Package added to booking.', 'success');
     } catch (err) {
       const msg = err.response?.data?.message ?? 'Failed to add package.';
@@ -373,13 +469,9 @@ export default function Bookings() {
     try {
       const res = await api.patch(`/api/v1/admin/bookings/${bookingId}/services`, { updateQty: [{ index, qty }] });
       const updated = res.data?.data;
-      if (updated) {
-        const parsedSvcs = parseServices(updated.services ?? selected?.services);
-        const newTotal = parseFloat(updated.totalAmount ?? selected?.amount ?? 0);
-        setSelected(prev => ({ ...prev, services: parsedSvcs, amount: newTotal, totalAmount: newTotal }));
-        setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, amount: newTotal } : b));
-      }
+      applySavedBooking(bookingId, updated);
       setQtyDrafts(prev => { const next = { ...prev }; delete next[index]; return next; });
+      await refreshBooking(bookingId);
       showToast(`Quantity updated. New total: ₹${fmt(updated?.totalAmount ?? 0)}`, 'success');
     } catch (err) {
       const msg = err.response?.data?.message ?? 'Failed to update quantity.';
@@ -393,12 +485,8 @@ export default function Bookings() {
     try {
       const res = await api.patch(`/api/v1/admin/bookings/${bookingId}/services`, { removeIndices: [serviceIndex] });
       const updated = res.data?.data;
-      if (updated) {
-        const parsedSvcs = parseServices(updated.services ?? selected?.services);
-        const newTotal = parseFloat(updated.totalAmount ?? selected?.amount ?? 0);
-        setSelected(prev => ({ ...prev, services: parsedSvcs, amount: newTotal, totalAmount: newTotal }));
-        setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, amount: newTotal } : b));
-      }
+      applySavedBooking(bookingId, updated);
+      await refreshBooking(bookingId);
       showToast('Service removed from booking.', 'success');
     } catch (err) {
       const msg = err.response?.data?.message ?? 'Failed to remove service.';
@@ -413,13 +501,8 @@ export default function Bookings() {
     try {
       const res = await api.patch(`/api/v1/admin/bookings/${bookingId}/remove-package`, packageId != null ? { packageId } : {});
       const updated = res.data?.data;
-      if (updated) {
-        const parsedSvcs = parseServices(updated.services ?? selected?.services);
-        const parsedPkgs = parseServices(updated.packages ?? selected?.packages);
-        const newTotal = parseFloat(updated.totalAmount ?? selected?.amount ?? 0);
-        setSelected(prev => ({ ...prev, services: parsedSvcs, packages: parsedPkgs, packageId: updated.packageId ?? null, amount: newTotal, totalAmount: newTotal }));
-        setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, amount: newTotal } : b));
-      }
+      applySavedBooking(bookingId, updated);
+      await refreshBooking(bookingId);
       showToast('Package removed from booking.', 'success');
     } catch (err) {
       const msg = err.response?.data?.message ?? 'Failed to remove package.';
@@ -439,6 +522,7 @@ export default function Bookings() {
       setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, partnerName: pName, partnerId: reassignId, status: b.status === 'pending' ? 'confirmed' : b.status } : b));
       setSelected(prev => ({ ...prev, partnerName: pName, partnerId: reassignId }));
       setReassignId('');
+      await refreshBooking(bookingId);
       showToast('Partner assigned successfully.', 'success');
     } catch {
       showToast('Failed to assign partner.', 'danger');
@@ -465,6 +549,7 @@ export default function Bookings() {
       setRescheduleDate('');
       setRescheduleReason('');
       setRescheduleError('');
+      await refreshBooking(bookingId);
       showToast('Booking rescheduled successfully.', 'success');
     } catch (err) {
       const msg = err.response?.data?.message ?? 'Failed to reschedule booking.';
@@ -500,7 +585,7 @@ export default function Bookings() {
   ]);
   const addablePackages = availablePackages.filter(p => !existingPackageIds.has(p.id));
 
-  const baseAmount      = parseFloat(selected?.baseAmount ?? selected?.amount ?? 0);
+  const baseAmount      = bookingBaseAmount(selected ?? {});
   const couponDiscount  = parseFloat(selected?.couponDiscountAmount ?? 0);
   const tax             = parseFloat(selected?.taxAmount ?? 0);
   const totalAmt        = parseFloat(selected?.totalAmount ?? selected?.amount ?? 0);
@@ -541,27 +626,15 @@ export default function Bookings() {
     // packages/combos earn less than the sum of those prices, so scale each partner's
     // raw-price share by the booking's real (already-discounted) partnerEarning instead
     // of summing raw prices directly (that overstated payouts for combo bookings).
-    const rawTotal = svcs.reduce((sum, s) => sum + (s.price ?? 0) * (s.qty || 1), 0);
     const bookingEarning = !Number.isNaN(recomputedPartnerEarning) && selected?.recomputedPartnerEarning != null
       ? recomputedPartnerEarning
-      : parseFloat(selected?.partnerEarning ?? (totalAmt - commission));
-    const byPartner = {};
-    svcs.forEach(s => {
-      if (!s.assignedPartnerId) return;
-      const key = String(s.assignedPartnerId);
-      if (!byPartner[key]) byPartner[key] = { name: s.assignedPartnerName || 'Partner', amount: 0 };
-      byPartner[key].amount += s.price * (s.qty || 1);
-    });
-    if (Object.keys(byPartner).length > 0) {
-      if (rawTotal > 0 && bookingEarning) {
-        Object.values(byPartner).forEach(p => { p.amount = p.amount * (bookingEarning / rawTotal); });
-      }
-      return Object.values(byPartner);
-    }
+      : parseFloat(selected?.partnerEarning ?? (taxableAmount - commission));
+    const servicePayouts = bookingServicePayouts(svcs, bookingEarning);
+    if (servicePayouts.length > 0) return servicePayouts;
     // Fallback: partner assigned at booking level (e.g. via "Assign / Change Partner")
     // but no service has been individually claimed/stamped with assignedPartnerId yet.
     if (selected?.partnerId) {
-      return [{ name: selected?.partnerName || 'Partner', amount: !Number.isNaN(recomputedPartnerEarning) && selected?.recomputedPartnerEarning != null ? recomputedPartnerEarning : parseFloat(selected?.partnerEarning ?? (totalAmt - commission)) }];
+      return [{ name: selected?.partnerName || 'Partner', amount: bookingEarning }];
     }
     return [];
   })();
@@ -606,9 +679,9 @@ export default function Bookings() {
           <button className="btn btn-outline btn-sm" style={{ display:'flex', alignItems:'center', gap:6 }} onClick={() => exportCSV(filtered, 'bookings.csv')}>
             <Download size={14} /> Export
           </button>
-          <button className="btn btn-primary btn-sm" style={{ display:'flex', alignItems:'center', gap:6 }} onClick={() => setShowNewBooking(true)}>
+          {canCreateBooking && <button className="btn btn-primary btn-sm" style={{ display:'flex', alignItems:'center', gap:6 }} onClick={() => setShowNewBooking(true)}>
             <PlusCircle size={14} /> New Booking
-          </button>
+          </button>}
         </div>
 
         <div className="table-container">
@@ -635,6 +708,9 @@ export default function Bookings() {
                 <tr key={b.id}>
                   <td>
                     <div style={{ fontFamily:'monospace', fontSize:12, background:'var(--c-border-light)', padding:'2px 6px', borderRadius:'var(--r-sm)', fontWeight:600, display:'inline-block' }}>{b.bookingCode || b.id}</div>
+                    {b.createdByAdminId != null && (
+                      <div style={{ marginTop:5 }}><AdminCreatedLabel creator={b.createdByAdmin} /></div>
+                    )}
                   </td>
                   <td>
                     <div className="table-cell-main">{b.userName}</div>
@@ -677,7 +753,9 @@ export default function Bookings() {
                     <div style={{ fontSize:13 }}>{b.date}</div>
                     <div style={{ fontSize:12, color:'var(--c-text-secondary)' }}>{b.slot}</div>
                   </td>
-                  <td><Badge status={b.status} /></td>
+                  <td>
+                    <Badge status={b.status} />
+                  </td>
                   <td>
                     <div style={{ display:'flex', gap:4 }}>
                       <button className="btn btn-ghost btn-icon" title="View Details" onClick={() => openDetail(b)}><Eye size={15}/></button>
@@ -724,6 +802,14 @@ export default function Bookings() {
         footer={
           <>
             <button className="btn btn-outline" onClick={() => { setSelected(null); setReassignId(''); }}>Close</button>
+            {selected && (
+              <label style={{ display:'flex', alignItems:'center', gap:6 }}>
+                Status
+                <select className="filter-select" aria-label="Change booking status" value={selected.status} disabled={reopeningId !== null || detailLoading} onChange={e => updateBookingStatus(selected.id, e.target.value)}>
+                  {STATUSES.filter(s => s !== 'all').map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1).replace(/_/g, ' ')}</option>)}
+                </select>
+              </label>
+            )}
             {selected && selected.status === 'pending' && (
               <button className="btn btn-primary" onClick={() => acceptBooking(selected.id)} style={{ display:'flex', alignItems:'center', gap:6, background:'#22C55E', borderColor:'#22C55E' }}>
                 <CheckCircle2 size={15}/> Accept Booking
@@ -739,6 +825,28 @@ export default function Bookings() {
       >
         {selected && (
           <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+              <InfoBlock label="Created By">
+                <div style={{ fontWeight:700, fontSize:15 }}>
+                  {selected.createdByAdminId != null
+                    ? selected.createdByAdmin?.name || 'Staff account unavailable'
+                    : selected.userName || selected.user?.name || 'Customer account unavailable'}
+                </div>
+                <div style={{ marginTop:6 }}>
+                  {selected.createdByAdminId != null
+                    ? <AdminCreatedLabel creator={selected.createdByAdmin} />
+                    : 'Created by Customer'}
+                </div>
+                <div style={{ fontSize:12, color:'var(--c-text-secondary)', marginTop:6 }}>
+                  {selected.createdByAdminId != null
+                    ? <>Staff ID: {selected.createdByAdminId}</>
+                    : <>Customer ID: {selected.userId ?? selected.user?.id ?? 'Unavailable'}</>}
+                </div>
+                {selected.createdAt && (
+                  <div style={{ fontSize:12, color:'var(--c-text-secondary)', marginTop:4 }}>
+                    Created on: {new Date(selected.createdAt).toLocaleString('en-IN', { timeZone:'Asia/Kolkata', day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })} IST
+                  </div>
+                )}
+              </InfoBlock>
             {detailLoading && (
               <div style={{ textAlign:'center', padding:'8px 0', fontSize:13, color:'var(--c-text-muted)' }}>
                 Refreshing details…
@@ -857,16 +965,14 @@ export default function Bookings() {
                       .reduce((sum, s) => sum + (parseFloat(s.price) || 0) * (s.qty || 1), 0);
                     const multiPackages = parseServices(selected.packages);
                     const packageGroups = multiPackages.length > 0
-                      ? multiPackages.map(pkg => ({
-                          key: pkg.packageId,
-                          title: pkg.title,
-                          price: (parseFloat(pkg.price) || 0) * (pkg.qty || 1),
-                          items: packageItems.filter(s => s.packageId === pkg.packageId),
-                        }))
+                      ? groupBookingPackages(multiPackages, servicesList)
                       : packageItems.length > 0
                         ? [{
                             key: selected.packageId,
+                            packageId: selected.packageId,
                             title: selected.package?.title ?? 'Package Deal',
+                            qty: Number(selected.packageQty) || 1,
+                            unitPrice: Math.max(0, parseFloat(selected.baseAmount ?? selected.amount ?? 0) - nonPackageTotal) / (Number(selected.packageQty) || 1),
                             price: Math.max(0, parseFloat(selected.baseAmount ?? selected.amount ?? 0) - nonPackageTotal),
                             items: packageItems,
                           }]
@@ -881,6 +987,9 @@ export default function Bookings() {
                           </span>
                           <span style={{ fontSize:13, fontWeight:700, color:'#1d4ed8' }}>₹{fmt(group.price)}</span>
                         </div>
+                        <div style={{ marginTop:4, fontSize:12, color:'#1e40af' }}>
+                          Qty: {group.qty}{group.qty > 1 && group.unitPrice > 0 ? ` × ₹${fmt(group.unitPrice)}` : ''}
+                        </div>
                         <div style={{ marginTop:6, fontSize:12, color:'#1e40af', lineHeight:1.6 }}>
                           {group.items.map((s, i) => (
                             <div key={i}>{i + 1}. {s.name}</div>
@@ -888,10 +997,10 @@ export default function Bookings() {
                         </div>
                         {!['completed','cancelled'].includes(selected.status) && (
                           <button
-                            disabled={removingPackageId === (group.key ?? 'legacy')}
-                            onClick={() => handleRemovePackage(selected.id, group.key, group.title)}
-                            style={{ marginTop:8, fontSize:11, fontWeight:700, letterSpacing:'0.03em', textTransform:'uppercase', color:'#b91c1c', background:'#fff', border:'1px solid #fca5a5', borderRadius:20, padding:'5px 12px', cursor: removingPackageId === (group.key ?? 'legacy') ? 'not-allowed' : 'pointer' }}>
-                            {removingPackageId === (group.key ?? 'legacy') ? 'Removing…' : 'Remove Package'}
+                            disabled={removingPackageId === (group.packageId ?? group.key ?? 'legacy')}
+                            onClick={() => handleRemovePackage(selected.id, group.packageId ?? group.key, group.title)}
+                            style={{ marginTop:8, fontSize:11, fontWeight:700, letterSpacing:'0.03em', textTransform:'uppercase', color:'#b91c1c', background:'#fff', border:'1px solid #fca5a5', borderRadius:20, padding:'5px 12px', cursor: removingPackageId === (group.packageId ?? group.key ?? 'legacy') ? 'not-allowed' : 'pointer' }}>
+                            {removingPackageId === (group.packageId ?? group.key ?? 'legacy') ? 'Removing…' : 'Remove Package'}
                           </button>
                         )}
                       </div>
@@ -1254,7 +1363,7 @@ export default function Bookings() {
                   <input
                     type="datetime-local"
                     value={rescheduleDate}
-                    min={toLocalInputValue(new Date(Date.now() + ONE_HOUR_MS))}
+                    min={toLocalInputValue(new Date(Date.now() + MIN_BOOKING_NOTICE_MS))}
                     max={toLocalInputValue(new Date(Date.now() + ONE_MONTH_MS))}
                     onChange={e => { setRescheduleDate(e.target.value); setRescheduleError(validateRescheduleDate(e.target.value)); }}
                     style={{ flex:1, border:`1px solid ${rescheduleError ? 'var(--c-danger)' : 'var(--c-border)'}`, borderRadius:'var(--r-sm)', padding:'6px 10px', fontSize:13, background:'var(--c-bg-card)', color:'var(--c-text-primary)' }}
@@ -1271,7 +1380,7 @@ export default function Bookings() {
                   <div style={{ fontSize:11, color:'var(--c-danger)', marginBottom:8 }}>{rescheduleError}</div>
                 )}
                 <div style={{ fontSize:11, color:'var(--c-text-muted)', marginBottom:8 }}>
-                  Must be at least 1 hour from now and no more than 1 month in advance.
+                  Must be at least 30 minutes from now and no more than 1 month in advance.
                 </div>
                 <input
                   type="text"
@@ -1423,10 +1532,38 @@ export default function Bookings() {
       </Modal>
 
       <NewBookingModal
-        isOpen={showNewBooking}
+        isOpen={showNewBooking && canCreateBooking}
         onClose={() => setShowNewBooking(false)}
-        onCreated={() => { setShowNewBooking(false); loadBookings(); showToast('Booking created for customer.', 'success'); }}
+        onCreated={(booking, customer) => {
+          setShowNewBooking(false);
+          setCreatedBooking({ booking, customer });
+          loadBookings();
+          showToast('Booking created for customer.', 'success');
+        }}
       />
+      <Modal isOpen={!!createdBooking} onClose={() => setCreatedBooking(null)} title="Booking Created" size="lg" footer={<>
+        <button className="btn btn-outline btn-sm" onClick={() => setCreatedBooking(null)}>Done</button>
+        {createdBookingWhatsApp && <a className="btn btn-primary btn-sm" href={createdBookingWhatsApp} target="_blank" rel="noopener noreferrer"
+          style={{ display:'inline-flex', alignItems:'center', gap:6 }}>
+          <MessageCircle size={16} /> Open WhatsApp
+        </a>}
+      </>}>
+        {createdBooking && <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+          <div>
+            <div style={{ fontWeight:700, fontSize:16 }}>Booking {createdBooking.booking.bookingCode || createdBooking.booking.id} created successfully</div>
+            <p style={{ marginTop:8 }}>Send the booking details to {createdBooking.customer.name || 'the customer'} on WhatsApp. Review the message in WhatsApp and press Send.</p>
+          </div>
+          <InfoBlock label="Customer">
+            <strong>{createdBooking.customer.name || 'Customer'}</strong>
+            <div style={{ marginTop:4 }}>{createdBooking.customer.phone}</div>
+          </InfoBlock>
+          {createdBookingWhatsApp ? <InfoBlock label="WhatsApp Message">
+            <div style={{ whiteSpace:'pre-wrap', overflowWrap:'anywhere', fontSize:13, lineHeight:1.7 }}>
+              {bookingWhatsAppMessage(createdBooking.booking, createdBooking.customer)}
+            </div>
+          </InfoBlock> : <p role="alert">The customer phone number is missing or invalid. The booking was saved successfully.</p>}
+        </div>}
+      </Modal>
     </div>
   );
 }
@@ -1434,15 +1571,35 @@ export default function Bookings() {
 // ── New Booking (support/admin creates a booking on a customer's behalf, e.g. a
 // phone-support call requesting a one-time service) ──────────────────────────────
 function NewBookingModal({ isOpen, onClose, onCreated }) {
-  const { showToast } = useAuth();
+  const { showToast, hasPermission } = useAuth();
+  const canCreateCustomer = hasPermission('bookings_create');
 
   const [userSearch, setUserSearch]     = useState('');
   const [userResults, setUserResults]   = useState([]);
   const [searchingUser, setSearchingUser] = useState(false);
+  const [completedUserSearch, setCompletedUserSearch] = useState('');
+  const [userSearchError, setUserSearchError] = useState('');
   const [customer, setCustomer]         = useState(null); // full user record incl. addresses
+  const [newCustomer, setNewCustomer] = useState(null);
+  const [creatingCustomer, setCreatingCustomer] = useState(false);
+  const [cities, setCities] = useState([]);
+  const [packageCatalog, setPackageCatalog] = useState([]);
+  const [packageCart, setPackageCart] = useState([]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogError, setCatalogError] = useState('');
+  const [bookingPartners, setBookingPartners] = useState([]);
+  const [partnerId, setPartnerId] = useState('');
+  const [partnersLoading, setPartnersLoading] = useState(false);
+  const [partnersError, setPartnersError] = useState('');
+  const [couponCode, setCouponCode] = useState('');
+  const [offerId, setOfferId] = useState('');
+  const [review, setReview] = useState(null);
+  const [reviewing, setReviewing] = useState(false);
+  const [reviewError, setReviewError] = useState('');
 
   const [addressMode, setAddressMode]   = useState('saved'); // 'saved' | 'new'
   const [selectedAddressId, setSelectedAddressId] = useState('');
+  const [pickingAddress, setPickingAddress] = useState(false);
   const [newAddress, setNewAddress]     = useState({ label:'Home', line1:'', line2:'', city:'', state:'', pincode:'' });
 
   const [allServices, setAllServices]   = useState([]);
@@ -1459,8 +1616,9 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
   const [submitting, setSubmitting]     = useState(false);
 
   const resetAll = () => {
-    setUserSearch(''); setUserResults([]); setCustomer(null);
-    setAddressMode('saved'); setSelectedAddressId('');
+    setNewCustomer(null); setPackageCart([]); setCouponCode(''); setOfferId(''); setReview(null); setReviewError('');
+    setUserSearch(''); setUserResults([]); setCompletedUserSearch(''); setUserSearchError(''); setCustomer(null);
+    setAddressMode('saved'); setSelectedAddressId(''); setPickingAddress(false);
     setNewAddress({ label:'Home', line1:'', line2:'', city:'', state:'', pincode:'' });
     setCart([]); setSvcSearch(''); setAddMode('catalog');
     setAddonName(''); setAddonPrice(''); setAddonQty(1);
@@ -1470,28 +1628,109 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
   useEffect(() => {
     if (!isOpen) return;
     resetAll();
-    if (allServices.length === 0) {
-      api.get('/api/v1/admin/services', { params: { limit: 500 } })
-        .then(res => setAllServices(res.data?.data?.data ?? res.data?.data ?? []))
-        .catch(() => {});
-    }
+    api.get('/api/v1/admin/cities')
+      .then(res => setCities((res.data?.data ?? []).filter(c => c.isActive)))
+      .catch(() => setCatalogError('Unable to load service cities. Close and reopen this form to retry.'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
+  const serviceAddress = addressMode === 'saved'
+    ? (customer?.addresses ?? []).find(a => String(a.id) === selectedAddressId)
+    : newAddress;
+  const serviceCity = cities.find(c => cityKey(c.name) === cityKey(serviceAddress?.city ?? ''));
+
   useEffect(() => {
-    if (!isOpen || !userSearch.trim()) { setUserResults([]); return; }
+    let active = true;
+    setPartnerId(''); setBookingPartners([]); setPartnersError(''); setPartnersLoading(false);
+    if (!isOpen || !serviceCity) return;
+    setPartnersLoading(true);
+    api.get('/api/v1/admin/partners', {params: {status: 'approved', cityIds: String(serviceCity.id), limit: 10000}})
+      .then(res => {if (active) setBookingPartners(res.data?.data?.data ?? res.data?.data ?? []);})
+      .catch(() => {if (active) setPartnersError('Unable to load partners. Close and reopen this form to retry.');})
+      .finally(() => {if (active) setPartnersLoading(false);});
+    return () => {active = false;};
+  }, [isOpen, serviceCity?.id]);
+
+  useEffect(() => {
+    let active = true;
+    setAllServices([]); setPackageCatalog([]); setCart([]); setPackageCart([]);
+    if (!isOpen || !serviceCity) return;
+    setCatalogLoading(true); setCatalogError('');
+    api.get('/api/v1/admin/booking-catalog', {params: {cityId: serviceCity.id}})
+      .then(res => { if (active) {setAllServices(res.data.data.services); setPackageCatalog(res.data.data.packages);} })
+      .catch(err => {if (active) setCatalogError(err.response?.data?.message ?? 'Unable to load the catalog.');})
+      .finally(() => {if (active) setCatalogLoading(false);});
+    return () => {active = false;};
+  }, [isOpen, serviceCity?.id]);
+
+  const buildPayload = () => ({
+    useCustomerFlow: true, userId: customer?.id ?? customer?._id,
+    cityId: serviceCity?.id,
+    partnerId: partnerId ? Number(partnerId) : undefined,
+    services: cart.map(item => item.type === 'catalog'
+      ? {id: Number(item.svc.id ?? item.svc._id), qty: item.qty}
+      : {isAddOn: true, name: item.name, price: item.price, qty: item.qty}),
+    packages: packageCart.map(item => ({packageId: Number(item.pkg.id), qty: item.qty,
+      services: item.serviceIds.map(id => ({id: Number(id), qty: item.qty}))})),
+    address: serviceAddress ? {
+      label: serviceAddress.label, line1: serviceAddress.line1, line2: serviceAddress.line2,
+      city: serviceCity?.name ?? serviceAddress.city, state: serviceAddress.state, pincode: serviceAddress.pincode,
+      lat: serviceAddress.lat ?? null, lng: serviceAddress.lng ?? null,
+    } : undefined,
+    scheduledAt: scheduleValue && !Number.isNaN(new Date(scheduleValue).getTime()) ? new Date(scheduleValue).toISOString() : undefined,
+    paymentMode, notes: notes || undefined,
+    // Discounts are disabled for admin-created bookings. Keep these fields for later use.
+    // couponCode: couponCode.trim() || undefined, offerId: offerId ? Number(offerId) : undefined,
+  });
+  const payloadKey = JSON.stringify(buildPayload());
+  const reviewed = review?.key === payloadKey;
+
+  const reviewOrder = async () => {
+    if (!customer || !serviceAddress || !serviceCity) {
+      setReviewError('Select a customer and an address in an active service city.'); return;
+    }
+    if (pickingAddress) { setReviewError('Confirm the service address before reviewing the booking.'); return; }
+    const error = validateSchedule();
+    if (error) {setReviewError(error); return;}
+    setReviewing(true); setReviewError('');
+    try {
+      const res = await api.post('/api/v1/admin/bookings/preview', buildPayload());
+      setReview({key: payloadKey, data: res.data.data});
+    } catch (err) {
+      setReview(null); setReviewError(err.response?.data?.message ?? 'Unable to review this booking.');
+    } finally {setReviewing(false);}
+  };
+
+  useEffect(() => {
+    let active = true;
+    const search = userSearch.trim();
+    setUserResults([]); setCompletedUserSearch(''); setUserSearchError('');
+    if (!isOpen || !search || customer || newCustomer) { setSearchingUser(false); return; }
     setSearchingUser(true);
     const t = setTimeout(() => {
-      api.get('/api/v1/admin/users', { params: { search: userSearch.trim(), limit: 10 } })
-        .then(res => setUserResults(res.data?.data?.data ?? res.data?.data ?? []))
-        .catch(() => setUserResults([]))
-        .finally(() => setSearchingUser(false));
+      api.get('/api/v1/admin/users', { params: { search, limit: 10 } })
+        .then(res => {
+          if (!active) return;
+          setUserResults(res.data?.data?.data ?? res.data?.data ?? []);
+          setCompletedUserSearch(search);
+        })
+        .catch(() => { if (active) setUserSearchError('Unable to search customers. Please try again.'); })
+        .finally(() => { if (active) setSearchingUser(false); });
     }, 350);
-    return () => clearTimeout(t);
-  }, [userSearch, isOpen]);
+    return () => {active = false; clearTimeout(t);};
+  }, [userSearch, isOpen, customer, newCustomer]);
+
+  const searchedCustomerName = /\p{L}/u.test(userSearch.trim()) ? userSearch.trim() : '';
+  const searchedCustomerPhone = /^\d{10}$/.test(userSearch.trim()) ? userSearch.trim() : '';
+  const canAddNewCustomer = !!(searchedCustomerName || searchedCustomerPhone)
+    && completedUserSearch === userSearch.trim()
+    && !searchingUser && !userSearchError && userResults.length === 0;
 
   const selectCustomer = async (u) => {
     setUserResults([]);
+    setPickingAddress(false);
+    setSelectedAddressId('');
+    setNewAddress({ label:'Home', line1:'', line2:'', city:'', state:'', pincode:'' });
     setUserSearch(u.name || u.phone);
     try {
       const res = await api.get(`/api/v1/admin/users/${u.id ?? u._id}`);
@@ -1500,10 +1739,11 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
       const addresses = full.addresses ?? [];
       const def = addresses.find(a => a.isDefault) ?? addresses[0];
       if (def) { setAddressMode('saved'); setSelectedAddressId(String(def.id)); }
-      else { setAddressMode('new'); }
+      else { setAddressMode('new'); setPickingAddress(true); }
     } catch {
       setCustomer(u);
       setAddressMode('new');
+      setPickingAddress(true);
     }
   };
 
@@ -1517,46 +1757,41 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
     const time = new Date(scheduleValue).getTime();
     if (Number.isNaN(time)) return 'Please select a valid date & time.';
     const now = Date.now();
-    if (time < now + ONE_HOUR_MS) return 'Must be scheduled at least 1 hour from now.';
+    if (time < now + MIN_BOOKING_NOTICE_MS) return 'Must be scheduled at least 30 minutes from now.';
     if (time > now + ONE_MONTH_MS) return 'Cannot be scheduled more than 1 month in advance.';
+    const indiaTime = new Date(time + 5.5 * ONE_HOUR_MS);
+    const minutes = indiaTime.getUTCHours() * 60 + indiaTime.getUTCMinutes();
+    if (minutes < 8 * 60 || minutes > 20 * 60) return 'Choose a slot between 8 AM and 8 PM IST.';
     return '';
   };
 
   const handleSubmit = async () => {
     if (!customer) { showToast('Please select a customer.', 'warning'); return; }
-    if (!cart.length) { showToast('Add at least one service.', 'warning'); return; }
+    if (pickingAddress) { showToast('Confirm the service address first.', 'warning'); return; }
+    if (!cart.length && !packageCart.length) { showToast('Add at least one service or package.', 'warning'); return; }
+    if (!reviewed) {showToast('Review the updated total before creating this booking.', 'warning'); return;}
 
-    let address;
     if (addressMode === 'saved') {
       const saved = (customer.addresses ?? []).find(a => String(a.id) === selectedAddressId);
       if (!saved) { showToast('Please select a saved address.', 'warning'); return; }
-      address = { label: saved.label, line1: saved.line1, line2: saved.line2, city: saved.city, state: saved.state, pincode: saved.pincode, lat: saved.lat, lng: saved.lng };
     } else {
-      if (!newAddress.line1.trim() || !newAddress.city.trim() || !newAddress.state.trim() || !newAddress.pincode.trim()) {
-        showToast('Please fill in address line, city, state and pincode.', 'warning'); return;
+      if (!newAddress.line1.trim() || !newAddress.city.trim() || !newAddress.state.trim()) {
+        showToast('Please fill in address line, city and state.', 'warning'); return;
       }
-      address = newAddress;
+      if (newAddress.pincode.trim() && !/^\d{6}$/.test(newAddress.pincode.trim())) {
+        showToast('Pincode must be six digits, or leave it empty.', 'warning'); return;
+      }
     }
 
     const scheduleError = validateSchedule();
     if (scheduleError) { showToast(scheduleError, 'warning'); return; }
 
-    const services = cart.map(item => item.type === 'catalog'
-      ? { id: item.svc.id ?? item.svc._id, qty: item.qty }
-      : { isAddOn: true, name: item.name, price: item.price, qty: item.qty });
-
     setSubmitting(true);
     try {
-      await api.post('/api/v1/admin/bookings', {
-        userId: customer.id ?? customer._id,
-        services,
-        address,
-        scheduledAt: new Date(scheduleValue).toISOString(),
-        paymentMode,
-        notes: notes || undefined,
-      });
-      onCreated();
+      const response = await api.post('/api/v1/admin/bookings', {...buildPayload(), expectedTotal: review.data.totalAmount});
+      onCreated(response.data?.data ?? {}, customer);
     } catch (err) {
+      if (err.response?.status === 409) setReview(null);
       const msg = err.response?.data?.message ?? 'Failed to create booking.';
       showToast(msg, 'danger');
     }
@@ -1567,56 +1802,97 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
     <Modal isOpen={isOpen} onClose={onClose} title="New Booking for Customer" size="lg" footer={
       <>
         <button className="btn btn-outline btn-sm" onClick={onClose}>Cancel</button>
-        <button className="btn btn-primary btn-sm" onClick={handleSubmit} disabled={submitting} style={{ display:'flex', alignItems:'center', gap:6 }}>
-          {submitting ? 'Creating…' : <>Create Booking{cart.length ? ` · ₹${fmt(addonTotal)}` : ''}</>}
+        <button className="btn btn-outline btn-sm" onClick={reviewOrder} disabled={reviewing || submitting}>
+          {reviewing ? 'Reviewing…' : 'Review Total'}
+        </button>
+        <button className="btn btn-primary btn-sm" onClick={handleSubmit} disabled={submitting || reviewing || !reviewed} style={{ display:'flex', alignItems:'center', gap:6 }}>
+          {submitting ? 'Creating…' : <>Create Booking{reviewed ? ` · ₹${fmt(review.data.totalAmount)}` : ''}</>}
         </button>
       </>
     }>
       <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
         {/* Customer */}
         <InfoBlock label="Customer">
-          {!customer ? (
-            <div style={{ position:'relative' }}>
-              <input
-                type="text"
-                placeholder="Search by name or phone…"
-                value={userSearch}
-                onChange={e => setUserSearch(e.target.value)}
-                style={{ width:'100%', border:'1px solid var(--c-border)', borderRadius:'var(--r-sm)', padding:'7px 10px', fontSize:13, background:'var(--c-bg-card)', color:'var(--c-text-primary)', boxSizing:'border-box' }}
-              />
-              {(userResults.length > 0 || searchingUser) && (
-                <div style={{ position:'absolute', zIndex:5, top:'calc(100% + 4px)', left:0, right:0, maxHeight:200, overflowY:'auto', border:'1px solid var(--c-border)', borderRadius:'var(--r-sm)', background:'var(--c-bg-card)', boxShadow:'0 4px 12px rgba(0,0,0,0.12)' }}>
-                  {searchingUser && <div style={{ padding:10, fontSize:12, color:'var(--c-text-muted)' }}>Searching…</div>}
-                  {userResults.map(u => (
-                    <div key={u.id ?? u._id} onClick={() => selectCustomer(u)}
-                      style={{ padding:'8px 10px', cursor:'pointer', borderBottom:'1px solid var(--c-border-light)', fontSize:13 }}
-                      onMouseDown={e => e.preventDefault()}>
-                      <div style={{ fontWeight:600 }}>{u.name || 'Unnamed'}</div>
-                      <div style={{ fontSize:11, color:'var(--c-text-muted)' }}>{u.phone}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          ) : (
-            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+          <div className="booking-customer">
+            {!customer && <div className="booking-customer-heading">
               <div>
-                <div style={{ fontWeight:600, fontSize:13 }}>{customer.name || 'Unnamed'}</div>
-                <div style={{ fontSize:12, color:'var(--c-text-muted)' }}>{customer.phone}</div>
+                <h4>{newCustomer ? 'New customer details' : 'Find an existing customer'}</h4>
+                <p>{newCustomer ? 'Enter the customer details to create their profile.' : 'Search by name or phone number to select a customer.'}</p>
               </div>
-              <button className="btn btn-ghost btn-sm" onClick={() => { setCustomer(null); setUserSearch(''); }}>Change</button>
-            </div>
-          )}
+              {newCustomer && <button type="button" className="btn btn-outline btn-sm" onClick={() => setNewCustomer(null)}>
+                Choose Existing Customer
+              </button>}
+              {!newCustomer && canCreateCustomer && <button type="button" className="btn btn-outline btn-sm"
+                onClick={() => setNewCustomer({name:searchedCustomerName, phone:searchedCustomerPhone, email:''})}>
+                <PlusCircle size={14} /> Add New Customer
+              </button>}
+            </div>}
+            {!customer && !newCustomer && <>
+              <label className="form-label" htmlFor="booking-customer-search">Customer name or phone</label>
+              <div className="booking-customer-search">
+                <Search size={17} aria-hidden="true" />
+                <input id="booking-customer-search" type="text" className="form-input"
+                  placeholder="Search by name or phone..." value={userSearch}
+                  onChange={e => {setUserSearch(e.target.value); setCompletedUserSearch(''); setUserResults([]);}} />
+              </div>
+              {userSearchError && <div className="booking-customer-error" role="alert">{userSearchError}</div>}
+              {(userResults.length > 0 || searchingUser) && <div className="booking-customer-results">
+                {searchingUser && <div className="booking-customer-searching" role="status">Searching...</div>}
+                {userResults.map(u => <button type="button" className="booking-customer-result" key={u.id ?? u._id}
+                  onClick={() => selectCustomer(u)} onMouseDown={e => e.preventDefault()}>
+                  <span className="booking-customer-avatar">{(u.name || 'U').charAt(0).toUpperCase()}</span>
+                  <span className="booking-customer-details"><strong>{u.name || 'Unnamed'}</strong><span>{u.phone}</span></span>
+                  <span className="booking-customer-select">Select</span>
+                </button>)}
+              </div>}
+              {canAddNewCustomer && canCreateCustomer && <div className="booking-customer-empty">
+                <div><strong>No customer found</strong><p>No customer found for {userSearch.trim()}.</p></div>
+                <button type="button" className="btn btn-outline btn-sm" onClick={() => setNewCustomer({name:searchedCustomerName, phone:searchedCustomerPhone, email:''})}>
+                  <PlusCircle size={14} /> Add New Customer
+                </button>
+              </div>}
+            </>}
+            {!customer && newCustomer && canCreateCustomer && <div className="booking-customer-new">
+              <div className="booking-customer-fields">
+                {['name', 'phone', 'email'].map(field => <label key={field} className={`form-group booking-customer-field-${field}`}>
+                  <span className="form-label">{field === 'name' ? 'Customer name' : field === 'phone' ? 'Phone number' : 'Email (optional)'}</span>
+                  <input className="form-input" type={field === 'email' ? 'email' : field === 'phone' ? 'tel' : 'text'}
+                    inputMode={field === 'phone' ? 'numeric' : undefined} autoComplete={field === 'phone' ? 'tel' : field}
+                    placeholder={field === 'email' ? 'Email (optional)' : `Customer ${field}`}
+                    value={newCustomer[field]} onChange={e => setNewCustomer(prev => ({...prev, [field]: e.target.value}))} />
+                </label>)}
+              </div>
+              <div className="booking-customer-save">
+                <span>Enter a name and a 10-digit phone number to save.</span>
+                <button type="button" className="btn btn-primary btn-sm" disabled={creatingCustomer || !newCustomer.name.trim() || !/^\d{10}$/.test(newCustomer.phone.trim())}
+                onClick={async () => {
+                  setCreatingCustomer(true);
+                  try {
+                    const res = await api.post('/api/v1/admin/booking-customers', {...newCustomer, name:newCustomer.name.trim(), phone:newCustomer.phone.trim()});
+                    await selectCustomer(res.data.data); setNewCustomer(null);
+                  } catch (err) {showToast(err.response?.data?.message ?? 'Unable to create customer.', 'danger');}
+                  finally {setCreatingCustomer(false);}
+                }}>{creatingCustomer ? 'Saving...' : 'Save Customer'}</button>
+              </div>
+            </div>}
+            {customer && <div className="booking-customer-selected">
+              <span className="booking-customer-avatar"><UserCheck size={20} /></span>
+              <div className="booking-customer-details"><span className="booking-customer-selected-label">Selected customer</span>
+                <strong>{customer.name || 'Unnamed'}</strong><span>{customer.phone}</span>
+              </div>
+              <button type="button" className="btn btn-outline btn-sm" onClick={() => {setCustomer(null); setUserSearch('');}}>Change</button>
+            </div>}
+          </div>
         </InfoBlock>
 
         {/* Address */}
         {customer && (
           <InfoBlock label="Service Address">
             <div style={{ display:'flex', background:'var(--c-border-light)', borderRadius:'var(--r-sm)', padding:3, marginBottom:10 }}>
-              <button onClick={() => setAddressMode('saved')} style={{ flex:1, border:'none', borderRadius:4, padding:'6px 0', fontSize:12, fontWeight:600, cursor:'pointer', background: addressMode === 'saved' ? 'var(--c-brand-primary)' : 'transparent', color: addressMode === 'saved' ? '#fff' : 'var(--c-text-secondary)' }}>
+              <button onClick={() => { setAddressMode('saved'); setPickingAddress(false); }} style={{ flex:1, border:'none', borderRadius:4, padding:'6px 0', fontSize:12, fontWeight:600, cursor:'pointer', background: addressMode === 'saved' ? 'var(--c-brand-primary)' : 'transparent', color: addressMode === 'saved' ? '#fff' : 'var(--c-text-secondary)' }}>
                 Saved Address
               </button>
-              <button onClick={() => setAddressMode('new')} style={{ flex:1, border:'none', borderRadius:4, padding:'6px 0', fontSize:12, fontWeight:600, cursor:'pointer', background: addressMode === 'new' ? 'var(--c-brand-primary)' : 'transparent', color: addressMode === 'new' ? '#fff' : 'var(--c-text-secondary)' }}>
+              <button onClick={() => { setAddressMode('new'); setPickingAddress(true); }} style={{ flex:1, border:'none', borderRadius:4, padding:'6px 0', fontSize:12, fontWeight:600, cursor:'pointer', background: addressMode === 'new' ? 'var(--c-brand-primary)' : 'transparent', color: addressMode === 'new' ? '#fff' : 'var(--c-text-secondary)' }}>
                 New Address
               </button>
             </div>
@@ -1638,21 +1914,44 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
                 </div>
               )
             ) : (
-              <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-                {[
-                  { key:'label', placeholder:'Label (e.g. Home, Office)' },
-                  { key:'line1', placeholder:'Address line 1' },
-                  { key:'line2', placeholder:'Address line 2 (optional)' },
-                  { key:'city', placeholder:'City' },
-                  { key:'state', placeholder:'State' },
-                  { key:'pincode', placeholder:'Pincode' },
-                ].map(f => (
-                  <input key={f.key} type="text" placeholder={f.placeholder} value={newAddress[f.key]}
-                    onChange={e => setNewAddress(prev => ({ ...prev, [f.key]: e.target.value }))}
-                    style={{ width:'100%', border:'1px solid var(--c-border)', borderRadius:'var(--r-sm)', padding:'6px 10px', fontSize:13, background:'var(--c-bg-card)', color:'var(--c-text-primary)', boxSizing:'border-box' }} />
-                ))}
-              </div>
+              pickingAddress ? (
+                <AddressMapPicker initialAddress={newAddress} cities={cities}
+                  onClose={() => setPickingAddress(false)}
+                  onConfirm={address => { setNewAddress(address); setPickingAddress(false); }} />
+              ) : (
+                <div style={{display:'flex', flexDirection:'column', gap:8}}>
+                  {!newAddress.line1 ? <div style={{fontSize:12}}>No new service address selected for this customer.</div> : <div style={{fontSize:13}}>
+                    <strong>{newAddress.label}</strong>
+                    <div>{[newAddress.line1, newAddress.line2, newAddress.city, newAddress.state, newAddress.pincode].filter(Boolean).join(', ')}</div>
+                  </div>}
+                  <button type="button" className="btn btn-outline btn-sm" onClick={() => setPickingAddress(true)}>
+                    <MapPin size={14} /> {newAddress.line1 ? 'Edit Address / Location' : 'Add Service Address'}
+                  </button>
+                </div>
+              )
             )}
+          </InfoBlock>
+        )}
+
+        {customer && <div style={{fontSize: 12}}>
+          {serviceCity ? `Service city: ${serviceCity.name}` : 'Choose an address in an active service city.'}
+          {catalogLoading && ' Loading catalog…'}
+          {catalogError && <div role="alert" style={{color: 'var(--c-danger)'}}>{catalogError}</div>}
+        </div>}
+
+        {customer && serviceCity && (
+          <InfoBlock label="Partner">
+            <label className="form-label" htmlFor="new-booking-partner">Select Partner (optional)</label>
+            <select id="new-booking-partner" className="form-input" value={partnerId}
+              onChange={e => setPartnerId(e.target.value)} disabled={partnersLoading || submitting}>
+              <option value="">{partnersLoading ? 'Loading partners...' : 'Leave unassigned — assign later'}</option>
+              {bookingPartners.map(p => <option key={p.id ?? p._id} value={p.id ?? p._id}>
+                {p.name}{p.phone ? ` — ${p.phone}` : ''}
+              </option>)}
+            </select>
+            {partnersError && <div role="alert" style={{fontSize:12, color:'var(--c-danger)', marginTop:6}}>{partnersError}</div>}
+            {!partnersLoading && !partnersError && bookingPartners.length === 0 &&
+              <div style={{fontSize:12, marginTop:6}}>No approved partners in this service city. You can still create an unassigned booking.</div>}
           </InfoBlock>
         )}
 
@@ -1694,13 +1993,17 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
                               onClick={() => setCart(prev => prev.map(item => (item.type === 'catalog' && String(item.svc.id ?? item.svc._id) === svcId) ? {...item, qty: Math.max(1, item.qty-1)} : item))}>–</button>
                             <span style={{ minWidth:20, textAlign:'center', fontSize:13, fontWeight:700 }}>{cartItem.qty}</span>
                             <button style={{ width:24, height:24, border:'1px solid var(--c-border)', borderRadius:4, background:'var(--c-bg-card)', cursor:'pointer', fontWeight:700 }}
-                              onClick={() => setCart(prev => prev.map(item => (item.type === 'catalog' && String(item.svc.id ?? item.svc._id) === svcId) ? {...item, qty: item.qty+1} : item))}>+</button>
+                              onClick={() => setCart(prev => prev.map(item => (item.type === 'catalog' && String(item.svc.id ?? item.svc._id) === svcId) ? {...item, qty: Math.min(5, item.qty+1)} : item))}>+</button>
                           </div>
                         )}
                       </div>
                     );
                   })}
-                  {allServices.length === 0 && <div style={{ padding:12, fontSize:13, color:'var(--c-text-muted)', textAlign:'center' }}>Loading services…</div>}
+                  {allServices.length === 0 && <div role="status" style={{ padding:12, fontSize:13, color:'var(--c-text-muted)', textAlign:'center' }}>
+                    {!serviceCity
+                      ? 'Please select an address in an active service city to see available services.'
+                      : catalogLoading ? 'Loading services…' : 'No services available for this address.'}
+                  </div>}
                 </div>
               </>
             ) : (
@@ -1713,7 +2016,7 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
                   <div style={{ display:'flex', alignItems:'center', gap:6, border:'1px solid var(--c-border)', borderRadius:'var(--r-sm)', padding:'0 8px' }}>
                     <button style={{ width:22, height:22, border:'1px solid var(--c-border)', borderRadius:4, background:'var(--c-bg-card)', cursor:'pointer', fontWeight:700 }} onClick={() => setAddonQty(q => Math.max(1, q-1))}>–</button>
                     <span style={{ minWidth:18, textAlign:'center', fontSize:13, fontWeight:700 }}>{addonQty}</span>
-                    <button style={{ width:22, height:22, border:'1px solid var(--c-border)', borderRadius:4, background:'var(--c-bg-card)', cursor:'pointer', fontWeight:700 }} onClick={() => setAddonQty(q => q+1)}>+</button>
+                    <button style={{ width:22, height:22, border:'1px solid var(--c-border)', borderRadius:4, background:'var(--c-bg-card)', cursor:'pointer', fontWeight:700 }} onClick={() => setAddonQty(q => Math.min(5, q+1))}>+</button>
                   </div>
                 </div>
                 <button className="btn btn-outline btn-sm" style={{ alignSelf:'flex-start', display:'flex', alignItems:'center', gap:6 }}
@@ -1743,7 +2046,7 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
                   </div>
                 ))}
                 <div style={{ display:'flex', justifyContent:'space-between', fontWeight:700, fontSize:13, marginTop:6, borderTop:'1px solid var(--c-border)', paddingTop:6 }}>
-                  <span>Total</span><span>₹{fmt(addonTotal)}</span>
+                  <span>Individual / custom services subtotal</span><span>₹{fmt(addonTotal)}</span>
                 </div>
               </div>
             )}
@@ -1751,20 +2054,49 @@ function NewBookingModal({ isOpen, onClose, onCreated }) {
         )}
 
         {/* Schedule / Payment / Notes */}
+        {customer && serviceCity && (
+          <InfoBlock label="Combos & Packages">
+            <OrderPackages catalog={packageCatalog} services={allServices} value={packageCart} onChange={setPackageCart} />
+          </InfoBlock>
+        )}
+        {customer && (
+          <InfoBlock label="Order Review">
+            {/* Discount controls are temporarily disabled; retained for later use.
+            <input className="form-input" placeholder="Coupon code (optional)" value={couponCode} onChange={e => setCouponCode(e.target.value)} />
+            {review?.data.eligibleOffers?.length > 0 && <select className="form-input" value={offerId} onChange={e => setOfferId(e.target.value)}>
+              <option value="">No free-service offer</option>
+              {review.data.eligibleOffers.map(o => <option key={o.offerId} value={o.offerId}>{o.title} — Free {o.freeService.name}</option>)}
+            </select>}
+            {offerId && <button className="btn btn-ghost btn-sm" onClick={() => setOfferId('')}>Remove offer</button>}
+            */}
+            <p style={{fontSize:12}}>Minimum booking subtotal: ₹500. Review Total calculates current prices and GST.</p>
+            {reviewError && <div role="alert" style={{color:'var(--c-danger)'}}>{reviewError}</div>}
+            {reviewed ? <>
+              <AmtRow label="Subtotal" value={formatRupee(review.data.baseAmount)} />
+              {/* <AmtRow label="Coupon discount" value={formatRupee(review.data.couponDiscountAmount)} /> */}
+              <AmtRow label="GST" value={formatRupee(review.data.taxAmount)} />
+              <AmtRow label="Final total" value={formatRupee(review.data.totalAmount)} />
+              {/* {review.data.services.filter(s => s.addedByOffer).map(s => <div key={s.serviceId}>{s.name} — FREE</div>)} */}
+            </> : review && <p>Order changed. Review Total again before creating.</p>}
+          </InfoBlock>
+        )}
         {customer && (
           <InfoBlock label="Schedule & Payment">
             <div style={{ display:'flex', gap:8, marginBottom:8 }}>
               <input type="datetime-local" value={scheduleValue} onChange={e => setScheduleValue(e.target.value)}
-                min={toLocalInputValue(new Date(Date.now() + ONE_HOUR_MS))}
+                min={toLocalInputValue(new Date(Date.now() + MIN_BOOKING_NOTICE_MS))}
                 max={toLocalInputValue(new Date(Date.now() + ONE_MONTH_MS))}
                 style={{ flex:1, border:'1px solid var(--c-border)', borderRadius:'var(--r-sm)', padding:'6px 10px', fontSize:13, background:'var(--c-bg-card)', color:'var(--c-text-primary)' }} />
               <select value={paymentMode} onChange={e => setPaymentMode(e.target.value)}
                 style={{ border:'1px solid var(--c-border)', borderRadius:'var(--r-sm)', padding:'6px 10px', fontSize:13, background:'var(--c-bg-card)', color:'var(--c-text-primary)' }}>
                 <option value="cod">Cash on Delivery</option>
-                <option value="online">Online</option>
+                <option value="paid">Paid</option>
               </select>
             </div>
-            <div style={{ fontSize:11, color:'var(--c-text-muted)', marginBottom:8 }}>Bookings must be 1 hour to 1 month out, between 8 AM–8 PM.</div>
+            {paymentMode === 'paid' && <div style={{fontSize:12, color:'var(--c-text-secondary)', marginBottom:8}}>
+              Payment already received by admin. This booking will be marked as paid.
+            </div>}
+            <div style={{ fontSize:11, color:'var(--c-text-muted)', marginBottom:8 }}>Bookings must be 30 minutes to 1 month out, between 8 AM–8 PM.</div>
             <textarea placeholder="Notes (e.g. requested via phone support call)" value={notes} onChange={e => setNotes(e.target.value)} rows={2}
               style={{ width:'100%', border:'1px solid var(--c-border)', borderRadius:'var(--r-sm)', padding:'6px 10px', fontSize:13, background:'var(--c-bg-card)', color:'var(--c-text-primary)', boxSizing:'border-box', resize:'vertical' }} />
           </InfoBlock>

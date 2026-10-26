@@ -25,6 +25,7 @@ const AppFeedback = require("../../../feedback/models/feedback.model");
 const { signToken } = require("../../../../utils/jwtUtils");
 const { sendPushNotification, pushTokensFor, PARTNER_NEW_BOOKING_CHANNEL } = require("../../../../utils/firebaseUtils");
 const { formatISTDateTime } = require("../../../../utils/formatIST");
+const { sendBookingWhatsAppConfirmation } = require("../../../../utils/whatsappUtils");
 const { haversineKm } = require("../../../../utils/geoUtils");
 const {
   resolveRatesForBooking,
@@ -651,6 +652,7 @@ const createBookingForCustomer = async (adminId, data) => {
     createdByAdminId: adminId,
   });
 
+  await sendBookingWhatsAppConfirmation(booking, user, primaryServiceName);
   const createdBookingUserTokens = pushTokensFor(user);
   if (createdBookingUserTokens.length > 0) {
     await sendPushNotification(
@@ -710,7 +712,16 @@ const listBookings = async ({ status, userId, partnerId, cityIds, page = 1, limi
       { model: Service, as: "service", attributes: ["name", "basePrice"] },
     ],
   });
-  return { data, pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } };
+  const creatorIds = [...new Set(data.map(b => b.createdByAdminId).filter(id => id != null))];
+  const creators = creatorIds.length
+    ? await AdminUser.findAll({ where: { id: creatorIds }, attributes: ["id", "name", "role"] })
+    : [];
+  const creatorsById = new Map(creators.map(a => [a.id, a.toJSON()]));
+  const bookings = data.map(b => ({
+    ...b.toJSON(),
+    createdByAdmin: creatorsById.get(b.createdByAdminId) ?? null,
+  }));
+  return { data: bookings, pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } };
 };
 
 const getBookingDetail = async (bookingId) => {
@@ -734,6 +745,9 @@ const getBookingDetail = async (bookingId) => {
   });
 
   const plain = booking.toJSON();
+  plain.createdByAdmin = plain.createdByAdminId != null
+    ? await AdminUser.findByPk(plain.createdByAdminId, { attributes: ["id", "name", "role"], raw: true })
+    : null;
   plain.ledgerEntries = ledgerEntries.map(e => ({
     id: e.id, partnerId: e.partnerId, partnerName: e.partner?.name,
     direction: e.direction, amount: parseFloat(e.amount), status: e.status,
@@ -936,16 +950,9 @@ const editBookingServices = async (bookingId, serviceItems = [], removeIndices =
     updatedServices = [...updatedServices, ...newAddOnEntries];
   }
 
-  // Recalculate total from active (non-removed) services only
-  const activeServices = updatedServices.filter(s => !s.removed);
-  const newBase = activeServices.reduce((sum, s) => sum + (parseFloat(s.price ?? s.basePrice ?? 0)) * (s.qty || 1), 0);
-  const couponDiscount = parseFloat(booking.couponDiscountAmount || 0);
-  const taxable = newBase - couponDiscount;
-  const pkg = booking.packageId ? await ServicePackage.findByPk(booking.packageId) : null;
-  const { partnerPercent, gstPercent } = await resolveRatesForBooking({ serviceItems: activeServices, package: pkg });
-  const tax = parseFloat((taxable * gstPercent / 100).toFixed(2));
-  const total = parseFloat((taxable + tax).toFixed(2));
-  const partnerEarning = parseFloat((taxable * partnerPercent / 100).toFixed(2));
+  // Preserve package prices and use the same rate calculation as customer edits.
+  const { recomputeBookingAmounts } = require("../../../bookings/services/v1/bookings.service");
+  const { newBase, tax, total, partnerEarning } = await recomputeBookingAmounts(booking, updatedServices);
 
   await booking.update({ services: updatedServices, baseAmount: newBase, taxAmount: tax, totalAmount: total, partnerEarning });
 
@@ -1037,6 +1044,61 @@ const addBookingPackage = async (bookingId, packageId, qty, serviceItems) => {
     type: "booking",
   });
 
+  return booking;
+};
+
+const reopenBooking = async (bookingId) => {
+  const booking = await Booking.findByPk(bookingId);
+  if (!booking) throw new AppError("Booking not found", 404);
+  if (booking.status !== "cancelled") {
+    throw new AppError("Only a cancelled booking can be moved to In Progress", 400);
+  }
+  const [updatedCount] = await Booking.update({
+    status: "in_progress",
+    cancelledBy: null,
+    cancellationReason: null,
+  }, { where: { id: bookingId, status: "cancelled" } });
+  if (!updatedCount) throw new AppError("Booking status changed. Refresh and try again.", 409);
+  await booking.reload();
+  return booking;
+};
+
+const updateBookingStatus = async (bookingId, status) => {
+  if (!["pending", "confirmed", "in_progress", "completed", "cancelled"].includes(status)) {
+    throw new AppError("Invalid booking status", 400);
+  }
+  const booking = await Booking.findByPk(bookingId);
+  if (!booking) throw new AppError("Booking not found", 404);
+  if (booking.status === status) return booking;
+  if (status === "cancelled" && booking.status !== "completed") return cancelBooking(bookingId);
+  const previousStatus = booking.status;
+  let services = booking.services;
+  if (typeof services === "string") services = JSON.parse(services);
+  const updates = {
+    status,
+    cancelledBy: status === "cancelled" ? "admin" : null,
+    cancellationReason: status === "cancelled" ? "Cancelled by admin" : null,
+    completedAt: status === "completed" ? new Date() : null,
+  };
+  if (Array.isArray(services)) {
+    updates.services = services.map(service => {
+      if (service.removed) return service;
+      if (status === "completed") return { ...service, serviceStatus: "completed" };
+      if (service.serviceStatus === "completed") {
+        return { ...service, serviceStatus: service.assignedPartnerId ? "claimed" : "unassigned" };
+      }
+      return service;
+    });
+  }
+  const [updatedCount] = await Booking.update(updates, {
+    where: { id: bookingId, status: previousStatus },
+  });
+  if (!updatedCount) throw new AppError("Booking status changed. Refresh and try again.", 409);
+  await booking.reload();
+  if (status === "confirmed") {
+    const { sendBookingOtpSms } = require("../../../../utils/bookingOtpSms");
+    await sendBookingOtpSms(booking);
+  }
   return booking;
 };
 
@@ -1419,7 +1481,7 @@ module.exports = {
   listSubcategories, createSubcategory, updateSubcategory, deleteSubcategory,
   listServices, createService, updateService, deleteService, toggleServiceCityStatus, reorderServices,
   createBookingForCustomer,
-  listBookings, getBookingDetail, assignPartner, acceptBooking, cancelBooking, rescheduleBooking, editBookingServices, removeBookingPackage, addBookingPackage,
+  listBookings, getBookingDetail, assignPartner, acceptBooking, cancelBooking, reopenBooking, updateBookingStatus, rescheduleBooking, editBookingServices, removeBookingPackage, addBookingPackage,
   listCoupons, createCoupon, updateCoupon, deleteCoupon, getReferralProgram, updateReferralProgram,
   listReviews, updateReviewStatus,
   listNotifications, broadcastNotification,

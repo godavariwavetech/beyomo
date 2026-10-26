@@ -95,6 +95,16 @@ const Booking = sequelize.define("Booking", {
         booking.serviceOtp = await generateServiceOtp();
       }
     },
+    async afterCreate(booking, options) {
+      const { sendBookingOtpSms } = require("../../../utils/bookingOtpSms");
+      await sendBookingOtpSms(booking, options);
+    },
+    async afterUpdate(booking, options) {
+      if (booking.changed("status") && booking.status === "confirmed") {
+        const { sendBookingOtpSms } = require("../../../utils/bookingOtpSms");
+        await sendBookingOtpSms(booking, options);
+      }
+    },
   },
 });
 
