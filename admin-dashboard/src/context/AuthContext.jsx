@@ -35,6 +35,18 @@ export function AuthProvider({children}) {
     }
   }, []);
 
+  const changePassword = useCallback(async newPassword => {
+    try {
+      await api.post('/api/v1/admin/auth/change-password', {newPassword});
+      return {success: true};
+    } catch (error) {
+      return {
+        success: false,
+        message: error.response?.data?.message ?? 'Unable to change password. Please try again.',
+      };
+    }
+  }, []);
+
   const logout = useCallback(async () => {
     try {
       await api.post('/api/v1/admin/auth/logout');
@@ -101,7 +113,7 @@ export function AuthProvider({children}) {
   );
 
   return (
-    <AuthContext.Provider value={{user, login, logout, hasPermission, showToast}}>
+    <AuthContext.Provider value={{user, login, logout, changePassword, hasPermission, showToast}}>
       {children}
       {toast && (
         <div className={`toast toast-${toast.type}`}>{toast.message}</div>

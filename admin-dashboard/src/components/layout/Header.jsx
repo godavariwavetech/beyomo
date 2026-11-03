@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Menu, LogOut, ChevronDown, MapPin, Check, Globe } from 'lucide-react';
+import { Menu, LogOut, ChevronDown, MapPin, Check, Globe, UserRound, X, LockKeyhole, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useCityFilter } from '../../context/CityContext';
 import { ROLE_LABELS, ROLE_COLORS } from '../../data/mockData';
@@ -22,11 +22,16 @@ const PAGE_TITLES = {
 };
 
 export default function Header({ onMenuClick }) {
-  const { user, logout } = useAuth();
+  const { user, logout, changePassword, showToast } = useAuth();
   const { cities, selectedCities, toggleCity, clearCities, userZones } = useCityFilter();
   const location = useLocation();
   const navigate = useNavigate();
   const [showDropdown, setShowDropdown] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [showCityMenu, setShowCityMenu] = useState(false);
   const cityMenuRef = useRef(null);
   const userMenuRef = useRef(null);
@@ -64,6 +69,47 @@ export default function Header({ onMenuClick }) {
     logout();
     navigate('/login');
   };
+
+  const openProfile = () => {
+    setShowDropdown(false);
+    setShowPasswordForm(false);
+    setNewPassword('');
+    setShowNewPassword(false);
+    setShowProfile(true);
+  };
+
+  const handleChangePassword = async event => {
+    event.preventDefault();
+    if (newPassword.length < 8) {
+      showToast('New password must be at least 8 characters.', 'danger');
+      return;
+    }
+    setIsChangingPassword(true);
+    const result = await changePassword(newPassword);
+    setIsChangingPassword(false);
+    if (!result.success) {
+      showToast(result.message, 'danger');
+      return;
+    }
+    setNewPassword('');
+    setShowNewPassword(false);
+    setShowPasswordForm(false);
+    showToast('Password changed successfully.');
+  };
+
+  const formatProfileDate = value => {
+    if (!value) return 'Not available';
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? 'Not available' : date.toLocaleString();
+  };
+
+  const initials = user?.name
+    ?.split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map(part => part[0])
+    .join('')
+    .toUpperCase() || 'A';
 
   const btnLabel = selectedCities.length === 0
     ? 'All Cities'
@@ -211,8 +257,14 @@ export default function Header({ onMenuClick }) {
         )}
 
         <div style={{ position: 'relative' }} ref={userMenuRef}>
-          <div className="header-user" onClick={() => setShowDropdown(!showDropdown)}>
-            <div className="header-user-avatar">{user?.avatar}</div>
+          <button
+            type="button"
+            className="header-user"
+            onClick={() => setShowDropdown(!showDropdown)}
+            aria-expanded={showDropdown}
+            aria-haspopup="menu"
+          >
+            <div className="header-user-avatar">{user?.avatar || initials}</div>
             <div className="header-user-info">
               <div className="name">{user?.name}</div>
               <div className="role" style={{ fontSize: 11, color: 'var(--c-text-secondary)' }}>
@@ -222,7 +274,7 @@ export default function Header({ onMenuClick }) {
               </div>
             </div>
             <ChevronDown size={14} style={{ color: 'var(--c-text-muted)' }} />
-          </div>
+          </button>
 
           {showDropdown && (
               <div style={{
@@ -235,6 +287,18 @@ export default function Header({ onMenuClick }) {
                   <div style={{ fontSize: 12, color: 'var(--c-text-secondary)', marginTop: 2 }}>{user?.email}</div>
                 </div>
                 <button
+                  type="button"
+                  role="menuitem"
+                  onClick={openProfile}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', fontSize: 14, color: 'var(--c-text-primary)', fontWeight: 500 }}
+                  className="btn-ghost"
+                >
+                  <UserRound size={16} />
+                  Profile
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
                   onClick={handleLogout}
                   style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', fontSize: 14, color: 'var(--c-danger)', fontWeight: 500 }}
                   className="btn-ghost"
@@ -246,6 +310,122 @@ export default function Header({ onMenuClick }) {
           )}
         </div>
       </div>
+      {showProfile && (
+        <div
+          className="modal-overlay"
+          onMouseDown={event => {
+            if (event.target === event.currentTarget) setShowProfile(false);
+          }}
+        >
+          <div className="modal modal-sm" role="dialog" aria-modal="true" aria-labelledby="admin-profile-title">
+            <div className="modal-header">
+              <h3 id="admin-profile-title">My Profile</h3>
+              <button type="button" className="modal-close" onClick={() => setShowProfile(false)} aria-label="Close profile">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="modal-body">
+              <div className="detail-profile">
+                <div className="detail-avatar">{user?.avatar || initials}</div>
+                <div className="detail-info">
+                  <h3>{user?.name || 'Admin'}</h3>
+                  <p>{user?.email || 'Email not available'}</p>
+                </div>
+              </div>
+              <div style={{ marginBottom: 24 }}>
+                <h4 className="form-section-title" style={{ marginBottom: 14 }}>Login Details</h4>
+                <div className="detail-grid">
+                  <div className="detail-item">
+                    <div className="label">Email Address</div>
+                    <div className="value">{user?.email || 'Not available'}</div>
+                  </div>
+                </div>
+              </div>
+              <div className="detail-grid">
+                <div className="detail-item">
+                  <div className="label">Admin ID</div>
+                  <div className="value">{user?.id ?? user?._id ?? 'Not available'}</div>
+                </div>
+                <div className="detail-item">
+                  <div className="label">Role</div>
+                  <div className="value">{ROLE_LABELS[user?.role] || user?.role || 'Not available'}</div>
+                </div>
+                <div className="detail-item">
+                  <div className="label">Status</div>
+                  <div className="value">{user?.status || 'Not available'}</div>
+                </div>
+                <div className="detail-item">
+                  <div className="label">Last Login</div>
+                  <div className="value">{formatProfileDate(user?.lastLogin)}</div>
+                </div>
+                <div className="detail-item" style={{ gridColumn: '1 / -1' }}>
+                  <div className="label">Account Created</div>
+                  <div className="value">{formatProfileDate(user?.createdAt)}</div>
+                </div>
+              </div>
+              <div style={{ marginTop: 24, borderTop: '1px solid var(--c-border)', paddingTop: 18 }}>
+                {!showPasswordForm ? (
+                  <button
+                    type="button"
+                    className="btn btn-outline"
+                    onClick={() => setShowPasswordForm(true)}
+                  >
+                    <LockKeyhole size={16} />
+                    Change Password
+                  </button>
+                ) : (
+                  <form onSubmit={handleChangePassword}>
+                    <h4 className="form-section-title" style={{ marginBottom: 14 }}>Change Password</h4>
+                    <div className="form-grid">
+                      <label className="form-group">
+                        <span className="form-label">New Password</span>
+                        <div style={{ position: 'relative' }}>
+                          <input
+                            className="form-input"
+                            style={{ paddingRight: 44 }}
+                            type={showNewPassword ? 'text' : 'password'}
+                            autoComplete="new-password"
+                            minLength={8}
+                            required
+                            value={newPassword}
+                            onChange={event => setNewPassword(event.target.value)}
+                          />
+                          <button
+                            type="button"
+                            className="btn-ghost"
+                            style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', padding: 6 }}
+                            onClick={() => setShowNewPassword(visible => !visible)}
+                            aria-label={showNewPassword ? 'Hide new password' : 'Show new password'}
+                          >
+                            {showNewPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                          </button>
+                        </div>
+                      </label>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+                      <button
+                        type="button"
+                        className="btn btn-outline"
+                        onClick={() => {
+                          setShowPasswordForm(false);
+                          setNewPassword('');
+                          setShowNewPassword(false);
+                        }}
+                        disabled={isChangingPassword}
+                      >
+                        Cancel
+                      </button>
+                      <button type="submit" className="btn btn-secondary" disabled={isChangingPassword}>
+                        {isChangingPassword ? 'Updating...' : 'Update Password'}
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </header>
   );
 }

@@ -23,7 +23,7 @@ export const ROLE_COLORS = {
 };
 
 export const ADMIN_USERS = [
-  { id: 1, name: 'Super Admin',  email: 'admin@beyomo.com', password: 'Admin@123', role: 'super_admin', avatar: 'SA', status: 'active', lastLogin: '2026-05-24T10:30:00', createdAt: '2024-01-01', customPermissions: null },
+  { id: 1, name: 'Super Admin',  email: 'admin@beyomo.com', role: 'super_admin', avatar: 'SA', status: 'active', lastLogin: '2026-05-24T10:30:00', createdAt: '2024-01-01', customPermissions: null },
 ];
 
 export const USERS = [

@@ -42,7 +42,7 @@ const agreementUpload = multer({
   },
 });
 const {
-  login, logout, currentAdmin, devAdminHints,
+  login, logout, currentAdmin, changeAdminPassword, devAdminHints,
   listBanners, createBanner, updateBanner, deleteBanner,
   listZones, createZone, updateZone, deleteZone,
   listCities, createCity, updateCity, deleteCity,
@@ -85,6 +85,7 @@ router.get("/settings/agreement/status", adminAuthenticate(), (req, res) => {
 router.post("/auth/login", login);
 router.post("/auth/logout", adminAuthenticate(), logout);
 router.get("/auth/me", adminAuthenticate(), currentAdmin);
+router.post("/auth/change-password", adminAuthenticate(), changeAdminPassword);
 router.get("/auth/dev-hints", devAdminHints);
 
 // Users

@@ -212,6 +212,10 @@ img { max-width: 100%; }
   border-radius: var(--r-md);
   cursor: pointer; transition: var(--t-fast);
   border: 1px solid var(--c-border);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
 }
 .header-user:hover { background: var(--c-border-light); }
 .header-user-avatar {
