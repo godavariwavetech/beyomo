@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ShieldCheck, Plus, Edit2, Trash2, User, CheckCircle, XCircle, Globe } from 'lucide-react';
+import { ShieldCheck, Plus, Edit2, Trash2, User, CheckCircle, XCircle, Globe, Eye, EyeOff } from 'lucide-react';
 import { ROLE_LABELS, ROLE_COLORS, ROLE_PERMISSIONS, ALL_MODULES } from '../data/mockData';
 import { Badge } from '../components/common/Badge';
 import Modal from '../components/common/Modal';
@@ -39,6 +39,7 @@ export default function Permissions() {
   const [addingAdmin, setAddingAdmin]   = useState(false);
   const [editingAdmin, setEditingAdmin] = useState(null);
   const [adminForm, setAdminForm]       = useState({});
+  const [showPassword, setShowPassword] = useState(true);
   const [customPerms, setCustomPerms]   = useState(null);
   const [useCustom, setUseCustom]       = useState(false);
   const [allowAllZones, setAllowAllZones]   = useState(true);
@@ -56,6 +57,7 @@ export default function Permissions() {
 
   const openAdd = () => {
     setAdminForm({ role: 'support', password: 'beyomo@123' });
+    setShowPassword(true);
     const defaultPerms = ROLE_PERMISSIONS['support'] || [];
     setCustomPerms([...defaultPerms]);
     setUseCustom(false);
@@ -67,6 +69,7 @@ export default function Permissions() {
   const openEdit = (a) => {
     setEditingAdmin(a);
     setAdminForm({ name: a.name, email: a.email, role: a.role });
+    setShowPassword(true);
     // Filter to ALL_MODULES so a permission for a retired module (coupons, say) can't
     // survive invisibly: the checkbox grid only renders ALL_MODULES, but the whole array
     // is written back on save, which would otherwise carry the dead entry forward.
@@ -100,9 +103,13 @@ export default function Permissions() {
     const finalZones = allowAllZones ? null : (selectedZones.length ? selectedZones : null);
     if (editingAdmin) {
       const id = editingAdmin._id ?? editingAdmin.id;
-      const res = await update(id, {...adminForm, customPermissions: finalPerms, allowedZones: finalZones}, 'put');
+      const { password, ...adminDetails } = adminForm;
+      if (password && password.length < 8) {
+        showToast('Password must be at least 8 characters.', 'danger'); return;
+      }
+      const res = await update(id, {...adminDetails, ...(password ? { password } : {}), customPermissions: finalPerms, allowedZones: finalZones}, 'put');
       if (res.ok) {
-        setAdmins(prev => prev.map(a => (a._id ?? a.id) === id ? {...a, ...adminForm, customPermissions: finalPerms ?? null, allowedZones: finalZones} : a));
+        setAdmins(prev => prev.map(a => (a._id ?? a.id) === id ? {...a, ...adminDetails, customPermissions: finalPerms ?? null, allowedZones: finalZones} : a));
         showToast('Admin updated!', 'success');
         setEditingAdmin(null);
       } else {
@@ -341,13 +348,32 @@ export default function Permissions() {
                 ))}
               </select>
             </div>
-            {!editingAdmin && (
-              <div className="form-group">
-                <label className="form-label">Initial Password</label>
-                <input className="form-input" value={adminForm.password||'beyomo@123'} style={{ fontFamily:'monospace' }} onChange={e => setAdminForm(f=>({...f,password:e.target.value}))}/>
-                <span className="form-hint">User should change this after first login.</span>
+            <div className="form-group">
+              <label className="form-label">{editingAdmin ? 'Reset Password (optional)' : 'Initial Password'}</label>
+              <div style={{ position:'relative' }}>
+                <input
+                  className="form-input"
+                  type={showPassword ? 'text' : 'password'}
+                  value={adminForm.password ?? ''}
+                  style={{ fontFamily:'monospace', paddingRight:42 }}
+                  onChange={e => setAdminForm(f=>({...f,password:e.target.value}))}
+                  placeholder={editingAdmin ? 'Leave blank to keep current password' : ''}
+                  autoComplete="new-password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(visible => !visible)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  title={showPassword ? 'Hide password' : 'Show password'}
+                  style={{ position:'absolute', right:12, top:'50%', transform:'translateY(-50%)', color:'var(--c-text-muted)' }}
+                >
+                  {showPassword ? <EyeOff size={16}/> : <Eye size={16}/>}
+                </button>
               </div>
-            )}
+              <span className="form-hint">
+                {editingAdmin ? 'The current password cannot be viewed. Enter a new password here to reset it (at least 8 characters).' : 'User should change this after first login.'}
+              </span>
+            </div>
           </div>
 
           <div className="divider"/>

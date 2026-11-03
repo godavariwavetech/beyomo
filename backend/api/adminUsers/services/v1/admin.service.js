@@ -56,6 +56,17 @@ const adminLogin = async (email, password) => {
   return { token, admin: adminData };
 };
 
+const changeAdminPassword = async (id, newPassword) => {
+  const admin = await AdminUser.findByPk(id);
+  if (!admin || admin.status !== "active") {
+    throw new AppError("Your admin account is no longer active.", 401);
+  }
+  if (await admin.comparePassword(newPassword)) {
+    throw new AppError("New password must be different from your current password.", 400);
+  }
+  await admin.update({ password: newPassword });
+};
+
 // ==================== USERS ====================
 
 const cityIdsFilter = (cityIds) => {
@@ -74,8 +85,28 @@ const listUsers = async ({ search, status, cityIds, page = 1, limit = 10 }) => {
       { email: { [Op.like]: `%${search}%` } },
     ];
   }
-  const { count: total, rows: data } = await User.findAndCountAll({
+  const { count: total, rows } = await User.findAndCountAll({
     where, order: [["createdAt", "DESC"]], offset, limit,
+  });
+  const userIds = rows.map(user => user.id);
+  const bookingStats = userIds.length
+    ? await sequelize.query(
+      `SELECT userId, COUNT(*) AS bookings,
+              COALESCE(SUM(CASE WHEN status = 'completed' THEN totalAmount ELSE 0 END), 0) AS totalSpent
+       FROM bookings
+       WHERE userId IN (:userIds)
+       GROUP BY userId`,
+      { replacements: { userIds }, type: sequelize.QueryTypes.SELECT }
+    )
+    : [];
+  const statsByUserId = new Map(bookingStats.map(stats => [String(stats.userId), stats]));
+  const data = rows.map(user => {
+    const stats = statsByUserId.get(String(user.id));
+    return {
+      ...user.get({ plain: true }),
+      bookings: Number(stats?.bookings ?? 0),
+      totalSpent: Number(stats?.totalSpent ?? 0),
+    };
   });
   return { data, pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } };
 };
@@ -1358,7 +1389,11 @@ const updateAdminUser = async (id, data) => {
     if (existing) throw new AppError("An admin user with this email already exists", 400);
   }
 
-  await AdminUser.update(data, { where: { id } });
+  if (data.password) {
+    await target.update(data);
+  } else {
+    await AdminUser.update(data, { where: { id } });
+  }
   const admin = await AdminUser.findByPk(id, { attributes: { exclude: ["password"] } });
   if (!admin) throw new AppError("Admin user not found", 404);
   return admin;
@@ -1475,6 +1510,7 @@ const deleteOffer  = (id)     => offersService.deleteOffer(id);
 
 module.exports = {
   adminLogin,
+  changeAdminPassword,
   listUsers, getUserById, updateUserStatus, deleteUser, createUser,
   listPartners, getPartnerById, updatePartnerStatus, createPartner, updatePartner,
   listCategories, createCategory, updateCategory, deleteCategory, reorderCategories,

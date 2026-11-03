@@ -45,7 +45,7 @@ export default function Users() {
         status: u.status ?? 'active',
         joinedDate: u.joinedDate ?? u.createdAt?.slice(0, 10) ?? '',
         bookings: u.bookings ?? 0,
-        totalSpent: parseFloat(u.totalSpent ?? u.walletBalance ?? 0),
+        totalSpent: parseFloat(u.totalSpent ?? 0),
         avatar: u.avatar ?? (u.name?.[0]?.toUpperCase() ?? 'U'),
       })));
       setPageLoading(false);

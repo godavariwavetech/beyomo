@@ -17,6 +17,10 @@ const loginSchema = Joi.object({
   password: Joi.string().min(6).required(),
 });
 
+const changeAdminPasswordSchema = Joi.object({
+  newPassword: Joi.string().min(8).required(),
+});
+
 const createAdminUserSchema = Joi.object({
   name: Joi.string().trim().required(),
   email: Joi.string().email().required(),
@@ -34,6 +38,7 @@ const updateAdminUserSchema = Joi.object({
   // save, so leaving it out of this schema made every admin-user update fail outright
   // with `"email" is not allowed` (Joi rejects unknown keys by default).
   email: Joi.string().email().trim().lowercase(),
+  password: Joi.string().min(8),
   role: Joi.string().valid("super_admin", "admin", "manager", "analyst", "support"),
   customPermissions: Joi.array().items(Joi.string()),
   allowedCities: Joi.array().items(Joi.number()).allow(null),
@@ -309,12 +314,19 @@ const logout = catchAsync(async (req, res, next) => {
 
 const currentAdmin = catchAsync(async (req, res, next) => {
   const admin = await AdminUser.findByPk(req.admin.userId, {
-    attributes: ["id", "name", "email", "role", "customPermissions", "allowedZones", "allowedCities", "status"],
+    attributes: ["id", "name", "email", "role", "customPermissions", "allowedZones", "allowedCities", "status", "lastLogin", "createdAt"],
   });
   if (!admin || admin.status !== "active") {
     return next(new AppError("Your admin account is no longer active.", 401));
   }
   res.status(200).json({ status: true, data: admin });
+});
+
+const changeAdminPassword = catchAsync(async (req, res, next) => {
+  const { error, value } = changeAdminPasswordSchema.validate(req.body);
+  if (error) return next(new AppError(error.details[0].message, 400));
+  await adminService.changeAdminPassword(req.admin.userId, value.newPassword);
+  res.status(200).json({ status: true, message: "Password changed successfully" });
 });
 
 // Dev-only: return admin list for login-page credential hints (no passwords)
@@ -1173,7 +1185,7 @@ const deletePackageHandler = catchAsync(async (req, res) => {
 
 module.exports = {
   previewCustomerOrder, customerOrderCatalog,
-  login, logout, currentAdmin, devAdminHints,
+  login, logout, currentAdmin, changeAdminPassword, devAdminHints,
   listUsers, getUserById, updateUserStatus, deleteUser, createUser,
   listPartners, getPartnerById, updatePartnerStatus, createPartner, updatePartner,
   listCategories, createCategory, updateCategory, deleteCategory, reorderCategories,
