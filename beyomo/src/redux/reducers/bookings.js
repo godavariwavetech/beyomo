@@ -15,7 +15,23 @@ export const fetchUserBookings = createAsyncThunk(
   async (_, {rejectWithValue}) => {
     try {
       const response = await api.get(endpoints.USER_BOOKINGS);
-      return response.data.data;
+      // return response.data.data;
+      const {data: bookings, pagination} = response.data;
+      const totalPages = pagination?.totalPages ?? 1;
+
+      if (totalPages <= 1) return bookings;
+
+      const remainingPages = await Promise.all(
+        Array.from({length: totalPages - 1}, (_, index) =>
+          api.get(endpoints.USER_BOOKINGS, {
+            params: {page: index + 2, limit: pagination.limit},
+          }),
+        ),
+      );
+      return [
+        ...bookings,
+        ...remainingPages.flatMap(page => page.data.data),
+      ];
     } catch (error) {
       return rejectWithValue(error.response?.data?.message ?? 'Failed to load bookings.');
     }
