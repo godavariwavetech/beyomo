@@ -1,4 +1,5 @@
-import React, {useEffect, useState} from 'react';
+import React, {useCallback, useEffect, useState} from 'react';
+import {useFocusEffect} from '@react-navigation/native';
 import {
   View,
   Text,
@@ -53,13 +54,20 @@ const ProfileScreen = ({navigation}: Props) => {
   useEffect(() => {
     if (!authToken || guest) return;
     if (!profile) dispatch(fetchProfile());
-    if (bookings.length === 0) dispatch(fetchUserBookings());
   }, [dispatch, authToken, guest]);
 
+  useFocusEffect(
+    useCallback(() => {
+      if (authToken && !guest) dispatch(fetchUserBookings());
+    }, [dispatch, authToken, guest]),
+  );
+
   const upcomingCount = bookings.filter(
-    (b: any) => b.status === 'confirmed' || b.status === 'pending' || b.status === 'in_progress',
+    (b: any) => ['confirmed', 'pending', 'in_progress'].includes((b.status ?? '').toLowerCase()),
   ).length;
-  const completedCount = bookings.filter((b: any) => b.status === 'completed').length;
+  const completedCount = bookings.filter(
+    (b: any) => ['completed', 'cancelled'].includes((b.status ?? '').toLowerCase()),
+  ).length;
 
   const handleLogout = () => {
     if (Platform.OS === 'android') {
